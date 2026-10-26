@@ -45,7 +45,18 @@ Raw results: artifacts/tests.xml, installed.xml, debian-tests.xml,
 verification.json, package-reproducibility.json and logs/. These are local
 review evidence, not hosted check publication or a released product.
 
-Hosted CI, issue/PR links, passing and failing GitHub case rendering,
-public product downloads and independent review remain pending. ARM, macOS,
-Windows and hosted devcontainer execution remain unverified. No release readiness
-claim follows from engine startup or the local software test suite.
+Hosted verification subsequently passed at
+[f8dac0e](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/actions/runs/40408178025):
+[51 published results](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/runs/121872110784),
+17 per development, installed runtime and installed Debian environment. The
+[separate intentional failure](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/actions/runs/40408236991)
+retained its nonzero workflow result and
+[rendered named failure](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/runs/121871766878).
+Both public check pages were inspected for individual cases and diagnostics.
+Artifacts have 30-day retention. See [PR #2](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/pull/2)
+for the latest head and runs.
+
+Independent review, actual release assembly/publication and unauthenticated
+product downloads remain pending. ARM, macOS, Windows and hosted devcontainer
+execution remain unverified. Engine startup and software tests are not robot
+capability evidence. No substantive merge or release has occurred.
