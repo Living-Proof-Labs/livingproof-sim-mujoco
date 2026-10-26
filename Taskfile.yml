@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Adapted from collaboration-guidelines v4.3.0 templates/container/Taskfile.yml.
+version: '3'
+tasks:
+  setup:
+    desc: Build the development image and install locked dependencies
+    cmds: [docker compose run --build --rm tooling task -t Taskfile.runtime.yml setup]
+  check:
+    desc: Check code and generated help in Docker
+    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml check]
+  test:
+    desc: Test real MuJoCo execution in Docker
+    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml test]
+  docs:
+    desc: Generate executable command help
+    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml docs]
+  verify:
+    desc: Check and test in the development environment
+    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml verify]
+  package:
+    desc: Build Python and Debian products
+    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml package]
+  smoke:
+    desc: Test installed wheel, Debian package and runtime image
+    platforms: [linux]
+    cmds: [bash tools/smoke.sh]
+  image:
+    desc: Build the versioned runtime image from the tested wheelhouse
+    cmds: ['docker build --target runtime --build-arg VERSION={{.VERSION | default "0.0.0"}} -t livingproof-sim-mujoco:{{.VERSION | default "0.0.0"}} .']

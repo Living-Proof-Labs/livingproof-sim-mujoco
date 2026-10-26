@@ -1,0 +1,17 @@
+services:
+  tooling:
+    build:
+      context: .
+      target: development
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    working_dir: /workspace/mujoco
+    environment:
+      VERSION: "${VERSION:-0.0.0}"
+      REPORTING_FAILURE_FIXTURE: "${REPORTING_FAILURE_FIXTURE:-0}"
+    volumes:
+      - .:/workspace/mujoco
+      - mujoco-venv:/opt/mujoco-venv
+      - mujoco-cache:/opt/mujoco-cache
+volumes:
+  mujoco-venv:
+  mujoco-cache:

@@ -1,0 +1,8 @@
+{
+  "name": "MuJoCo development",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "tooling",
+  "workspaceFolder": "/workspace/mujoco",
+  "overrideCommand": true,
+  "postCreateCommand": "task -t Taskfile.runtime.yml setup"
+}

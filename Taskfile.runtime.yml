@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Adapted from collaboration-guidelines v4.3.0 templates/python/Taskfile.yml.
+version: '3'
+env:
+  UV_PYTHON_DOWNLOADS: never
+tasks:
+  setup:
+    desc: Install locked project dependencies
+    cmds: [uv sync --locked]
+  check:
+    desc: Check formatting, lint and generated CLI reference
+    cmds:
+      - uv run --no-sync ruff check .
+      - uv run --no-sync ruff format --check .
+      - uv run --no-sync python tools/docs.py --check
+  test:
+    desc: Exercise real MuJoCo physics and shutdown with JUnit results
+    cmds: [uv run --no-sync pytest --junitxml=artifacts/tests.xml]
+  docs:
+    desc: Generate CLI reference from executable help
+    cmds: [uv run --no-sync python tools/docs.py]
+  verify:
+    desc: Check code and run physics tests
+    cmds:
+      - task: check
+      - task: test
+  package:
+    desc: Build locked wheelhouse, wheel, source archive and amd64 Debian package
+    cmds: [uv run --no-sync python tools/package.py]

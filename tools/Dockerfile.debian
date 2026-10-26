@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+COPY dist/*.deb /tmp/
+RUN --mount=type=secret,id=ca,required=false,mode=0444 if [ -f /run/secrets/ca ]; then export SSL_CERT_FILE=/run/secrets/ca; fi; sed -i "s|http://deb.debian.org|https://deb.debian.org|g" /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" update && apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" install -y --no-install-recommends /tmp/*.deb && rm -rf /var/lib/apt/lists/* /tmp/*.deb
+USER 65532:65532
+WORKDIR /tmp
+ENTRYPOINT ["livingproof-sim-mujoco"]
