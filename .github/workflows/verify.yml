@@ -1,0 +1,117 @@
+name: MuJoCo verification
+on:
+  pull_request:
+  push:
+    branches: [main, ci/reporting-failure]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      checks: write
+    env:
+      REPORTING_FAILURE_FIXTURE: ${{ github.ref == 'refs/heads/ci/reporting-failure' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e
+        with:
+          version: '3.54.0'
+      - name: Match checkout ownership
+        run: |
+          echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
+      - run: task setup
+      - run: task verify
+      - run: task package
+      - run: task smoke
+      - name: Publish individual tests in job summary
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a
+        with:
+          name: MuJoCo tests (amd64)
+          path: artifacts/*.xml
+          reporter: python-xunit
+          use-actions-summary: 'true'
+          collapsed: never
+          fail-on-error: 'true'
+          fail-on-empty: 'true'
+      - name: Publish test check
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a
+        with:
+          name: MuJoCo tests (amd64)
+          path: artifacts/*.xml
+          reporter: python-xunit
+          use-actions-summary: 'false'
+          collapsed: never
+          fail-on-error: 'true'
+          fail-on-empty: 'true'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mujoco-evidence-amd64
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && hashFiles('dist/**') != '' }}
+        with:
+          name: mujoco-products-amd64
+          path: dist/
+          retention-days: 30
+  release:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v4.3.0
+    with:
+      draft-release: true
+  assemble:
+    needs: release
+    if: needs.release.outputs.draft-created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      RELEASE_TAG: ${{ needs.release.outputs.git-tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.release.outputs.git-tag }}
+          persist-credentials: false
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e
+        with:
+          version: '3.54.0'
+      - run: |
+          echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
+      - run: task setup
+      - run: task verify
+      - run: task package
+      - run: task smoke
+      - name: Save versioned OCI-compatible Docker image archive
+        run: docker save "livingproof-sim-mujoco:$VERSION" | gzip -n > dist/runtime-amd64.tar.gz
+      - name: Checksum complete assets
+        run: |
+          cd dist
+          sha256sum *.whl *.tar.gz *.deb > SHA256SUMS
+      - name: Attach tested assets to draft only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/*.deb dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-evidence
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: error
