@@ -134,6 +134,5 @@ def test_help_and_version():
 
 
 def test_reporting_failure_fixture():
-    assert os.environ.get("REPORTING_FAILURE_FIXTURE") != "1", (
-        "Deliberate reporting fixture failure"
-    )
+    if os.environ.get("REPORTING_FAILURE_FIXTURE") == "1":
+        pytest.fail("Deliberate reporting fixture failure")
