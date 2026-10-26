@@ -52,6 +52,41 @@ def test_compiled_mjb(tmp_path):
     assert invoke("--model", str(path)).returncode == 0
 
 
+@pytest.mark.parametrize("timestep", ["nan", "inf", "-inf"])
+@pytest.mark.parametrize("suffix", ["xml", "mjb"])
+def test_nonfinite_timestep_is_structured_error(tmp_path, timestep, suffix):
+    path = tmp_path / f"model.{suffix}"
+    if suffix == "xml":
+        path.write_text(f'<mujoco><option timestep="{timestep}"/></mujoco>')
+    else:
+        import mujoco
+
+        model = mujoco.MjModel.from_xml_string("<mujoco/>")
+        model.opt.timestep = float(timestep)
+        mujoco.mj_saveModel(model, str(path))
+    result = invoke("--model", str(path), "--steps", "2")
+    assert result.returncode == 2, result.stderr
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert "timestep" in data["diagnostic"]
+    assert data["loaded"] is None
+    assert "builtin:falling" in data["hint"]
+    assert "Traceback" not in result.stderr
+
+
+def test_xml_loading_warning_is_structured_error(tmp_path):
+    path = tmp_path / "warning.xml"
+    path.write_text('<mujoco><worldbody><geom size=".1" rgba="nan 0 0 1"/></worldbody></mujoco>')
+    result = invoke("--model", str(path), "--steps", "2")
+    assert result.returncode == 2, result.stderr
+    data = json.loads(result.stdout)
+    assert data["status"] == "error"
+    assert "model loading warning" in data["diagnostic"]
+    assert "nan" in data["diagnostic"].lower()
+    assert data["loaded"] is None
+    assert "Traceback" not in result.stderr
+
+
 @pytest.mark.parametrize(
     "args",
     [

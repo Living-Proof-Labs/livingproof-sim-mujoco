@@ -92,13 +92,27 @@ def worker(connection, stop, model_path, steps):
         import mujoco
         import numpy as np
 
+        # This callback is process-global; each worker owns one model and exits.
+        warnings = []
+
+        def record_warning(message):
+            if not warnings:
+                warnings.append(str(message)[:2000])
+
+        mujoco.set_mju_user_warning(record_warning)
         path = Path(model_path)
         model = (
             mujoco.MjModel.from_binary_path(str(path))
             if path.suffix.lower() == ".mjb"
             else mujoco.MjModel.from_xml_path(str(path))
         )
+        if not math.isfinite(model.opt.timestep) or model.opt.timestep <= 0:
+            raise ValueError("MuJoCo model timestep must be finite and positive")
+        if warnings:
+            raise ValueError(f"MuJoCo model loading warning: {warnings[0]}")
         data = mujoco.MjData(model)
+        if not np.isfinite(data.qpos).all():
+            raise ValueError("MuJoCo model has non-finite initial positions")
         initial = data.qpos[:16].tolist()
         connection.send(
             {
@@ -114,6 +128,8 @@ def worker(connection, stop, model_path, steps):
             before = data.time
             mujoco.mj_step(model, data)
             completed += 1
+            if warnings:
+                raise ValueError(f"MuJoCo execution warning: {warnings[0]}")
             if (
                 not np.isfinite(data.qpos).all()
                 or not np.isfinite(data.qvel).all()
