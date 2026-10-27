@@ -54,12 +54,14 @@ def main():
     assert help_text in committed, "Run task docs:reference to refresh CLI help"
     (source / "command.md").write_text(committed)
     task_lines = [
-        "# Contributor tasks", "",
+        "# Contributor tasks",
+        "",
         "Host wrappers enter Docker; prepared-container commands use Taskfile.runtime.yml.",
         "",
     ]
     for taskfile, label in (
-        ("Taskfile.yml", "Host"), ("Taskfile.runtime.yml", "Prepared container")
+        ("Taskfile.yml", "Host"),
+        ("Taskfile.runtime.yml", "Prepared container"),
     ):
         listing = json.loads(run("task", "-t", taskfile, "--list", "--json", cwd=ROOT))
         task_lines += ["## " + label, ""]
@@ -91,7 +93,10 @@ def main():
     )
     (OUT / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     (source / "context.md").write_text(
-        "# Build context\n\nDevelopment revision `"
+        "# Build context\n\n"
+        f"[Docs: development · {revision[:7]}]"
+        f"(https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tree/{revision})\n\n"
+        "Development revision `"
         + revision
         + "`; dirty checkout: `"
         + str(dirty).lower()
