@@ -14,6 +14,7 @@ RUN --mount=type=secret,id=ca,required=false,mode=0444 set -eu; \
     tar -xzf "task_linux_${arch}.tar.gz" task; install task /usr/local/bin/task; rm -rf /tmp/task
 ENV UV_PROJECT_ENVIRONMENT=/opt/mujoco-venv UV_CACHE_DIR=/opt/mujoco-cache UV_PYTHON_DOWNLOADS=never UV_SYSTEM_CERTS=true PIP_CACHE_DIR=/opt/mujoco-cache/pip
 RUN mkdir /opt/mujoco-venv /opt/mujoco-cache && chmod 1777 /opt/mujoco-venv /opt/mujoco-cache
+RUN groupadd --gid 1000 vscode && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash vscode
 WORKDIR /workspace/mujoco
 CMD ["sleep", "infinity"]
 

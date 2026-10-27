@@ -3,6 +3,7 @@
   "dockerComposeFile": "../compose.yaml",
   "service": "tooling",
   "workspaceFolder": "/workspace/mujoco",
+  "remoteUser": "vscode",
   "overrideCommand": true,
   "postCreateCommand": "task -t Taskfile.runtime.yml setup"
 }

@@ -33,6 +33,13 @@ Docker and Task 3.54.0 are host prerequisites. `task setup`, `task verify`,
 `task package`, and `task smoke` use the repository Docker environment. The
 .devcontainer configuration reuses its development target. In that prepared
 environment use `task -t Taskfile.runtime.yml setup` and `verify`.
+In Codespaces, wait for the creation setup to finish, then run
+`uv run --no-sync livingproof-sim-mujoco --model builtin:falling --steps 100 --headless`.
+The development user has a writable `/home/vscode`; no sudo is needed.
+If setup fails, inspect the creation log and rerun `task -t Taskfile.runtime.yml setup`
+after resolving the reported error. Use **Codespaces: Rebuild Container** to apply
+changes to the development image. The host `task setup` wrapper requires Docker;
+inside Codespaces use the prepared-environment commands above.
 `task docs` builds the browsable manual; `task docs:reference` generates [the command reference](docs/command.md) from real help.
 
 Runtime dependencies are hash-locked in uv.lock; MuJoCo 3.17.0 is exact-pinned.
