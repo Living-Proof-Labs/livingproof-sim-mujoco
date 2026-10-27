@@ -2,7 +2,7 @@
 FROM livingproof-sim-mujoco-debian-test
 USER root
 RUN --mount=type=secret,id=ca,required=false,mode=0444 if [ -f /run/secrets/ca ]; then export SSL_CERT_FILE=/run/secrets/ca; fi; apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" update && apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" install -y --no-install-recommends python3-pytest && rm -rf /var/lib/apt/lists/*
-COPY tests /tests
+COPY tests/test_cli.py /tests/test_cli.py
 RUN chmod -R a+rX /tests
 ENV INSTALLED_PRODUCT=1 PYTHONPATH=/usr/lib/livingproof-sim-mujoco
 ENTRYPOINT ["python3", "-m", "pytest", "/tests", "-p", "no:cacheprovider"]

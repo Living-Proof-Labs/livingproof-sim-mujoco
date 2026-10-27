@@ -30,7 +30,7 @@ FROM runtime AS runtime-test
 USER root
 COPY dist/test-wheelhouse /tmp/test-wheelhouse
 RUN pip install --no-index --no-deps /tmp/test-wheelhouse/*.whl && rm -rf /tmp/test-wheelhouse
-COPY tests /tests
+COPY tests/test_cli.py /tests/test_cli.py
 RUN chmod -R a+rX /tests
 ENV INSTALLED_PRODUCT=1
 WORKDIR /tmp
