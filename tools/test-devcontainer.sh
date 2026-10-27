@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 mkdir -p artifacts
+# Keep generated Dockerfiles inside the build context so Bake's filesystem
+# boundary works without granting access to host temporary directories.
+export TMPDIR="$PWD/artifacts/devcontainer-tmp"
+mkdir -p "$TMPDIR"
 devcontainer up --workspace-folder "$PWD" --log-level debug 2>&1 | tee artifacts/devcontainer-setup.log
 # A successful `up` alone is insufficient: missing home/user entries can cause
 # lifecycle marker writes to fail and silently skip postCreateCommand.
