@@ -107,6 +107,7 @@ def test_navigation_search_and_loaded_assets(browser):
     page.on("response", lambda r: failures.append(r.url) if r.status >= 400 else None)
     page.set_default_timeout(8000)
     page.goto(url)
+    page.get_by_text("Reference", exact=True).first.click()
     page.get_by_role("link", name="Commands", exact=True).first.click()
     page.wait_for_url("**/command.html")
     assert "--headless" in page.locator("main").inner_text()
