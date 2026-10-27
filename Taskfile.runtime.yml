@@ -13,12 +13,15 @@ tasks:
       - uv run --no-sync ruff check .
       - uv run --no-sync ruff format --check .
       - uv run --no-sync python tools/docs.py --check
+      - uv run --no-sync python tools/task_reference.py --check
   test:
     desc: Exercise real MuJoCo physics and shutdown with JUnit results
     cmds: [uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml]
   docs:reference:
     desc: Generate CLI reference from executable help
-    cmds: [uv run --no-sync python tools/docs.py]
+    cmds:
+      - uv run --no-sync python tools/docs.py
+      - uv run --no-sync python tools/task_reference.py
   verify:
     desc: Check code and run physics tests
     cmds:
@@ -34,5 +37,5 @@ tasks:
     desc: Verify manual links, assets and browser behavior
     cmds: [uv run --no-sync pytest tests/docs --junitxml=artifacts/docs.xml]
   docs:browser:
-    desc: Install pinned Chromium and Linux browser libraries in tooling container
+    desc: Install pinned Chromium in the prepared tooling container
     cmds: [uv run --no-sync playwright install chromium]

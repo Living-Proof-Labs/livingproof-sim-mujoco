@@ -1,0 +1,35 @@
+{
+  "command.html": [
+    "command-reference"
+  ],
+  "context.html": [
+    "build-context"
+  ],
+  "evidence.html": [
+    "verification-record"
+  ],
+  "features.html": [
+    "feature-scenarios",
+    "test_falling_body_advances",
+    "test_xml_relative_include",
+    "test_compiled_mjb",
+    "test_nonfinite_timestep_is_structured_error",
+    "test_xml_loading_warning_is_structured_error",
+    "test_invalid_input_teaches_recovery",
+    "test_malformed_model",
+    "test_timeout_during_startup",
+    "test_timeout_during_physics",
+    "test_signal_shutdown",
+    "test_help_and_version"
+  ],
+  "index.html": [
+    "mujoco-manual"
+  ],
+  "release.html": [
+    "distribution-and-release"
+  ],
+  "verification.html": [
+    "development-and-review",
+    "initial-gaps-and-adoption"
+  ]
+}

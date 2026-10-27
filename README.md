@@ -1,7 +1,9 @@
 # livingproof-sim-mujoco
 
-**Start here: [manual source](docs/index.md)** — rendered preview artifacts are
-available from the PR verification run for 14 days. Public deployment is pending.
+**Start here: [documentation](https://docs.livingprooflabs.com/livingproof-sim-mujoco/)**
+
+The manual follows `main`; its build context identifies the exact source revision.
+[Markdown source](docs/index.md) and 14-day CI preview artifacts remain available.
 
 A small MuJoCo-native command for loading MJCF XML / MJB models and advancing
 headless physics. Original code and documentation: Apache-2.0 (see LICENSE).

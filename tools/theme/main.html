@@ -1,0 +1,13 @@
+{# SPDX-License-Identifier: Apache-2.0 #}
+{% extends "base.html" %}
+{% block footer %}
+<nav aria-label="Documentation links" class="md-grid" style="padding: 1rem; display: flex; flex-wrap: wrap; gap: 1rem; font-size: .75rem;">
+  <a href="https://docs.livingprooflabs.com/">Documentation home</a>
+  <a href="https://github.com/Living-Proof-Labs/livingproof-sim-mujoco">Source</a>
+  <a href="https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tree/{{ config.extra.docs_revision }}">Docs: development · {{ config.extra.docs_revision[:12] }}</a>
+  <a href="https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/issues">Help / report an issue</a>
+  <a href="{{ 'license.html' | url }}">License</a>
+  <a href="https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/actions/workflows/verify.yml?query=branch%3Amain">Verification: main</a>
+</nav>
+{{ super() }}
+{% endblock %}
