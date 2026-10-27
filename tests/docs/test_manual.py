@@ -150,10 +150,16 @@ def test_published_paths_and_heading_fragments_survive():
         assert set(anchors) <= Links(page).ids, filename
 
 
-def test_native_task_reference_is_current():
+@pytest.mark.parametrize("inherited", [False, True], ids=["host-env", "container-env"])
+def test_native_task_reference_is_current(inherited):
     import subprocess
 
-    subprocess.run(["python", "tools/task_reference.py", "--check"], check=True)
+    env = dict(os.environ)
+    if inherited:
+        env["UV_PYTHON_DOWNLOADS"] = "never"
+    else:
+        env.pop("UV_PYTHON_DOWNLOADS", None)
+    subprocess.run(["python", "tools/task_reference.py", "--check"], check=True, env=env)
     html = (SITE / "tasks.html").read_text()
     assert "task -t Taskfile.runtime.yml setup" in html
     assert "docker compose run" in html

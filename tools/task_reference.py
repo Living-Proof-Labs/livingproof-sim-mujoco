@@ -11,9 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def capture(*args):
-    return subprocess.check_output(
-        args, cwd=ROOT, text=True, env={**os.environ, "VERSION": "0.0.0"}
-    ).strip()
+    # Task summaries show only environment assignments not already inherited.
+    # Keep the reviewed Taskfile's declaration visible in either execution context.
+    env = {key: value for key, value in os.environ.items() if key != "UV_PYTHON_DOWNLOADS"}
+    env["VERSION"] = "0.0.0"
+    return subprocess.check_output(args, cwd=ROOT, text=True, env=env).strip()
 
 
 def render():
