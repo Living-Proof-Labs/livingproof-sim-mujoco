@@ -3,7 +3,7 @@ ARG PYTHON_IMAGE=python:3.11.14-slim-bookworm@sha256:65a93d69fa75478d554f4ad27c8
 FROM ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 AS uv-tools
 FROM ${PYTHON_IMAGE} AS development
 COPY --from=uv-tools /uv /uvx /usr/local/bin/
-RUN --mount=type=secret,id=ca,required=false,mode=0444 if [ -f /run/secrets/ca ]; then export SSL_CERT_FILE=/run/secrets/ca; fi; sed -i "s|http://deb.debian.org|https://deb.debian.org|g" /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" update && apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" install -y --no-install-recommends git curl ca-certificates dpkg-dev && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=secret,id=ca,required=false,mode=0444 if [ -f /run/secrets/ca ]; then export SSL_CERT_FILE=/run/secrets/ca; fi; sed -i "s|http://deb.debian.org|https://deb.debian.org|g" /etc/apt/sources.list.d/debian.sources && apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" update && apt-get -o Acquire::https::CaInfo="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" install -y --no-install-recommends git curl ca-certificates dpkg-dev libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 && rm -rf /var/lib/apt/lists/*
 ARG TASK_VERSION=3.54.0
 RUN --mount=type=secret,id=ca,required=false,mode=0444 set -eu; \
     if [ -f /run/secrets/ca ]; then export CURL_CA_BUNDLE=/run/secrets/ca; fi; \

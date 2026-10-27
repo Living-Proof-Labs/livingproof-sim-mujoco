@@ -12,7 +12,7 @@ tasks:
     desc: Test real MuJoCo execution in Docker
     cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml test]
   docs:
-    desc: Generate executable command help
+    desc: Build the browsable manual
     cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml docs]
   verify:
     desc: Check and test in the development environment
@@ -27,3 +27,11 @@ tasks:
   image:
     desc: Build the versioned runtime image from the tested wheelhouse
     cmds: ['docker build --target runtime --build-arg VERSION={{.VERSION | default "0.0.0"}} -t livingproof-sim-mujoco:{{.VERSION | default "0.0.0"}} .']
+  docs:reference:
+    desc: Refresh the executable command reference
+    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml docs:reference]
+  test:docs:
+    desc: Test the rendered manual in Chromium
+    cmds:
+      - docker compose run --rm -e PLAYWRIGHT_BROWSERS_PATH=/opt/mujoco-cache/browsers tooling task -t Taskfile.runtime.yml docs:browser
+      - docker compose run --rm -e PLAYWRIGHT_BROWSERS_PATH=/opt/mujoco-cache/browsers tooling task -t Taskfile.runtime.yml test:docs

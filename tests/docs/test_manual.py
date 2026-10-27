@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Exercise the delivered HTML over HTTP, including its actual assets."""
+
+from functools import partial
+from html.parser import HTMLParser
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import json
+from pathlib import Path
+import threading
+from urllib.parse import unquote, urlsplit
+
+import pytest
+from playwright.sync_api import sync_playwright
+
+SITE = Path("artifacts/manual/html").resolve()
+
+
+class Links(HTMLParser):
+    def __init__(self, path):
+        super().__init__()
+        self.links = []
+        self.ids = set()
+        self.feed(path.read_text())
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if "id" in attrs:
+            self.ids.add(attrs["id"])
+        for key in ("href", "src"):
+            if key in attrs:
+                self.links.append(attrs[key])
+
+
+def test_all_local_pages_assets_and_fragments():
+    pages = {p: Links(p) for p in SITE.rglob("*.html")}
+    assert len(pages) >= 7
+    for page, parsed in pages.items():
+        for link in parsed.links:
+            url = urlsplit(link)
+            if url.scheme or url.netloc or link.startswith("data:"):
+                continue
+            local = unquote(url.path)
+            if local.startswith("/"):
+                assert local.startswith("/livingproof-sim-mujoco/"), (page, link)
+                target = SITE / local.removeprefix("/livingproof-sim-mujoco/")
+            else:
+                target = (page.parent / local).resolve() if local else page
+            if target.is_dir():
+                target /= "index.html"
+            assert target.is_relative_to(SITE), (page, link)
+            assert target.exists(), (page, link)
+            if url.fragment and target in pages:
+                assert unquote(url.fragment) in pages[target].ids, (page, link)
+
+
+def test_canonical_sources_and_installed_identity():
+    import hashlib
+
+    record = json.loads((SITE / "provenance.json").read_text())
+    assert len(record["revision"]) == 40
+    assert record["identity"]["provenance"] == "recorded-build"
+    for name, digest in record["source_hashes"].items():
+        assert hashlib.sha256((Path("docs") / name).read_bytes()).hexdigest() == digest
+    assert (
+        "https://docs.livingprooflabs.com/livingproof-sim-mujoco/"
+        in (SITE / "index.html").read_text()
+    )
+    scenarios = (SITE / "features.html").read_text()
+    assert "test_falling_body_advances" in scenarios
+    assert "PASSED" in scenarios
+
+
+@pytest.fixture(scope="module")
+def browser():
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=SITE)
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=["--no-sandbox"])
+        yield browser, f"http://127.0.0.1:{server.server_port}"
+        browser.close()
+    server.shutdown()
+    thread.join()
+
+
+def test_navigation_search_and_loaded_assets(browser):
+    engine, url = browser
+    page = engine.new_page()
+    failures = []
+    page.on("requestfailed", lambda r: failures.append(r.url))
+    page.on("response", lambda r: failures.append(r.url) if r.status >= 400 else None)
+    page.set_default_timeout(8000)
+    page.goto(url)
+    page.get_by_role("link", name="Command", exact=True).first.click()
+    page.wait_for_url("**/command.html")
+    assert "--headless" in page.locator("main").inner_text()
+    page.get_by_role("button", name="Search", exact=False).click()
+    search = page.get_by_placeholder("Search", exact=True)
+    search.fill("timestep")
+    result = page.locator('dialog a[href*="features.html"]').first
+    result.wait_for()
+    result.click()
+    page.wait_for_url("**/features.html*")
+    assert not failures, failures
+    page.screenshot(path="artifacts/manual/search.png", full_page=True)
+    page.close()
+
+
+def test_mobile_navigation_and_themes(browser):
+    engine, url = browser
+    page = engine.new_page(viewport={"width": 390, "height": 844}, color_scheme="dark")
+    page.set_default_timeout(8000)
+    page.goto(url)
+    page.wait_for_function("document.body.getAttribute('data-md-color-scheme') === 'slate'")
+    page.locator('[data-md-component="palette"] label:visible').first.click()
+    page.wait_for_function("document.body.getAttribute('data-md-color-scheme') === 'default'")
+    page.locator('[data-md-component="palette"] label:visible').first.click()
+    page.wait_for_function("document.body.getAttribute('data-md-color-scheme') === 'slate'")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.locator('label[for="__drawer"]:visible').first.click()
+    page.get_by_role("link", name="Feature scenarios", exact=True).first.click()
+    page.wait_for_url("**/features.html")
+    page.screenshot(path="artifacts/manual/mobile-dark.png", full_page=True)
+    page.close()

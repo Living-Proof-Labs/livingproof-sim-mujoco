@@ -1,6 +1,6 @@
 # Agent instructions
 
-Read [collaboration-guidelines v4.3.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v4.3.0/AGENTS.md)
+Read [collaboration-guidelines v5.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v5.0.0/AGENTS.md)
 and its applicable procedures before changing this repository.
 Local additions: keep this a concrete native MuJoCo CLI; no robot adapters,
 umbrella runner, Unitree SDK or motor control. Use released livingproof-common
