@@ -11,6 +11,9 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+import yaml
+from task_reference import render as render_tasks
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts/manual"
 
@@ -25,6 +28,9 @@ def main():
     if source.exists():
         shutil.rmtree(source)
     shutil.copytree(ROOT / "docs", source)
+    tasks = render_tasks()
+    if (source / "tasks.md").read_text() != tasks:
+        raise SystemExit("Task reference is stale. Run task docs:reference.")
     wheel_dir = OUT / "wheel"
     if wheel_dir.exists():
         shutil.rmtree(wheel_dir)
@@ -82,7 +88,11 @@ def main():
         + "`; dirty checkout: `"
         + str(dirty).lower()
         + "`.\n\n"
-        "CI run: " + provenance["ci_run"] + "\n\n"
+        "[Docs: development · " + revision[:12] + "]"
+        "(https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tree/" + revision + ").\n\n"
+        "This immutable documentation revision is separate from the installed test candidate below. "
+        "See [distribution](release.md) for the published package release and historical-source policy.\n\n"
+        "CI run: " + (f"[Verification run]({run_url})" if ci_run else run_url) + "\n\n"
         "Installed wheel SHA256: `"
         + provenance["wheel_sha256"]
         + "`.\n\n```json\n"
@@ -138,7 +148,15 @@ def main():
             lines.append(f"| `{c.attrib['name']}` | {status} |")
         lines.append("")
     (source / "features.md").write_text("\n".join(lines))
-    subprocess.run(["zensical", "build", "--clean", "-f", "mkdocs.yml"], cwd=ROOT, check=True)
+    config = yaml.safe_load((ROOT / "mkdocs.yml").read_text())
+    config["docs_dir"] = "source"
+    config["site_dir"] = "html"
+    shutil.copytree(ROOT / "tools/theme", OUT / "theme", dirs_exist_ok=True)
+    config["theme"]["custom_dir"] = "theme"
+    config["extra"] = {"docs_revision": revision}
+    config_path = OUT / "config.yml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    subprocess.run(["zensical", "build", "--clean", "-f", str(config_path)], cwd=ROOT, check=True)
     shutil.copy(OUT / "provenance.json", OUT / "html/provenance.json")
 
 

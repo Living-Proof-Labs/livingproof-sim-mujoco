@@ -6,15 +6,22 @@ strict: true
 docs_dir: artifacts/manual/source
 site_dir: artifacts/manual/html
 nav:
+  - Documentation home: https://docs.livingprooflabs.com/
   - Start here: index.md
-  - Command: command.md
-  - Feature scenarios: features.md
-  - Build context: context.md
-  - Development and review: verification.md
-  - Distribution: release.md
+  - Guides:
+      - Installation and distribution: release.md
+  - Reference:
+      - Commands: command.md
+      - Tasks: tasks.md
+  - Scenarios and results: features.md
+  - Verification: verification.md
+  - Contribute: contribute.md
+  - Version and source: context.md
+  - License: license.md
   - Historical evidence: evidence.md
 theme:
   name: zensical
+  custom_dir: tools/theme
   font: false
   palette:
     - media: '(prefers-color-scheme)'

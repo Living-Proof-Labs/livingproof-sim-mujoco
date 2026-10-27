@@ -1,5 +1,11 @@
 # Distribution and release
 
+[Package release v1.0.0](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/releases/tag/v1.0.0)
+is the published release verified on 2026-10-27; v1.0.1 is still a draft.
+This development manual and its tested candidate metadata are separate from
+that package release. Historical manuals are not maintained; consult the
+[source release tags](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tags).
+
 Python wheels, a Debian package for Debian 12 amd64, and a versioned Docker
 runtime image are the initial products. Wheels are pure Python wrappers but
 require native MuJoCo and NumPy wheels. ARM, Windows and macOS are unverified.
