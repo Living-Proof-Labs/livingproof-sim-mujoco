@@ -28,3 +28,13 @@ at build time. The headless runtime adds no system packages to its digest-pinned
 base; its Python dependencies come from the locked wheelhouse. Image build
 timestamps still prevent a claim of bit-for-bit image reproducibility without a
 separate uncached comparison. Capture final image digest and inventories for release.
+
+## Registry migration gate
+
+[Shared distribution issue 29](https://github.com/Living-Proof-Labs/collaboration-guidelines/issues/29)
+prefers public registry delivery for future routine releases. MuJoCo retains its
+archive until the same version and Linux amd64 image has an independently verified
+anonymous digest-pinned pull and physics run. The current workflow has no registry
+publisher; this documentation change grants no publishing permissions. Existing
+assets and non-image packages remain unchanged. A registry manifest digest must
+not be substituted with the local Docker image ID.

@@ -17,5 +17,10 @@ Historical manuals are not maintained; consult the matching source tag for an ol
 
 This manual is a review preview. Public Pages deployment and live acceptance are pending.
 Related manuals: [Living Proof](https://docs.livingprooflabs.com/livingproof/) and
-[collaboration guidelines](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v5.0.0).
+[collaboration guidelines](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v6.0.0).
 [Source repository](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco).
+
+[Documentation home](https://docs.livingprooflabs.com/) ·
+[Contribute](contribute.md) ·
+[Help / report an issue](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/issues) ·
+[License: Apache-2.0](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/blob/main/LICENSE)

@@ -53,6 +53,20 @@ def main():
     committed = (source / "command.md").read_text()
     assert help_text in committed, "Run task docs:reference to refresh CLI help"
     (source / "command.md").write_text(committed)
+    task_lines = [
+        "# Contributor tasks", "",
+        "Host wrappers enter Docker; prepared-container commands use Taskfile.runtime.yml.",
+        "",
+    ]
+    for taskfile, label in (
+        ("Taskfile.yml", "Host"), ("Taskfile.runtime.yml", "Prepared container")
+    ):
+        listing = json.loads(run("task", "-t", taskfile, "--list", "--json", cwd=ROOT))
+        task_lines += ["## " + label, ""]
+        for item in listing["tasks"]:
+            summary = run("task", "-t", taskfile, item["name"], "--summary", cwd=ROOT)
+            task_lines += ["### " + item["name"], "", "```text", summary, "```", ""]
+    (source / "tasks.md").write_text("\n".join(task_lines))
     revision = run("git", "rev-parse", "HEAD", cwd=ROOT)
     dirty = bool(run("git", "status", "--porcelain", cwd=ROOT))
     ci_run = os.environ.get("GITHUB_RUN_ID")
