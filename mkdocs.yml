@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+site_name: Living Proof Labs — MuJoCo
+site_url: https://docs.livingprooflabs.com/livingproof-sim-mujoco/
+use_directory_urls: false
+strict: true
+docs_dir: artifacts/manual/source
+site_dir: artifacts/manual/html
+nav:
+  - Start here: index.md
+  - Command: command.md
+  - Feature scenarios: features.md
+  - Build context: context.md
+  - Development and review: verification.md
+  - Distribution: release.md
+  - Historical evidence: evidence.md
+theme:
+  name: zensical
+  font: false
+  palette:
+    - media: '(prefers-color-scheme)'
+      toggle: {icon: lucide/sun-moon, name: Switch to light mode}
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      toggle: {icon: lucide/sun, name: Switch to dark mode}
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      toggle: {icon: lucide/moon, name: Switch to system preference}
+markdown_extensions:
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences

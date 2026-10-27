@@ -17,6 +17,7 @@ def invoke(*args):
 
 
 def test_falling_body_advances():
+    """Given the built-in sphere, when advanced 100 steps, then gravity lowers its height and simulation time is 0.2 seconds."""
     result = invoke("--steps", "100", "--headless")
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
@@ -30,6 +31,7 @@ def test_falling_body_advances():
 
 
 def test_xml_relative_include(tmp_path):
+    """Given XML with a relative include, when loaded by the command, then three native physics steps complete."""
     (tmp_path / "body.xml").write_text(
         '<mujocoinclude><body><joint type="slide" axis="0 0 1"/><geom size=".1"/></body></mujocoinclude>'
     )
@@ -42,6 +44,7 @@ def test_xml_relative_include(tmp_path):
 
 
 def test_compiled_mjb(tmp_path):
+    """Given a compiled MuJoCo model, when loaded by the command, then execution succeeds."""
     import mujoco
 
     model = mujoco.MjModel.from_xml_string(
@@ -55,6 +58,7 @@ def test_compiled_mjb(tmp_path):
 @pytest.mark.parametrize("timestep", ["nan", "inf", "-inf"])
 @pytest.mark.parametrize("suffix", ["xml", "mjb"])
 def test_nonfinite_timestep_is_structured_error(tmp_path, timestep, suffix):
+    """Given a nonfinite timestep in XML or MJB, when loaded, then execution returns 2 with a structured diagnostic."""
     path = tmp_path / f"model.{suffix}"
     if suffix == "xml":
         path.write_text(f'<mujoco><option timestep="{timestep}"/></mujoco>')
@@ -75,6 +79,7 @@ def test_nonfinite_timestep_is_structured_error(tmp_path, timestep, suffix):
 
 
 def test_xml_loading_warning_is_structured_error(tmp_path):
+    """Given a model producing a native loading warning, when loaded, then execution returns 2 without a traceback."""
     path = tmp_path / "warning.xml"
     path.write_text('<mujoco><worldbody><geom size=".1" rgba="nan 0 0 1"/></worldbody></mujoco>')
     result = invoke("--model", str(path), "--steps", "2")
@@ -100,6 +105,7 @@ def test_xml_loading_warning_is_structured_error(tmp_path):
     ],
 )
 def test_invalid_input_teaches_recovery(args):
+    """Given invalid arguments or an absent model, when invoked, then the command returns 2 and explains the error."""
     result = invoke(*args)
     assert result.returncode == 2
     assert result.stderr
@@ -107,6 +113,7 @@ def test_invalid_input_teaches_recovery(args):
 
 
 def test_malformed_model(tmp_path):
+    """Given malformed model XML, when loaded, then the command returns 2 with a recovery hint."""
     path = tmp_path / "bad.xml"
     path.write_text("<mujoco><invalid/></mujoco>")
     result = invoke("--model", str(path))
@@ -116,6 +123,7 @@ def test_malformed_model(tmp_path):
 
 
 def test_timeout_during_startup():
+    """Given a short startup deadline, when invoked, then the command returns 124 within four seconds."""
     start = time.monotonic()
     result = invoke("--timeout", "0.001")
     assert result.returncode == 124
@@ -124,6 +132,7 @@ def test_timeout_during_startup():
 
 
 def test_timeout_during_physics():
+    """Given a long physics run, when its deadline expires, then it returns 124 after observable steps and cooperative worker exit."""
     result = invoke("--steps", "1000000000", "--timeout", "1")
     assert result.returncode == 124
     data = json.loads(result.stdout)
@@ -134,6 +143,7 @@ def test_timeout_during_physics():
 
 @pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
 def test_signal_shutdown(signum):
+    """Given running physics, when SIGINT or SIGTERM arrives, then the command returns 130 or 143 and the worker exits cooperatively."""
     process = subprocess.Popen(
         [CLI, "--steps", "1000000000", "--timeout", "10"],
         stdout=subprocess.PIPE,
@@ -160,6 +170,7 @@ def test_signal_shutdown(signum):
 
 
 def test_help_and_version():
+    """Given an installed command, when help or version is requested, then scope and pinned dependency identities are visible."""
     assert "capability PASS" in invoke("--help").stdout
     data = json.loads(invoke("--version").stdout)
     assert data["livingproof_common"] == "1.0.0"

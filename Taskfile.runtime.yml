@@ -15,8 +15,8 @@ tasks:
       - uv run --no-sync python tools/docs.py --check
   test:
     desc: Exercise real MuJoCo physics and shutdown with JUnit results
-    cmds: [uv run --no-sync pytest --junitxml=artifacts/tests.xml]
-  docs:
+    cmds: [uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml]
+  docs:reference:
     desc: Generate CLI reference from executable help
     cmds: [uv run --no-sync python tools/docs.py]
   verify:
@@ -27,3 +27,12 @@ tasks:
   package:
     desc: Build locked wheelhouse, wheel, source archive and amd64 Debian package
     cmds: [uv run --no-sync python tools/package.py]
+  docs:
+    desc: Build Markdown manual with installed-wheel help and scenario results
+    cmds: [uv run --no-sync python tools/manual.py]
+  test:docs:
+    desc: Verify manual links, assets and browser behavior
+    cmds: [uv run --no-sync pytest tests/docs --junitxml=artifacts/docs.xml]
+  docs:browser:
+    desc: Install pinned Chromium and Linux browser libraries in tooling container
+    cmds: [uv run --no-sync playwright install chromium]

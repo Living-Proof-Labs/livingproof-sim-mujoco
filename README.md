@@ -1,5 +1,8 @@
 # livingproof-sim-mujoco
 
+**Start here: [manual source](docs/index.md)** — rendered preview artifacts are
+available from the PR verification run for 14 days. Public deployment is pending.
+
 A small MuJoCo-native command for loading MJCF XML / MJB models and advancing
 headless physics. Original code and documentation: Apache-2.0 (see LICENSE).
 
@@ -28,7 +31,7 @@ Docker and Task 3.54.0 are host prerequisites. `task setup`, `task verify`,
 `task package`, and `task smoke` use the repository Docker environment. The
 .devcontainer configuration reuses its development target. In that prepared
 environment use `task -t Taskfile.runtime.yml setup` and `verify`.
-`task docs` generates [the command reference](docs/command.md) from real help.
+`task docs` builds the browsable manual; `task docs:reference` generates [the command reference](docs/command.md) from real help.
 
 Runtime dependencies are hash-locked in uv.lock; MuJoCo 3.17.0 is exact-pinned.
 The engine wheel bundles the native engine. Shared identity uses the released

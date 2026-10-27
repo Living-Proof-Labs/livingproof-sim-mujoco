@@ -6,6 +6,10 @@ services:
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     working_dir: /workspace/mujoco
     environment:
+      GITHUB_ACTIONS: "${GITHUB_ACTIONS:-}"
+      GITHUB_RUN_ID: "${GITHUB_RUN_ID:-}"
+      GITHUB_REPOSITORY: "${GITHUB_REPOSITORY:-}"
+      GITHUB_SERVER_URL: "${GITHUB_SERVER_URL:-}"
       VERSION: "${VERSION:-0.0.0}"
       REPORTING_FAILURE_FIXTURE: "${REPORTING_FAILURE_FIXTURE:-0}"
     volumes:
