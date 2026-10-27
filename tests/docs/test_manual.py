@@ -5,6 +5,7 @@ from functools import partial
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import threading
 from urllib.parse import unquote, urlsplit
@@ -68,6 +69,19 @@ def test_canonical_sources_and_installed_identity():
     scenarios = (SITE / "features.html").read_text()
     assert "test_falling_body_advances" in scenarios
     assert "PASSED" in scenarios
+
+
+def test_run_context_in_delivered_manual():
+    record = json.loads((SITE / "provenance.json").read_text())
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        expected = (
+            f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+            f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+        )
+    else:
+        expected = "local; hosted publication unverified"
+    assert record["ci_run"] == expected
+    assert expected in (SITE / "context.html").read_text()
 
 
 @pytest.fixture(scope="module")

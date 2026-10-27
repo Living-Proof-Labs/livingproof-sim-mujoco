@@ -29,6 +29,15 @@ jobs:
       - run: task verify
       - run: task docs
         if: ${{ !cancelled() && hashFiles('artifacts/tests.xml') != '' }}
+      - name: Verify preview provenance against runner context
+        if: ${{ !cancelled() && hashFiles('artifacts/manual/html/provenance.json') != '' }}
+        env:
+          EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          jq -e --arg revision "$EXPECTED_REVISION" \
+            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '.revision == $revision and .ci_run == $run and .dirty == false' \
+            artifacts/manual/html/provenance.json
       - run: task test:docs
         if: ${{ !cancelled() && hashFiles('artifacts/manual/html/index.html') != '' }}
       - run: task package

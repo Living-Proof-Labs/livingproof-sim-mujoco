@@ -56,6 +56,15 @@ def main():
     revision = run("git", "rev-parse", "HEAD", cwd=ROOT)
     dirty = bool(run("git", "status", "--porcelain", cwd=ROOT))
     ci_run = os.environ.get("GITHUB_RUN_ID")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        required = ("GITHUB_RUN_ID", "GITHUB_REPOSITORY", "GITHUB_SERVER_URL")
+        if any(not os.environ.get(name) for name in required):
+            raise SystemExit("Hosted documentation requires complete GitHub run context")
+    run_url = (
+        f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{ci_run}"
+        if ci_run
+        else "local; hosted publication unverified"
+    )
     provenance = dict(
         revision=revision,
         dirty=dirty,
@@ -64,11 +73,7 @@ def main():
         source_hashes={
             f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in (ROOT / "docs").glob("*.md")
         },
-        ci_run=(
-            f"https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/actions/runs/{ci_run}"
-            if ci_run
-            else "local; hosted publication unverified"
-        ),
+        ci_run=run_url,
     )
     (OUT / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     (source / "context.md").write_text(
