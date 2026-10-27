@@ -151,16 +151,22 @@ def test_published_paths_and_heading_fragments_survive():
 
 
 @pytest.mark.parametrize("inherited", [False, True], ids=["host-env", "container-env"])
-def test_native_task_reference_is_current(inherited):
+@pytest.mark.parametrize("forced_color", [False, True], ids=["default", "forced-color"])
+def test_native_task_reference_is_current(inherited, forced_color):
     import subprocess
 
     env = dict(os.environ)
+    if forced_color:
+        env.pop("NO_COLOR", None)
+        env.update(FORCE_COLOR="1", CLICOLOR_FORCE="1")
     if inherited:
         env["UV_PYTHON_DOWNLOADS"] = "never"
     else:
         env.pop("UV_PYTHON_DOWNLOADS", None)
     subprocess.run(["python", "tools/task_reference.py", "--check"], check=True, env=env)
     html = (SITE / "tasks.html").read_text()
+    assert "\x1b" not in Path("docs/tasks.md").read_text()
+    assert "\x1b" not in html
     assert "task -t Taskfile.runtime.yml setup" in html
     assert "docker compose run" in html
     assert "VERSION=0.0.0" in html

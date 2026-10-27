@@ -15,7 +15,9 @@ def capture(*args):
     # Keep the reviewed Taskfile's declaration visible in either execution context.
     env = {key: value for key, value in os.environ.items() if key != "UV_PYTHON_DOWNLOADS"}
     env["VERSION"] = "0.0.0"
-    return subprocess.check_output(args, cwd=ROOT, text=True, env=env).strip()
+    return subprocess.check_output(
+        [args[0], "--color=false", *args[1:]], cwd=ROOT, text=True, env=env
+    ).strip()
 
 
 def render():
