@@ -96,11 +96,7 @@ def main():
         "# Build context\n\n"
         f"[Docs: development · {revision[:7]}]"
         f"(https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tree/{revision})\n\n"
-        "Development revision `"
-        + revision
-        + "`; dirty checkout: `"
-        + str(dirty).lower()
-        + "`.\n\n"
+        "Development revision `" + revision + "`; dirty checkout: `" + str(dirty).lower() + "`.\n\n"
         "CI run: " + provenance["ci_run"] + "\n\n"
         "Installed wheel SHA256: `"
         + provenance["wheel_sha256"]
