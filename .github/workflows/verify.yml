@@ -26,6 +26,11 @@ jobs:
           echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
           echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
       - run: task setup
+      - name: Verify Dev Containers lifecycle and installed CLI
+        run: |
+          npm install --prefix "$RUNNER_TEMP/devcontainer-cli" @devcontainers/cli@0.89.0
+          export PATH="$RUNNER_TEMP/devcontainer-cli/node_modules/.bin:$PATH"
+          bash tools/test-devcontainer.sh
       - run: task verify
       - run: task docs
         if: ${{ !cancelled() && hashFiles('artifacts/tests.xml') != '' }}
