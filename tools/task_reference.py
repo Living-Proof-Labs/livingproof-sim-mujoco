@@ -13,7 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def capture(*args):
     # Task summaries show only environment assignments not already inherited.
     # Keep the reviewed Taskfile's declaration visible in either execution context.
-    env = {key: value for key, value in os.environ.items() if key != "UV_PYTHON_DOWNLOADS"}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"UV_PYTHON_DOWNLOADS", "LIVINGPROOF_TOOLING"}
+    }
     env["VERSION"] = "0.0.0"
     return subprocess.check_output(
         [args[0], "--color=false", *args[1:]], cwd=ROOT, text=True, env=env
@@ -32,8 +36,8 @@ def render():
         "Taskfiles; generation does not execute task bodies. Examples use `VERSION=0.0.0`",
         "as a placeholder, not a package release claim.",
         "",
-        "Host commands require Docker and Task. Inside the prepared development container,",
-        "use `task -t Taskfile.runtime.yml`; do not call the host Docker wrapper recursively.",
+        "Ordinary commands run directly inside the development image (LIVINGPROOF_TOOLING=1).",
+        "On the host they use Docker and Task. Explicit prepared-environment commands remain available.",
         "",
     ]
     for filename, title in [

@@ -2,7 +2,41 @@
 
 Docker and Task 3.54.0 are host prerequisites. Run `task setup`, `task verify`,
 `task package`, and `task smoke` for the existing product checks. The devcontainer
-uses the same development image. Within it use `task -t Taskfile.runtime.yml`.
+uses the same development image. Its `LIVINGPROOF_TOOLING=1` marker makes
+ordinary `task setup`, `task check`, `task test`, and `task verify` run directly.
+Explicit `task -t Taskfile.runtime.yml` commands also remain available. Bare
+`task` lists commands without an error. Image and smoke tasks still require a
+Docker host; no Docker-in-Docker is needed for development tooling.
+
+## Browser simulation playback
+
+Inside the Linux amd64 devcontainer run `task preview`. In the browser editor's
+Ports tab, add port 8000 if needed, confirm **Private** visibility, and use
+**Open in Browser** while signed into the same GitHub account. Codespaces supplies
+the forwarded HTTPS URL; localhost on your laptop is not the remote server.
+[GitHub documents private forwarding](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace).
+No public port, GPU, desktop, or local ARM execution is required.
+
+The development-only helper renders the unchanged built-in falling model with
+MuJoCo's CPU OSMesa backend: 200 steps, 0.4 simulation seconds, 41 frames.
+Play/Pause and a slider inspect recorded playback at one tenth speed; they do
+not control live physics. The sphere has no floor. This is engine evidence,
+not a robot capability claim. The installed CLI and its runtime dependencies
+remain headless. The helper serves only its generated assets on loopback and
+stops with Ctrl+C. Run `task preview` again to regenerate.
+
+Existing containers need **Codespaces: Rebuild Container** for the tooling marker
+and OSMesa library. Until then, `task -t Taskfile.runtime.yml setup` followed by
+`task -t Taskfile.runtime.yml test` bypasses Docker. For a busy port use
+`uv run --no-sync python tools/preview.py --port 8001` and privately forward 8001.
+
+`tools/test-devcontainer.sh` exercises creation setup, bare task, setup, physics
+tests, and rendered playback tests as a non-root user with no Docker executable.
+`task test:preview` checks physics samples, changed rendered frames, HTTP asset
+isolation, and Play/Pause/scrub/replay in Chromium. These local tests do not
+establish a hosted Codespaces authentication or port-forwarding session.
+
+## Manual checks
 
 Run `task docs` to build the manual and `task test:docs` to check its HTML and
 browser behavior. The browser task installs the Chromium revision pinned by

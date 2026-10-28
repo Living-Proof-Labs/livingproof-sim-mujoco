@@ -11,6 +11,10 @@ The command emits JSON; a successful exit is engine evidence, never robot capabi
 Use trusted local models. Native parsing is not a security sandbox.
 Native engine availability does not establish capability-pipeline integration.
 
+For a browser-visible experience in Codespaces, run `task preview` inside the
+devcontainer and open private port 8000. This is rendered playback, not live
+interactive simulation; see the [browser playback instructions](verification.md#browser-simulation-playback).
+
 Read the [command reference](command.md), [feature scenarios](features.md),
 [development and review guide](verification.md), and [distribution guide](release.md).
 [Build context](context.md) identifies this development manual's exact source and installed command.

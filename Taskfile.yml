@@ -2,36 +2,52 @@
 # Adapted from collaboration-guidelines v4.3.0 templates/container/Taskfile.yml.
 version: '3'
 tasks:
+  default:
+    desc: Show available commands
+    cmds: [task --list]
   setup:
     desc: Build the development image and install locked dependencies
-    cmds: [docker compose run --build --rm tooling task -t Taskfile.runtime.yml setup]
+    cmds: [bash tools/run-task.sh setup]
   check:
-    desc: Check code and generated help in Docker
-    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml check]
+    desc: Check code and generated help in the development environment
+    cmds: [bash tools/run-task.sh check]
   test:
-    desc: Test real MuJoCo execution in Docker
-    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml test]
+    desc: Test real MuJoCo execution in the development environment
+    cmds: [bash tools/run-task.sh test]
   docs:
     desc: Build the browsable manual
-    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml docs]
+    cmds: [bash tools/run-task.sh docs]
   verify:
     desc: Check and test in the development environment
-    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml verify]
+    cmds: [bash tools/run-task.sh verify]
   package:
     desc: Build Python and Debian products
-    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml package]
+    cmds: [bash tools/run-task.sh package]
   smoke:
+    preconditions:
+      - sh: command -v docker
+        msg: 'This host product task requires Docker. Run it on a Docker host; inside the container use task verify or task package.'
     desc: Test installed wheel, Debian package and runtime image
     platforms: [linux]
     cmds: [bash tools/smoke.sh]
   image:
+    preconditions:
+      - sh: command -v docker
+        msg: 'This host product task requires Docker. Run it on a Docker host; inside the container use task verify or task package.'
     desc: Build the versioned runtime image from the tested wheelhouse
     cmds: ['docker build --target runtime --build-arg VERSION={{.VERSION | default "0.0.0"}} -t livingproof-sim-mujoco:{{.VERSION | default "0.0.0"}} .']
   docs:reference:
     desc: Refresh generated command and Task references
-    cmds: [docker compose run --rm tooling task -t Taskfile.runtime.yml docs:reference]
+    cmds: [bash tools/run-task.sh docs:reference]
   test:docs:
     desc: Test the rendered manual in Chromium
-    cmds:
-      - docker compose run --rm -e PLAYWRIGHT_BROWSERS_PATH=/opt/mujoco-cache/browsers tooling task -t Taskfile.runtime.yml docs:browser
-      - docker compose run --rm -e PLAYWRIGHT_BROWSERS_PATH=/opt/mujoco-cache/browsers tooling task -t Taskfile.runtime.yml test:docs
+    cmds: [bash tools/run-task.sh test:docs]
+  preview:
+    desc: Render falling-sphere playback and serve it on private forwarded port 8000 (container only)
+    preconditions:
+      - sh: test "${LIVINGPROOF_TOOLING:-}" = 1
+        msg: 'Open the development container, then run task preview. For prepared environments use task -t Taskfile.runtime.yml preview.'
+    cmds: [task -t Taskfile.runtime.yml preview]
+  test:preview:
+    desc: Test rendered playback and browser controls
+    cmds: [bash tools/run-task.sh test:preview]
