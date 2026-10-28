@@ -59,6 +59,12 @@ one tenth speed, not live interactive simulation, a robot demo, or a desktop
 MuJoCo viewer. It records 200 steps / 0.4 simulation seconds; the model has no floor.
 Ctrl+C stops serving. Re-run `task preview` to regenerate the frames.
 
+Run `task render` to generate the same 41 PNG frames, `trajectory.json`
+(including engine identity and recorded positions), and `index.html` under
+`artifacts/preview` without starting a server. CI retains these in the
+`mujoco-evidence-amd64` artifact for 14 days. The HTML playback requires a
+local HTTP server; individual PNGs and the JSON can be inspected directly.
+
 For JSON physics output:
 
 ```sh

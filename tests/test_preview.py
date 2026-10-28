@@ -49,6 +49,24 @@ def test_recorded_physics_and_real_frames(playback):
     assert ImageChops.difference(first, last).getbbox() is not None
 
 
+def test_render_only_exits_without_server():
+    """The command renders real evidence and exits even when the preview port is occupied."""
+    import socket
+    import subprocess
+
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 8000))
+        occupied.listen()
+        result = subprocess.run(["task", "render"], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    directory = Path("artifacts/preview")
+    record = json.loads((directory / "trajectory.json").read_text())
+    assert len(record["frames"]) == 41
+    assert record["identity"]["mujoco"]
+    assert len(list(directory.glob("frame-*.png"))) == 41
+    assert 'href="frame-040.png"' in (directory / "index.html").read_text()
+
+
 def test_server_serves_only_generated_assets(playback):
     """Given a checkout, HTTP exposes only the generated playback assets."""
     base, _ = playback

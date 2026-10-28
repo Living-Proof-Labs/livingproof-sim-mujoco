@@ -23,5 +23,6 @@ devcontainer exec --workspace-folder "$PWD" sh -ec '
   task setup
   task test
   task test:preview
+  task render
   uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/devcontainer.xml
 '

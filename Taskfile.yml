@@ -51,3 +51,6 @@ tasks:
   test:preview:
     desc: Test rendered playback and browser controls
     cmds: [bash tools/run-task.sh test:preview]
+  render:
+    desc: Render falling-sphere evidence without a server
+    cmds: [bash tools/run-task.sh render]
