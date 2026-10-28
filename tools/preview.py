@@ -26,25 +26,26 @@ button,input{margin:1rem .5rem 1rem 0}input{width:60%}output{display:block}
 <p>Rendered playback of 200 native physics steps (0.4 simulation seconds).
 This is a recorded run, not live interactive simulation or robot capability evidence.</p>
 <p>The built-in sphere falls freely under gravity; there is no floor or contact.</p>
-<img id="frame" src="/frame-000.png" alt="MuJoCo render of the falling sphere">
+<img id="frame" src="frame-000.png" alt="MuJoCo render of the falling sphere">
 <button id="play" type="button" disabled>Play</button>
 <label for="position">Frame</label><input id="position" type="range" min="0" max="40" value="0" disabled>
 <output id="state" aria-live="polite">Loading recorded physics…</output>
 <p>Playback is slowed to one tenth of simulation speed. Drag the frame slider to inspect it.
 Run <code>task preview</code> again to regenerate; Ctrl+C stops the server.</p>
-<p><a href="/trajectory.json">Recorded positions and engine identity (JSON)</a></p>
+<p><a href="trajectory.json">Recorded positions and engine identity (JSON)</a> ·
+<a href="frame-000.png">First frame</a> · <a href="frame-040.png">Last frame</a></p>
 <script>
 const image=document.querySelector('#frame'), slider=document.querySelector('#position');
 const play=document.querySelector('#play'), state=document.querySelector('#state');
 let frames=[], timer=null;
-function show(i){slider.value=i;image.src=`/frame-${String(i).padStart(3,'0')}.png`;
+function show(i){slider.value=i;image.src=`frame-${String(i).padStart(3,'0')}.png`;
  state.textContent=`Simulation time: ${frames[i].time.toFixed(3)} s · z: ${frames[i].z.toFixed(6)} m`;}
 function stop(){clearInterval(timer);timer=null;play.textContent='Play';}
 slider.oninput=()=>{stop();show(Number(slider.value));};
 play.onclick=()=>{if(timer){stop();return;}if(Number(slider.value)===frames.length-1)show(0);
  play.textContent='Pause';timer=setInterval(()=>{const next=Number(slider.value)+1;
  if(next>=frames.length){stop();return;}show(next);if(next===frames.length-1)stop();},100);};
-fetch('/trajectory.json').then(r=>{if(!r.ok)throw Error(r.status);return r.json();}).then(data=>{
+fetch('trajectory.json').then(r=>{if(!r.ok)throw Error(r.status);return r.json();}).then(data=>{
  frames=data.frames;slider.max=frames.length-1;slider.disabled=false;play.disabled=false;show(0);
 }).catch(()=>{state.textContent='Could not load playback. Restart task preview and reload.';});
 </script></html>
@@ -124,12 +125,18 @@ def server(assets, port):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000, help="local HTTP port (default: 8000)")
+    parser.add_argument(
+        "--render-only", action="store_true", help="render evidence and exit without a server"
+    )
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("expected a port from 1 to 65535, for example --port 8000")
     try:
         print("Rendering 0.4 seconds of built-in physics with CPU graphics…", flush=True)
         assets = render(ROOT / "artifacts/preview")
+        if args.render_only:
+            print("Rendered evidence: artifacts/preview/index.html and trajectory.json", flush=True)
+            return 0
         with server(assets, args.port) as httpd:
             print(f"Playback ready: http://127.0.0.1:{args.port}/", flush=True)
             print(

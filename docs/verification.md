@@ -29,6 +29,14 @@ Existing containers need **Codespaces: Rebuild Container** for the tooling marke
 and OSMesa library. Until then, `task -t Taskfile.runtime.yml setup` followed by
 `task -t Taskfile.runtime.yml test` bypasses Docker. For a busy port use
 `uv run --no-sync python tools/preview.py --port 8001` and privately forward 8001.
+If localhost responds but the private forwarded URL returns 401, check the
+signed-in GitHub account and Codespaces access. A successful localhost response
+does not verify the forwarding authentication; keep the port private.
+
+Run `task render` to generate `artifacts/preview` and exit without a server.
+The CI `mujoco-evidence-amd64` artifact retains these files for 14 days. Inspect
+the PNGs and `trajectory.json` directly, or serve the extracted directory over
+HTTP to use `index.html` playback.
 
 `tools/test-devcontainer.sh` exercises creation setup, bare task, setup, physics
 tests, and rendered playback tests as a non-root user with no Docker executable.

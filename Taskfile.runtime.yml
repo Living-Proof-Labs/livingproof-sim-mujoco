@@ -48,6 +48,9 @@ tasks:
     desc: Render built-in physics playback and serve only its output on port 8000
     cmds:
       - uv run --no-sync python tools/preview.py
+  render:
+    desc: Render falling-sphere evidence and exit without a server
+    cmds: [uv run --no-sync python tools/preview.py --render-only]
   test:preview:
     desc: Check real rendering, HTTP isolation and browser playback controls
     cmds: [uv run --no-sync pytest tests/test_preview.py --junitxml=artifacts/preview.xml]

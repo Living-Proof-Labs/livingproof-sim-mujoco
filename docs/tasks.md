@@ -76,6 +76,17 @@ commands:
  - task -t Taskfile.runtime.yml preview
 ```
 
+### `task render`
+
+```text
+task: render
+
+Render falling-sphere evidence without a server
+
+commands:
+ - bash tools/run-task.sh render
+```
+
 ### `task setup`
 
 ```text
@@ -226,6 +237,20 @@ env:
 
 commands:
  - uv run --no-sync python tools/preview.py
+```
+
+### `task -t Taskfile.runtime.yml render`
+
+```text
+task: render
+
+Render falling-sphere evidence and exit without a server
+
+env:
+  UV_PYTHON_DOWNLOADS: "never"
+
+commands:
+ - uv run --no-sync python tools/preview.py --render-only
 ```
 
 ### `task -t Taskfile.runtime.yml setup`
