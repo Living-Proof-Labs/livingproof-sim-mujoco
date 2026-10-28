@@ -5,5 +5,14 @@
   "workspaceFolder": "/workspace/mujoco",
   "remoteUser": "vscode",
   "overrideCommand": true,
-  "postCreateCommand": "task -t Taskfile.runtime.yml setup"
+  "postCreateCommand": "task setup",
+  "forwardPorts": [
+    8000
+  ],
+  "portsAttributes": {
+    "8000": {
+      "label": "MuJoCo rendered playback",
+      "onAutoForward": "notify"
+    }
+  }
 }

@@ -161,14 +161,17 @@ def test_native_task_reference_is_current(inherited, forced_color):
         env.update(FORCE_COLOR="1", CLICOLOR_FORCE="1")
     if inherited:
         env["UV_PYTHON_DOWNLOADS"] = "never"
+        env["LIVINGPROOF_TOOLING"] = "1"
     else:
         env.pop("UV_PYTHON_DOWNLOADS", None)
+        env.pop("LIVINGPROOF_TOOLING", None)
     subprocess.run(["python", "tools/task_reference.py", "--check"], check=True, env=env)
     html = (SITE / "tasks.html").read_text()
     assert "\x1b" not in Path("docs/tasks.md").read_text()
     assert "\x1b" not in html
     assert "task -t Taskfile.runtime.yml setup" in html
-    assert "docker compose run" in html
+    assert "bash tools/run-task.sh setup" in html
+    assert "LIVINGPROOF_TOOLING=1" in html
     assert "VERSION=0.0.0" in html
 
 

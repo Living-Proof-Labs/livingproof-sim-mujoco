@@ -5,8 +5,8 @@ Do not edit this reference by hand. These commands describe reviewed repository
 Taskfiles; generation does not execute task bodies. Examples use `VERSION=0.0.0`
 as a placeholder, not a package release claim.
 
-Host commands require Docker and Task. Inside the prepared development container,
-use `task -t Taskfile.runtime.yml`; do not call the host Docker wrapper recursively.
+Ordinary commands run directly inside the development image (LIVINGPROOF_TOOLING=1).
+On the host they use Docker and Task. Explicit prepared-environment commands remain available.
 
 ## Host
 
@@ -15,10 +15,21 @@ use `task -t Taskfile.runtime.yml`; do not call the host Docker wrapper recursiv
 ```text
 task: check
 
-Check code and generated help in Docker
+Check code and generated help in the development environment
 
 commands:
- - docker compose run --rm tooling task -t Taskfile.runtime.yml check
+ - bash tools/run-task.sh check
+```
+
+### `task default`
+
+```text
+task: default
+
+Show available commands
+
+commands:
+ - task --list
 ```
 
 ### `task docs`
@@ -29,7 +40,7 @@ task: docs
 Build the browsable manual
 
 commands:
- - docker compose run --rm tooling task -t Taskfile.runtime.yml docs
+ - bash tools/run-task.sh docs
 ```
 
 ### `task image`
@@ -51,7 +62,18 @@ task: package
 Build Python and Debian products
 
 commands:
- - docker compose run --rm tooling task -t Taskfile.runtime.yml package
+ - bash tools/run-task.sh package
+```
+
+### `task preview`
+
+```text
+task: preview
+
+Render falling-sphere playback and serve it on private forwarded port 8000 (container only)
+
+commands:
+ - task -t Taskfile.runtime.yml preview
 ```
 
 ### `task setup`
@@ -62,7 +84,7 @@ task: setup
 Build the development image and install locked dependencies
 
 commands:
- - docker compose run --build --rm tooling task -t Taskfile.runtime.yml setup
+ - bash tools/run-task.sh setup
 ```
 
 ### `task smoke`
@@ -81,10 +103,10 @@ commands:
 ```text
 task: test
 
-Test real MuJoCo execution in Docker
+Test real MuJoCo execution in the development environment
 
 commands:
- - docker compose run --rm tooling task -t Taskfile.runtime.yml test
+ - bash tools/run-task.sh test
 ```
 
 ### `task verify`
@@ -95,7 +117,7 @@ task: verify
 Check and test in the development environment
 
 commands:
- - docker compose run --rm tooling task -t Taskfile.runtime.yml verify
+ - bash tools/run-task.sh verify
 ```
 
 ### `task docs:reference`
@@ -106,7 +128,7 @@ task: docs:reference
 Refresh generated command and Task references
 
 commands:
- - docker compose run --rm tooling task -t Taskfile.runtime.yml docs:reference
+ - bash tools/run-task.sh docs:reference
 ```
 
 ### `task test:docs`
@@ -117,8 +139,18 @@ task: test:docs
 Test the rendered manual in Chromium
 
 commands:
- - docker compose run --rm -e PLAYWRIGHT_BROWSERS_PATH=/opt/mujoco-cache/browsers tooling task -t Taskfile.runtime.yml docs:browser
- - docker compose run --rm -e PLAYWRIGHT_BROWSERS_PATH=/opt/mujoco-cache/browsers tooling task -t Taskfile.runtime.yml test:docs
+ - bash tools/run-task.sh test:docs
+```
+
+### `task test:preview`
+
+```text
+task: test:preview
+
+Test rendered playback and browser controls
+
+commands:
+ - bash tools/run-task.sh test:preview
 ```
 
 ## Prepared environment
@@ -138,6 +170,20 @@ commands:
  - uv run --no-sync ruff format --check .
  - uv run --no-sync python tools/docs.py --check
  - uv run --no-sync python tools/task_reference.py --check
+```
+
+### `task -t Taskfile.runtime.yml default`
+
+```text
+task: default
+
+Show prepared-environment commands
+
+env:
+  UV_PYTHON_DOWNLOADS: "never"
+
+commands:
+ - task -t Taskfile.runtime.yml --list
 ```
 
 ### `task -t Taskfile.runtime.yml docs`
@@ -168,6 +214,20 @@ commands:
  - uv run --no-sync python tools/package.py
 ```
 
+### `task -t Taskfile.runtime.yml preview`
+
+```text
+task: preview
+
+Render built-in physics playback and serve only its output on port 8000
+
+env:
+  UV_PYTHON_DOWNLOADS: "never"
+
+commands:
+ - uv run --no-sync python tools/preview.py
+```
+
 ### `task -t Taskfile.runtime.yml setup`
 
 ```text
@@ -194,6 +254,7 @@ env:
 
 commands:
  - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
+ - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
 ```
 
 ### `task -t Taskfile.runtime.yml verify`
@@ -252,4 +313,18 @@ env:
 
 commands:
  - uv run --no-sync pytest tests/docs --junitxml=artifacts/docs.xml
+```
+
+### `task -t Taskfile.runtime.yml test:preview`
+
+```text
+task: test:preview
+
+Check real rendering, HTTP isolation and browser playback controls
+
+env:
+  UV_PYTHON_DOWNLOADS: "never"
+
+commands:
+ - uv run --no-sync pytest tests/test_preview.py --junitxml=artifacts/preview.xml
 ```

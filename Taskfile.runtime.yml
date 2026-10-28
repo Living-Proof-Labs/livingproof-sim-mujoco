@@ -4,6 +4,9 @@ version: '3'
 env:
   UV_PYTHON_DOWNLOADS: never
 tasks:
+  default:
+    desc: Show prepared-environment commands
+    cmds: [task -t Taskfile.runtime.yml --list]
   setup:
     desc: Install locked project dependencies
     cmds: [uv sync --locked]
@@ -16,7 +19,9 @@ tasks:
       - uv run --no-sync python tools/task_reference.py --check
   test:
     desc: Exercise real MuJoCo physics and shutdown with JUnit results
-    cmds: [uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml]
+    cmds:
+      - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
+      - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
   docs:reference:
     desc: Generate CLI reference from executable help
     cmds:
@@ -39,3 +44,10 @@ tasks:
   docs:browser:
     desc: Install pinned Chromium in the prepared tooling container
     cmds: [uv run --no-sync playwright install chromium]
+  preview:
+    desc: Render built-in physics playback and serve only its output on port 8000
+    cmds:
+      - uv run --no-sync python tools/preview.py
+  test:preview:
+    desc: Check real rendering, HTTP isolation and browser playback controls
+    cmds: [uv run --no-sync pytest tests/test_preview.py --junitxml=artifacts/preview.xml]

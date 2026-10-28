@@ -15,5 +15,10 @@ devcontainer exec --workspace-folder "$PWD" sh -ec '
   test -w "$HOME"
   test -f "$HOME/.devcontainer/.postCreateCommandMarker"
   test -f /opt/mujoco-venv/pyvenv.cfg
+  ! command -v docker
+  task
+  task setup
+  task test
+  task test:preview
   uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/devcontainer.xml
 '

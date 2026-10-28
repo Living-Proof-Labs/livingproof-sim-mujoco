@@ -17,7 +17,8 @@ livingproof-sim-mujoco --version
 
 The built-in sphere falls freely under gravity: 100 steps advance 0.2 simulation
 seconds and lower its z coordinate. This is engine evidence, never a robot
-capability PASS. There is no viewer, robot control, adapter or general runner.
+capability PASS. The installed CLI has no viewer, robot control, adapter or general runner.
+The development environment includes a separate rendered playback example below.
 Use trusted local models; native model parsing is not a security sandbox.
 
 The wall deadline covers startup, loading and stepping. Shutdown first requests
@@ -30,17 +31,58 @@ Native warnings fail execution. XML includes resolve using MuJoCo's native loade
 ## Development
 
 Docker and Task 3.54.0 are host prerequisites. `task setup`, `task verify`,
-`task package`, and `task smoke` use the repository Docker environment. The
-.devcontainer configuration reuses its development target. In that prepared
-environment use `task -t Taskfile.runtime.yml setup` and `verify`.
-In Codespaces, wait for the creation setup to finish, then run
-`uv run --no-sync livingproof-sim-mujoco --model builtin:falling --steps 100 --headless`.
-The development user has a writable `/home/vscode`; no sudo is needed.
-If setup fails, inspect the creation log and rerun `task -t Taskfile.runtime.yml setup`
-after resolving the reported error. Use **Codespaces: Rebuild Container** to apply
-changes to the development image. The host `task setup` wrapper requires Docker;
-inside Codespaces use the prepared-environment commands above.
-`task docs` builds the browsable manual; `task docs:reference` generates [the command reference](docs/command.md) from real help.
+`task package`, and `task smoke` retain the repository Docker workflow.
+Inside the devcontainer, ordinary `task setup`, `task check`, `task test`, and
+`task verify` use the prepared tooling directly, without Docker. Bare `task`
+shows help successfully. `task image` and `task smoke` remain Docker-host tasks;
+`task package` can build products inside the prepared container.
+
+### Try it in browser-based VS Code / Codespaces
+
+Use a Linux amd64 Codespace; simulation and rendering run remotely, so your
+local ARM laptop only needs a browser. No ARM product support is claimed.
+After opening this branch in a devcontainer, wait for creation setup to finish:
+
+```sh
+task
+task test
+task preview
+```
+
+In VS Code's **Ports** tab, find port **8000** (add it if absent), confirm its
+visibility is **Private**, and select **Open in Browser**. Use the forwarded
+HTTPS URL supplied by Codespaces while signed into the same GitHub account;
+your laptop's `localhost:8000` is not the remote service. No public port is needed.
+The page shows actual MuJoCo-rendered frames of the built-in sphere falling,
+with Play/Pause and a frame slider. This is **recorded playback**, slowed to
+one tenth speed, not live interactive simulation, a robot demo, or a desktop
+MuJoCo viewer. It records 200 steps / 0.4 simulation seconds; the model has no floor.
+Ctrl+C stops serving. Re-run `task preview` to regenerate the frames.
+
+For JSON physics output:
+
+```sh
+uv run --no-sync livingproof-sim-mujoco --model builtin:falling --steps 100 --headless
+```
+
+For an existing container built before this change, the immediate command
+workaround is `task -t Taskfile.runtime.yml setup`, then
+`task -t Taskfile.runtime.yml test`. To use the new ordinary task routing and
+CPU graphics library, run **Codespaces: Rebuild Container** after checking out
+this branch. Setup needs no sudo. If setup fails, inspect the creation log,
+resolve the reported error and rerun `task setup`.
+
+`task preview` serves only generated assets on container loopback port 8000;
+it does not serve the checkout. If that port is occupied, stop the other server
+or run `uv run --no-sync python tools/preview.py --port 8001` and forward 8001
+privately instead. `task test:preview` installs pinned Chromium and tests real
+rendering, HTTP isolation and playback controls. `task docs` builds the manual;
+`task docs:reference` refreshes generated references.
+
+See [development and verification](docs/verification.md) for tested scope and
+[GitHub's port-forwarding guide](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace)
+for private browser access. No hosted Codespace or its authentication flow has
+been exercised by these local container tests.
 
 Runtime dependencies are hash-locked in uv.lock; MuJoCo 3.17.0 is exact-pinned.
 The engine wheel bundles the native engine. Shared identity uses the released
