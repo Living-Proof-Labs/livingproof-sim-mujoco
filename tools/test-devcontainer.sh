@@ -15,7 +15,10 @@ devcontainer exec --workspace-folder "$PWD" sh -ec '
   test -w "$HOME"
   test -f "$HOME/.devcontainer/.postCreateCommandMarker"
   test -f /opt/mujoco-venv/pyvenv.cfg
-  ! command -v docker
+  if command -v docker >/dev/null 2>&1; then
+    echo "Expected the development image to work without a Docker executable" >&2
+    exit 1
+  fi
   task
   task setup
   task test
