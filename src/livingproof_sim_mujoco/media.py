@@ -20,13 +20,14 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import sys
 
 import mujoco
 import numpy as np
 
 from livingproof_sim_mujoco import evidence as ev
-from livingproof_sim_mujoco.pins import sha256
+from livingproof_sim_mujoco.pins import fetch, sha256
 
 FORMAT = "livingproof-hallway-media/1.0.0"
 FPS = 25
@@ -197,6 +198,9 @@ def media(
     ref: str, name: str, evidence_dir: Path, verification: Path, out: Path, *, jobs=None
 ) -> dict:
     robot = ev.adapter(ref)
+    # Pinned upstream files first: adapters load their profile and model from them, so a
+    # fresh checkout (no pins fetched yet) would otherwise fail with FileNotFoundError.
+    fetch(Path(robot.root))
     manifest = json.loads((Path(evidence_dir) / "manifest.json").read_text())
     if manifest["configuration"]["name"] != name:
         raise SystemExit(f"evidence is for {manifest['configuration']['name']}, not {name}")
@@ -206,24 +210,37 @@ def media(
     plan, p = ev.recording(robot, lock, name)
     picked = pick(json.loads(Path(verification).read_text()))
     out = Path(out)
-    (out / "mcap").mkdir(parents=True, exist_ok=False)
-    (out / "video").mkdir()
+    out.mkdir(parents=True, exist_ok=True)
+    # Record into a staging folder: a mismatch or crash leaves no partial files, and a
+    # re-run into an existing output folder replaces only the media it wrote before.
+    stage = out / ".media-partial"
+    shutil.rmtree(stage, ignore_errors=True)
+    (stage / "mcap").mkdir(parents=True)
+    (stage / "video").mkdir()
     work = [
-        (ref, name, t["seed"], picked.get(t["seed"]), plan, p, out, t["sha256"])
+        (ref, name, t["seed"], picked.get(t["seed"]), plan, p, stage, t["sha256"])
         for t in manifest["trials"]
     ]
-    if jobs == 1:
-        trials = [_record(w) for w in work]
-    else:  # spawned workers: never fork after a renderer was used in this process
-        with ev.pool(jobs) as workers:
-            trials = list(workers.map(_record, work))
+    try:
+        if jobs == 1:
+            trials = [_record(w) for w in work]
+        else:  # spawned workers: never fork after a renderer was used in this process
+            with ev.pool(jobs) as workers:
+                trials = list(workers.map(_record, work))
+    except BaseException:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
     doc = {
         "format": FORMAT,
         "configuration": name,
         "run_id": manifest["run_id"],
         "trials": sorted(trials, key=lambda t: t["seed"]),
     }
+    for part in ("mcap", "video"):
+        shutil.rmtree(out / part, ignore_errors=True)
+        (stage / part).rename(out / part)
     (out / "media.json").write_text(json.dumps(doc, indent=2) + "\n")
+    stage.rmdir()
     return doc
 
 
