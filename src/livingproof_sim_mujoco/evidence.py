@@ -46,6 +46,21 @@ class Robot(Protocol):
     def initial_state(self, model, data, ctrl, seed: int, noise: dict, spawn: str) -> None: ...
     def runner_settings(self) -> dict: ...
     def robot(self) -> dict: ...
+
+    # Optional: ``camera = (distance, elevation, azimuth)`` for the tracking camera of the
+    # stand clip and media videos; read through ``camera()``. Never affects evidence.
+
+
+def camera(robot, default: tuple[float, float, float]) -> tuple[float, float, float]:
+    """The adapter's optional tracking camera (distance, elevation, azimuth), else default."""
+    view = getattr(robot, "camera", None)
+    if view is None:
+        return tuple(default)
+    view = tuple(float(v) for v in view)
+    if len(view) != 3 or view[0] <= 0:
+        raise ValueError(f"camera must be (distance > 0, elevation, azimuth), got {view!r}")
+    return view
+
     def configuration(self, name: str) -> dict: ...  # raises Unsupported(precondition, detail)
     def world(self) -> dict: ...
     def environment(self, name: str) -> dict: ...  # extra manifest environment fields

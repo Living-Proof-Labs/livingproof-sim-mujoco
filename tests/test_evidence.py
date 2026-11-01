@@ -231,3 +231,28 @@ def test_stand_runs_the_zero_command_check_through_the_adapter(tmp_path, monkeyp
     assert result["configuration_sha256"] == lock["configurations"][0]["sha256"]
     assert result["seconds"] == 0.2 and result["clip"] == "stand-zero-command.mp4"
     assert json.loads((tmp_path / "out" / "stand.json").read_text()) == result
+
+
+def test_stand_and_media_use_the_optional_adapter_camera(tmp_path, monkeypatch):
+    from livingproof_sim_mujoco import walk
+
+    seen = []
+    monkeypatch.setattr(
+        walk, "simulate", lambda *a, camera_view, **k: seen.append(camera_view) or ([], None, None)
+    )
+    monkeypatch.setattr(walk, "stand_summary", lambda *a: {})
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.setattr(
+        Toy, "runner_settings", lambda self: {"initial_noise": {}, "sample_hz": 50.0,
+                                              "stand_seconds": 0.2}
+    )  # fmt: skip
+    walk.stand(TOY, "stock")
+    monkeypatch.setattr(Toy, "camera", (2.2, -35, 200), raising=False)
+    walk.stand(TOY, "stock")
+    assert seen == [walk.CAMERA, (2.2, -35.0, 200.0)]
+    monkeypatch.setattr(Toy, "camera", (0, 1), raising=False)
+    with pytest.raises(ValueError, match="camera must be"):
+        evidence.camera(TOY, walk.CAMERA)

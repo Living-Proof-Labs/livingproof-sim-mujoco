@@ -174,7 +174,7 @@ def _record(args):
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"seed-{seed:02d}.mcap"
     video = out / "video" / f"seed-{seed:02d}-{status.lower()}.mp4" if status else None
-    camera = getattr(robot, "camera", None) or CAMERA
+    camera = ev.camera(robot, CAMERA)
 
     def hook(model, base_body):
         return Recorder(model, base_body, mcap_path=mcap, video_path=video, camera=camera)
@@ -214,8 +214,11 @@ def media(
         (ref, name, t["seed"], picked.get(t["seed"]), plan, p, out, t["sha256"])
         for t in manifest["trials"]
     ]
-    with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
-        trials = list(pool.map(_record, work))
+    if jobs == 1:  # in-process: no fork after a renderer was used in this process
+        trials = [_record(w) for w in work]
+    else:
+        with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
+            trials = list(pool.map(_record, work))
     doc = {
         "format": FORMAT,
         "configuration": name,

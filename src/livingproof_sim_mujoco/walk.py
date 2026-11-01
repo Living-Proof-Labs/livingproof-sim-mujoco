@@ -130,7 +130,11 @@ def stand_summary(name, digest, seconds, samples, end, clip, fall_height) -> dic
     }
 
 
-CAMERA = (3.6, -38.0, 200.0)  # tracking distance, elevation, azimuth; adapter.camera overrides
+CAMERA = (
+    3.6,
+    -38.0,
+    200.0,
+)  # tracking distance, elevation, azimuth; optional adapter.camera overrides
 
 
 def stand(ref, name: str, out: Path | None = None) -> dict:
@@ -163,7 +167,7 @@ def stand(ref, name: str, out: Path | None = None) -> dict:
         sample_hz=rs["sample_hz"],
         stop_at_exit=False,
         clip=Path(out) / "stand-zero-command.mp4" if out else None,
-        camera_view=getattr(robot, "camera", None) or CAMERA,
+        camera_view=ev.camera(robot, CAMERA),
     )
     result = stand_summary(name, entry["sha256"], seconds, samples, end, clip, p["fall_height"])
     if out:
