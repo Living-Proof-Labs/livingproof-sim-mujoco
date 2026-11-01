@@ -70,4 +70,25 @@ def test_a_rerun_that_differs_from_the_evidence_keeps_nothing(recorded):
     (tmp_path / "ev" / "manifest.json").write_text(json.dumps(m))
     with pytest.raises(RuntimeError, match="differs from the evidence"):
         media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
-    assert not (tmp_path / "m" / "mcap" / "seed-01.mcap").exists()
+    assert not (tmp_path / "m" / "mcap").exists()  # no partial files from any seed
+    assert not (tmp_path / "m" / ".media-partial").exists()
+
+
+def test_a_rerun_into_an_existing_folder_replaces_its_media(recorded):
+    tmp_path, v = recorded
+    out = tmp_path / "m"
+    first = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, out, jobs=1)
+    (out / "video" / "stale.mp4").write_bytes(b"old")
+    (out / "keep.txt").write_text("not ours")
+    again = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, out, jobs=1)
+    assert again == first
+    assert not (out / "video" / "stale.mp4").exists() and (out / "keep.txt").exists()
+    assert sorted(p.name for p in out.iterdir()) == ["keep.txt", "mcap", "media.json", "video"]
+
+
+def test_media_fetches_the_pinned_files_itself(recorded, monkeypatch):
+    tmp_path, v = recorded
+    fetched = []
+    monkeypatch.setattr(media, "fetch", lambda root: fetched.append(root))
+    media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
+    assert fetched == [Toy.root]

@@ -22,13 +22,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 
 import mujoco
 import numpy as np
 
 from livingproof_sim_mujoco import evidence as ev
-from livingproof_sim_mujoco.pins import sha256
+from livingproof_sim_mujoco.pins import fetch, sha256
 
 FORMAT = "livingproof-hallway-media/1.0.0"
 FPS = 25
@@ -207,22 +208,39 @@ def media(
         raise SystemExit(f"evidence was recorded with a different {ev.LOCK}")
     plan, p = ev.recording(robot, lock, name)
     picked = pick(json.loads(Path(verification).read_text()))
+    fetch(Path(robot.root))  # pinned upstream files, verified, before any re-run
     out = Path(out)
-    (out / "mcap").mkdir(parents=True, exist_ok=False)
-    (out / "video").mkdir()
+    out.mkdir(parents=True, exist_ok=True)
+    # Record into a staging folder: a mismatch or crash leaves no partial files, and a
+    # re-run into an existing output folder replaces only the media it wrote before.
+    stage = out / ".media-partial"
+    shutil.rmtree(stage, ignore_errors=True)
+    (stage / "mcap").mkdir(parents=True)
+    (stage / "video").mkdir()
     work = [
-        (ref, name, t["seed"], picked.get(t["seed"]), plan, p, out, t["sha256"])
+        (ref, name, t["seed"], picked.get(t["seed"]), plan, p, stage, t["sha256"])
         for t in manifest["trials"]
     ]
-    with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
-        trials = list(pool.map(_record, work))
+    try:
+        if jobs == 1:  # in-process: no fork after a renderer was used in this process
+            trials = [_record(w) for w in work]
+        else:
+            with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
+                trials = list(pool.map(_record, work))
+    except BaseException:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
     doc = {
         "format": FORMAT,
         "configuration": name,
         "run_id": manifest["run_id"],
         "trials": sorted(trials, key=lambda t: t["seed"]),
     }
+    for part in ("mcap", "video"):
+        shutil.rmtree(out / part, ignore_errors=True)
+        (stage / part).rename(out / part)
     (out / "media.json").write_text(json.dumps(doc, indent=2) + "\n")
+    stage.rmdir()
     return doc
 
 
