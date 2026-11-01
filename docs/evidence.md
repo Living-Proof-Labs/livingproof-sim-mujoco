@@ -60,3 +60,16 @@ Independent review, actual release assembly/publication and unauthenticated
 product downloads remain pending. ARM, macOS, Windows and hosted devcontainer
 execution remain unverified. Engine startup and software tests are not robot
 capability evidence. No substantive merge or release has occurred.
+
+## Evidence media
+
+`python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>
+<verification.json> <out>` (install the `media` extra) re-runs every seed of an evidence
+run with a read-only recorder. It writes an MCAP file per trial (`/base_pose` as
+`foxglove.PoseInFrame` and `/joint_states`, JSON, 50 Hz, zstd) and an mp4 screencast of
+the verifier's first PASS seed and first FAIL seed only, plus `media.json` with each
+file's size and sha256. Each re-run observation must hash to that seed's evidence
+sha256, or nothing is kept, so every recording is of the trial that was graded. Media
+never grades and never changes evidence. An adapter may set `camera = (distance,
+elevation, azimuth)` for the tracking camera. The verifier's reusable walk-hallway
+workflow uploads these as named Actions artifacts and hands their URLs to the reporter.

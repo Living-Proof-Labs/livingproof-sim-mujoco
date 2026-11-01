@@ -14,6 +14,8 @@ dependencies = ["mujoco==3.17.0", "onnxruntime==1.31.1", "numpy>=1.26", "livingp
 [project.optional-dependencies]
 # TorchScript policies (for example unitree_rl_gym motion.pt), CPU wheels
 torch = ["torch>=2.6"]
+# MCAP recordings and mp4 screencasts of walk-hallway trials (livingproof_sim_mujoco.media)
+media = ["mcap>=1.2", "imageio>=2.34", "imageio-ffmpeg>=0.5"]
 
 [project.scripts]
 livingproof-sim-mujoco = "livingproof_sim_mujoco.cli:main"
@@ -33,6 +35,9 @@ dev = [
     "pytest==8.4.2",
     "onnx==1.23.2",
     "pillow==11.3.0",
+    "mcap==1.6.0",
+    "imageio==2.37.0",
+    "imageio-ffmpeg==0.6.0",
     "ruff==0.14.2",
     "build==1.3.0",
     "pip==25.3",
