@@ -90,7 +90,8 @@ groups. The live context identified the exact clean revision and run above.
 Searching for `timeout` returned three results; navigation to the physics
 fragment and reload passed. Dark-theme persistence and system theme passed.
 The shared documentation-directory entry is coordinated separately. Documentation
-deployment does not publish the simulator release; v1.0.1 remains a draft.
+deployment does not publish the simulator release; the main workflow's
+release and assemble jobs do.
 See [Pages deployment](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/blob/main/.github/PAGES.md).
 
 ## Manual recipe adoption
