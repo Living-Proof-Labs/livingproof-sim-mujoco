@@ -7,7 +7,7 @@ configuration.
 ## Timing
 
 The policy acts every `decimation` physics steps, for example 50 Hz over a 0.002 s
-(500 Hz) step with `decimation=10`. The PD loop that tracks its joint targets runs on
+(500 Hz) step with `decimation=10`. Every physics step runs `mj_step1` first, so the policy observes positions, velocities and sensors of the current instant (as a MuJoCo control callback does), then the actuator inputs are written and `mj_step2` integrates. The PD loop that tracks its joint targets runs on
 every physics step, from the current state:
 
 | `actuation` | Model actuators | What happens each physics step |
@@ -28,6 +28,7 @@ gains (`hold`).
 | `default_pose` | joint offsets, policy order; target = `default_pose + action_scale * action` |
 | `action_scale` | scalar or one value per joint |
 | `decimation` | physics steps per policy step |
+| `first_tick` | physics step index of the first policy step (default 0; the Playground adapter uses `decimation - 1`, as its sim2sim loop acts on the 10th control callback) |
 | `obs` | ordered `ObsTerm`s: `sensor`, `gravity` (site or `body:<name>`), `base_angvel`, `command`, `joint_pos`, `joint_vel`, `last_action`, `phase`; each with a scalar or per-element `scale` |
 | `history` | stacked observation frames, newest last |
 | `gait_hz`, `gait_offsets`, `phase_order` | phase clock advanced once per policy step and wrapped to [-pi, pi] |

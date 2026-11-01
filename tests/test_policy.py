@@ -120,6 +120,37 @@ def test_pd_is_computed_inside_mj_step(model, tmp_path):
     assert data.joint("j0").qpos[0] == pytest.approx(0.6, abs=0.05)
 
 
+def test_first_tick_delays_the_first_policy_step(model, tmp_path):
+    """Playground sim2sim acts on its 10th control callback: physics step index 9."""
+    policy = OnnxPolicy(model, constant(tmp_path, [1.0, 1.0]), spec(first_tick=9))
+    data = mujoco.MjData(model)
+    ticks = []
+    for i in range(30):
+        before = policy.policy_steps
+        policy.step(data, [0, 0, 0])
+        if policy.policy_steps > before:
+            ticks.append(i)
+    assert ticks == [9, 19, 29]
+
+
+def test_policy_reads_sensors_current_for_the_step(model, tmp_path):
+    """Observations come after mj_step1, so sensors match qpos/qvel of the same instant,
+    as in MuJoCo's control callback, not the previous step's forward pass."""
+    sensor = mujoco.MjModel.from_xml_string(
+        ARM.replace("</mujoco>", '<sensor><jointvel name="v0" joint="j0"/></sensor></mujoco>')
+    )
+    obs = [ObsTerm("sensor", "v0"), ObsTerm("joint_vel")]
+    policy = OnnxPolicy(sensor, constant(tmp_path, [1.0, 1.0], n_in=3), spec(obs=obs))
+    seen = []
+    backend = policy.backend
+    policy.backend = lambda o: (seen.append(np.asarray(o).copy()), backend(o))[1]
+    data = mujoco.MjData(sensor)
+    policy.run(data, 0.2, [0, 0, 0])
+    assert len(seen) == 10
+    for o in seen[1:]:
+        assert o[0] == pytest.approx(o[1], abs=1e-7)  # v0 sensor == qvel[j0]
+
+
 def test_observation_layout_history_and_phase(model, tmp_path):
     policy = OnnxPolicy(model, constant(tmp_path, [0.0, 0.0], n_in=2 * FRAME), spec(history=2))
     data = mujoco.MjData(model)

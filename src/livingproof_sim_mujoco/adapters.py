@@ -113,6 +113,7 @@ def playground_joystick(
         default_pose=list(default_pose),
         action_scale=action_scale,
         decimation=decimation,
+        first_tick=decimation - 1,  # sim2sim: counter += 1, act when counter % n == 0
         obs=[
             ObsTerm("sensor", linvel_sensor),
             ObsTerm("sensor", gyro_sensor),

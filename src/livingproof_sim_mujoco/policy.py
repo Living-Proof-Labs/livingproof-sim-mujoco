@@ -138,6 +138,9 @@ class PolicySpec:
     hold: Sequence[tuple[str, str, float, float, float]] = field(default_factory=tuple)
     # pd_torque only: (joint, actuator, target, kp, kd) for joints outside the policy
     target_range: Sequence[tuple[float, float]] = field(default_factory=tuple)
+    # physics step index of the first policy tick; later ticks every ``decimation`` steps.
+    # Playground's sim2sim loop acts on its 10th control callback (step index 9).
+    first_tick: int = 0
     # optional per-joint clamp of policy targets, as a position actuator's ctrlrange does
     input_name: str = "obs"
     output_name: str | None = None  # default: the model's first output
@@ -153,6 +156,8 @@ class OnnxPolicy:
             raise PolicyError("joints, actuators and default_pose must have the same length")
         if spec.decimation < 1:
             raise PolicyError("decimation must be >= 1")
+        if spec.first_tick < 0:
+            raise PolicyError("first_tick must be >= 0")
         if spec.actuation not in ("position", "pd_torque"):
             raise PolicyError(f"unknown actuation {spec.actuation!r}")
         if spec.phase_order not in ("cos_sin", "sin_cos"):
@@ -339,16 +344,20 @@ class OnnxPolicy:
         return self.last_action
 
     def step(self, data: mujoco.MjData, command: Sequence[float]) -> None:
-        """One physics step; the policy acts first on every ``decimation``-th step."""
-        if self.counter % self.spec.decimation == 0:
+        """One physics step.
+
+        ``mj_step1`` first brings positions, velocities and sensors up to date for this
+        step, as MuJoCo's control callback sees them; the policy then acts on policy ticks,
+        the actuator inputs are written, and ``mj_step2`` integrates.
+        """
+        mujoco.mj_step1(self.model, data)
+        k = self.counter - self.spec.first_tick
+        if k >= 0 and k % self.spec.decimation == 0:
             self.act(data, command)
-        if self.spec.actuation == "position":
-            mujoco.mj_step(self.model, data)  # position actuators: PD computed in here
-        else:
-            mujoco.mj_step1(self.model, data)  # state and sensors current for this step
+        if self.spec.actuation == "pd_torque":
             q, dq = data.qpos[self._qpos], data.qvel[self._qvel]
             data.ctrl[self._act] = self._kp * (self.target - q) - self._kd * dq
-            mujoco.mj_step2(self.model, data)
+        mujoco.mj_step2(self.model, data)
         self.counter += 1
 
     def run(
