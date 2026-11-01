@@ -806,3 +806,16 @@ def run_checks(fixture: str, content_version: str, root: Path = WORLDS) -> dict:
         "settings": {"extension": pins()[f"{fixture}/{content_version}"]["extension"], **notes},
         "quantities": quantities,
     }
+
+
+# Per-trial walking observations live in observations.py. They are re-exported lazily
+# so `hallway.observe` keeps working without importing mujoco at module import.
+_OBSERVATIONS = {"observe", "WallDistance", "FORMAT", "DISTMAX", "COLUMNS"}
+
+
+def __getattr__(name):
+    if name in _OBSERVATIONS:
+        from livingproof_sim_mujoco import observations
+
+        return getattr(observations, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

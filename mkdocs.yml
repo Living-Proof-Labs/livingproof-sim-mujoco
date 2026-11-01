@@ -13,6 +13,7 @@ nav:
   - Reference:
       - Commands: command.md
       - Tasks: tasks.md
+      - Policy runner: policy.md
       - Hallway adapter: hallway.md
   - Scenarios and results: features.md
   - Verification: verification.md

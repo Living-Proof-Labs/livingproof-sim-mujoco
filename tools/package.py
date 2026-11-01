@@ -35,7 +35,7 @@ def main():
         "uv",
         "export",
         "--locked",
-        "--no-dev",
+        "--no-default-groups",
         "--no-emit-project",
         "--format",
         "requirements-txt",

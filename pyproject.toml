@@ -9,7 +9,11 @@ description = "Bounded native MuJoCo model loading and headless physics stepping
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["mujoco==3.17.0", "livingproof-common @ https://github.com/Living-Proof-Labs/livingproof-common/releases/download/v1.0.0/livingproof_common-1.0.0-py3-none-any.whl"]
+dependencies = ["mujoco==3.17.0", "onnxruntime==1.31.1", "numpy>=1.26", "livingproof-common @ https://github.com/Living-Proof-Labs/livingproof-common/releases/download/v1.0.0/livingproof_common-1.0.0-py3-none-any.whl"]
+
+[project.optional-dependencies]
+# TorchScript policies (for example unitree_rl_gym motion.pt), CPU wheels
+torch = ["torch>=2.6"]
 
 [project.scripts]
 livingproof-sim-mujoco = "livingproof_sim_mujoco.cli:main"
@@ -27,6 +31,7 @@ path = "hatch_build.py"
 dev = [
     "jsonschema==4.25.1",
     "pytest==8.4.2",
+    "onnx==1.23.2",
     "pillow==11.3.0",
     "ruff==0.14.2",
     "build==1.3.0",
@@ -34,7 +39,23 @@ dev = [
     "zensical==0.0.73",
     "playwright==1.64.1",
 ]
+# TorchScript backend tests only. Kept out of `dev` so the packaging test wheelhouse
+# (uv export --only-group dev, then pip download from PyPI) never needs the +cpu wheel,
+# which exists only on the PyTorch index. The runner wheel itself has no torch dependency;
+# TorchScript users install the `torch` extra.
+torch = ["torch==2.15.0"]
+[tool.uv]
+default-groups = ["dev", "torch"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 [tool.ruff]
 line-length = 100
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

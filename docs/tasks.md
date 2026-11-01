@@ -305,7 +305,9 @@ env:
 commands:
  - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
  - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
+ - uv run --no-sync pytest tests/test_policy.py --junitxml=artifacts/policy.xml
  - uv run --no-sync pytest tests/test_hallway.py --junitxml=artifacts/hallway.xml
+ - uv run --no-sync pytest tests/test_observations.py --junitxml=artifacts/observations.xml
  - uv run --no-sync pytest tests/test_contract.py --junitxml=artifacts/contract.xml
 ```
 

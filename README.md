@@ -28,6 +28,22 @@ input or engine errors return 2. JSON includes actual steps, simulation time,
 first 16 initial/final qpos values, model dimensions, engine and build identity.
 Native warnings fail execution. XML includes resolve using MuJoCo's native loader.
 
+## Policy runner
+
+`OnnxPolicy` runs a published ONNX locomotion policy: the policy at its control rate
+(for example 50 Hz) and the joint PD inside every 500 Hz physics step. See
+[docs/policy.md](docs/policy.md).
+
+## Hallway observations
+
+`livingproof_sim_mujoco.hallway.observe` records one hallway-walk trial as
+evidence only (`livingproof-hallway-observation/1.0.0`): the base position trace,
+`max_abs_lateral` and `min_base_height` with their times, `exit_time`, and every
+wall contact with its start, end and depth. Wall distance is the signed
+`mj_geomDistance` from every robot geom to the wall geoms; there is no box check.
+It applies no thresholds and decides no outcome. The capability verifier's
+evaluators do that.
+
 ## Development
 
 Docker and Task 3.54.0 are host prerequisites. `task setup`, `task verify`,

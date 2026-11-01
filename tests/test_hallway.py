@@ -298,3 +298,10 @@ def test_finer_physics_step_samples_every_second_step(loaded):
     samples = hallway._drive(model, data, None, "x", 0.1, 0.0)
     assert len(samples) == 50  # 100 physics steps, 500 Hz
     assert samples[1]["t"] - samples[0]["t"] == pytest.approx(0.002)
+
+
+def test_observations_are_reexported_from_hallway():
+    from livingproof_sim_mujoco import observations
+
+    assert hallway.observe is observations.observe
+    assert hallway.FORMAT == "livingproof-hallway-observation/1.0.0"
