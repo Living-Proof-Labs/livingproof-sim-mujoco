@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import mujoco
 import numpy as np
 import onnx
@@ -347,3 +349,93 @@ def test_target_range_clamps_policy_targets(model, tmp_path):
     policy.act(data, [0, 0, 0])
     assert data.ctrl[model.actuator("m0").id] == pytest.approx(0.3)
     assert data.ctrl[model.actuator("m1").id] == pytest.approx(-0.7)
+
+
+def test_torchscript_without_torch_hints_at_the_extra(tmp_path, monkeypatch):
+    from livingproof_sim_mujoco.policy import load_backend
+
+    from livingproof_sim_mujoco import policy
+
+    monkeypatch.setitem(sys.modules, "torch", None)  # import torch -> ImportError
+    monkeypatch.setattr(policy, "_installed", lambda: ("1.4.0", None, None))
+    path = tmp_path / "motion.pt"
+    path.write_bytes(b"not loaded")
+    with pytest.raises(ImportError) as err:
+        load_backend(path)
+    msg = str(err.value)
+    assert "motion.pt" in msg
+    assert "livingproof-sim-mujoco[torch] @ git+https://github.com/Living-Proof-Labs/" in msg
+    assert "https://docs.livingprooflabs.com/livingproof-sim-mujoco/policy/#backends" in msg
+    # Never a bare PyPI requirement: the name is not published there.
+    assert "pip install livingproof-sim-mujoco" not in msg
+    assert "pip install 'livingproof-sim-mujoco[torch]'" not in msg
+
+
+@pytest.mark.parametrize(
+    "version, direct_url, ref",
+    [
+        ("1.4.0", None, "@v1.4.0"),
+        ("1.4.1.dev3+g2cb991e", None, "@2cb991e"),
+        (
+            "1.4.1.dev3+g2cb991e",
+            '{"vcs_info": {"vcs": "git", "commit_id": "' + "a" * 40 + '"}}',
+            "@" + "a" * 40,
+        ),
+        ("1.4.0rc1", None, ""),
+        ("1.4.0.post1", '{"vcs_info": {"commit_id": "' + "b" * 40 + '"}}', "@" + "b" * 40),
+        ("0.0.0", "not json", ""),  # hatch-vcs fallback, not a release
+        (None, None, ""),
+    ],
+)
+def test_torch_hint_pins_a_tag_only_for_an_exact_release(version, direct_url, ref):
+    from livingproof_sim_mujoco import policy
+
+    assert policy.install_ref(version, direct_url) == ref
+
+
+@pytest.mark.parametrize(
+    "version, direct_url, build_commit, ref",
+    [
+        # non-git dev install (sdist / copied tree): no local part, no vcs_info
+        ("1.4.1.dev3", None, "c" * 40, "@" + "c" * 40),
+        ("0.0.0", '{"dir_info": {"editable": true}}', "c" * 40, "@" + "c" * 40),
+        # direct_url's commit wins over the recorded one; a release tag over both
+        ("1.4.1.dev3", '{"vcs_info": {"commit_id": "' + "a" * 40 + '"}}', "c" * 40, "@" + "a" * 40),
+        ("1.4.0", None, "c" * 40, "@v1.4.0"),
+        # recorded commit unknown (built without git history) or malformed
+        ("1.4.1.dev3", None, None, ""),
+        ("1.4.1.dev3", None, "main", ""),
+    ],
+)
+def test_install_ref_uses_the_commit_recorded_at_build(version, direct_url, build_commit, ref):
+    from livingproof_sim_mujoco import policy
+
+    assert policy.install_ref(version, direct_url, build_commit) == ref
+
+
+def test_torch_hint_gives_no_command_when_the_commit_is_unknown(monkeypatch):
+    """A dev build without git history must not be told to install main over itself."""
+    from livingproof_sim_mujoco import policy
+
+    monkeypatch.setattr(policy, "_installed", lambda: ("1.4.1.dev3", None, None))
+    hint = policy.torch_install_hint()
+    assert "git+" not in hint and "pip install 'livingproof-sim-mujoco" not in hint
+    assert "unknown" in hint
+    monkeypatch.setattr(policy, "_installed", lambda: ("1.4.1.dev3", None, "d" * 40))
+    assert policy.torch_install_hint() == (
+        "pip install 'livingproof-sim-mujoco[torch] @ "
+        "git+https://github.com/Living-Proof-Labs/livingproof-sim-mujoco.git@" + "d" * 40 + "'"
+    )
+
+
+def test_installed_reads_the_build_provenance_record(monkeypatch, tmp_path):
+    import json
+
+    from livingproof_sim_mujoco import policy
+
+    record = {"identity": {"commit": "e" * 40}}
+    (tmp_path / "_build_provenance.json").write_text(json.dumps(record))
+    monkeypatch.setattr(policy, "__file__", str(tmp_path / "policy.py"))
+    assert policy._installed()[2] == "e" * 40
+    (tmp_path / "_build_provenance.json").unlink()
+    assert policy._installed()[2] is None

@@ -51,7 +51,11 @@ values, so the numbers stay in the upstream file:
 ## Backends
 
 The policy file's suffix picks the backend: `.onnx` runs in onnxruntime (CPU); `.pt` or
-`.jit` TorchScript runs in torch (CPU, `pip install livingproof-sim-mujoco[torch]`).
+`.jit` TorchScript runs in torch (CPU). The runner is not on PyPI; install it from the
+repository with the `torch` extra, pinned to a release tag:
+`pip install 'livingproof-sim-mujoco[torch] @ git+https://github.com/Living-Proof-Labs/livingproof-sim-mujoco.git@v1.4.0'`
+(with uv: `livingproof-sim-mujoco = { git = "https://github.com/Living-Proof-Labs/livingproof-sim-mujoco.git", tag = "v1.4.0" }`
+in `[tool.uv.sources]` and `livingproof-sim-mujoco[torch]` in the dependencies).
 TorchScript is run directly rather than converted: unitree_rl_gym's G1 `motion.pt` is an
 LSTM whose hidden and cell state live in module buffers updated in place, and an ONNX
 export drops that state (outputs differed by up to 14.8 on random inputs). `reset()`
