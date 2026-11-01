@@ -55,6 +55,27 @@ class OnnxBackend:
         return self.session.run([self.output_name], {self.input_name: obs[None, :]})[0][0]
 
 
+REPOSITORY = "https://github.com/Living-Proof-Labs/livingproof-sim-mujoco"
+INSTALL_DOCS = "https://docs.livingprooflabs.com/livingproof-sim-mujoco/policy/#backends"
+
+
+def torch_install_hint() -> str:
+    """git+https install of this runner's release with the torch extra.
+
+    The runner is not published on PyPI, so a bare package name would resolve to whatever
+    claims that name there. The URL pins the installed release tag when it is known.
+    """
+    try:
+        from importlib.metadata import version
+
+        ref = f"@v{version('livingproof-sim-mujoco')}"
+    except Exception:
+        ref = ""
+    if ref in ("", "@v0.0.0"):
+        ref = ""
+    return f"pip install 'livingproof-sim-mujoco[torch] @ git+{REPOSITORY}.git{ref}'"
+
+
 class TorchScriptBackend:
     """TorchScript module on the CPU (needs the ``torch`` extra).
 
@@ -69,9 +90,8 @@ class TorchScriptBackend:
         except ImportError as e:
             raise ImportError(
                 f"{path.name} is a TorchScript policy and needs torch, which is not installed. "
-                "Install the runner's torch extra: "
-                "pip install 'livingproof-sim-mujoco[torch]' "
-                "(uv: add livingproof-sim-mujoco[torch] to your dependencies)."
+                f"Install the runner with its torch extra from the repository: {torch_install_hint()} "
+                f"(see {INSTALL_DOCS})."
             ) from e
 
         torch.set_num_threads(1)

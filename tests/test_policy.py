@@ -357,6 +357,12 @@ def test_torchscript_without_torch_hints_at_the_extra(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "torch", None)  # import torch -> ImportError
     path = tmp_path / "motion.pt"
     path.write_bytes(b"not loaded")
-    with pytest.raises(ImportError, match=r"livingproof-sim-mujoco\[torch\]") as err:
+    with pytest.raises(ImportError) as err:
         load_backend(path)
-    assert "motion.pt" in str(err.value)
+    msg = str(err.value)
+    assert "motion.pt" in msg
+    assert "livingproof-sim-mujoco[torch] @ git+https://github.com/Living-Proof-Labs/" in msg
+    assert "https://docs.livingprooflabs.com/livingproof-sim-mujoco/policy/#backends" in msg
+    # Never a bare PyPI requirement: the name is not published there.
+    assert "pip install livingproof-sim-mujoco" not in msg
+    assert "pip install 'livingproof-sim-mujoco[torch]'" not in msg
