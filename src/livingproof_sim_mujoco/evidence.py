@@ -17,6 +17,7 @@ from concurrent.futures import ProcessPoolExecutor
 import datetime as dt
 from importlib import import_module, metadata
 import json
+import multiprocessing as mp
 import os
 from pathlib import Path
 import sys
@@ -49,6 +50,26 @@ class Robot(Protocol):
     def configuration(self, name: str) -> dict: ...  # raises Unsupported(precondition, detail)
     def world(self) -> dict: ...
     def environment(self, name: str) -> dict: ...  # extra manifest environment fields
+
+    # Optional: ``camera = (distance, elevation, azimuth)`` for the tracking camera of the
+    # stand clip and media videos; read through ``camera()``. Never affects evidence.
+
+
+def camera(robot, default: tuple[float, float, float]) -> tuple[float, float, float]:
+    """The adapter's optional tracking camera (distance, elevation, azimuth), else default."""
+    view = getattr(robot, "camera", None)
+    if view is None:
+        return tuple(default)
+    view = tuple(float(v) for v in view)
+    if len(view) != 3 or view[0] <= 0:
+        raise ValueError(f"camera must be (distance > 0, elevation, azimuth), got {view!r}")
+    return view
+
+
+def pool(jobs: int | None = None) -> ProcessPoolExecutor:
+    """Worker pool for trials. Always spawn, never fork: a fork after MuJoCo rendered
+    (OSMesa/EGL) in this process can hang the child, so workers start clean."""
+    return ProcessPoolExecutor(jobs or os.cpu_count(), mp_context=mp.get_context("spawn"))
 
 
 def adapter(ref: str) -> Robot:
@@ -154,8 +175,8 @@ def evidence(
     (out / "trials").mkdir(parents=True, exist_ok=False)
     created = dt.datetime.now(dt.timezone.utc)
     work = [(ref, name, s, plan, p, out) for s in plan["seeds"]]
-    with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
-        trials = list(pool.map(_trial, work))
+    with pool(jobs) as workers:
+        trials = list(workers.map(_trial, work))
     conf_path = root / entry["path"]
     profile = robot.robot()
     manifest = {

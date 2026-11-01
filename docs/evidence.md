@@ -71,8 +71,9 @@ the verifier's first PASS seed and first FAIL seed only, plus `media.json` with 
 file's size and sha256. Each re-run observation must hash to that seed's evidence
 sha256, or nothing is kept (recording goes to a staging folder, so a mismatch leaves no
 partial files from any seed), so every recording is of the trial that was graded. It
-fetches and verifies the pinned upstream files itself, and re-running into an existing
-folder replaces only its `mcap/`, `video/` and `media.json`. Media
-never grades and never changes evidence. An adapter may set `camera = (distance,
-elevation, azimuth)` for the tracking camera. The verifier's reusable walk-hallway
+fetches and verifies the pinned upstream files itself, before the adapter loads anything,
+and re-running into an existing folder replaces only its `mcap/`, `video/` and
+`media.json`. Media never grades and never changes evidence. An adapter may set the
+optional `camera = (distance, elevation, azimuth)` for the tracking camera of media videos
+and the `walk stand` clip (Go1 uses its own; default `walk.CAMERA`). The verifier's reusable walk-hallway
 workflow uploads these as named Actions artifacts and hands their URLs to the reporter.
