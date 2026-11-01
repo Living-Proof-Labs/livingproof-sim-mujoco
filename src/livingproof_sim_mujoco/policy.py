@@ -61,37 +61,59 @@ REPOSITORY = "https://github.com/Living-Proof-Labs/livingproof-sim-mujoco"
 INSTALL_DOCS = "https://docs.livingprooflabs.com/livingproof-sim-mujoco/policy/#backends"
 
 
-def install_ref(version: str | None, direct_url: str | None) -> str:
+def install_ref(
+    version: str | None, direct_url: str | None, build_commit: str | None = None
+) -> str:
     """``@vX.Y.Z`` only for an exact release; otherwise ``@<commit>``, or "" if unknown.
 
     The commit comes from the PEP 610 ``direct_url.json`` of a git install, else from the
-    ``+g<hash>`` local part hatch-vcs writes into a development version.
+    commit recorded at build time in ``_build_provenance.json`` (``build_commit``), else
+    from a ``+g<hash>`` local version part.
     """
     if version and version != "0.0.0" and re.fullmatch(r"\d+\.\d+\.\d+", version):
         return f"@v{version}"
     try:
         commit = json.loads(direct_url or "{}").get("vcs_info", {}).get("commit_id", "")
-    except ValueError:
+    except (ValueError, AttributeError):
         commit = ""
-    if re.fullmatch(r"[0-9a-f]{40}", commit or ""):
-        return f"@{commit}"
+    for candidate in (commit, build_commit):
+        if isinstance(candidate, str) and re.fullmatch(r"[0-9a-f]{40}", candidate):
+            return f"@{candidate}"
     m = re.search(r"\+g([0-9a-f]{7,40})\b", version or "")
     return f"@{m.group(1)}" if m else ""
+
+
+def _installed() -> tuple[str | None, str | None, str | None]:
+    """(version, direct_url.json, build-time commit) of the installed runner."""
+    try:
+        from importlib.metadata import distribution
+
+        dist = distribution("livingproof-sim-mujoco")
+        version, direct_url = dist.version, dist.read_text("direct_url.json")
+    except Exception:
+        version, direct_url = None, None
+    try:
+        saved = json.loads((Path(__file__).parent / "_build_provenance.json").read_text())
+        build_commit = saved.get("identity", {}).get("commit")
+    except (OSError, ValueError, AttributeError):
+        build_commit = None
+    return version, direct_url, build_commit
 
 
 def torch_install_hint() -> str:
     """git+https install of this runner with the torch extra, at this exact release or commit.
 
     The runner is not published on PyPI, so a bare package name would resolve to whatever
-    claims that name there.
+    claims that name there. When neither the release nor the commit is known (a dev build
+    from a tree without git history), no command is given: an unpinned git+https install
+    would replace this build with the repository's main branch.
     """
-    try:
-        from importlib.metadata import distribution
-
-        dist = distribution("livingproof-sim-mujoco")
-        ref = install_ref(dist.version, dist.read_text("direct_url.json"))
-    except Exception:
-        ref = ""
+    ref = install_ref(*_installed())
+    if not ref:
+        return (
+            "reinstall this build with its torch extra (pip install '<this checkout>[torch]'); "
+            "its release and commit are unknown, so no repository install command is given (it would install main over this build)"
+        )
     return f"pip install 'livingproof-sim-mujoco[torch] @ git+{REPOSITORY}.git{ref}'"
 
 
