@@ -33,6 +33,60 @@ class PolicyError(ValueError):
     """The policy, model and spec do not fit together."""
 
 
+class OnnxBackend:
+    """onnxruntime CPU session; stateless."""
+
+    def __init__(self, path: Path, input_name: str, output_name: str | None):
+        import onnxruntime
+
+        self.session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        inputs = {i.name: i for i in self.session.get_inputs()}
+        if input_name not in inputs:
+            raise PolicyError(f"ONNX model has no input {input_name!r} ({sorted(inputs)})")
+        self.input_name = input_name
+        self.output_name = output_name or self.session.get_outputs()[0].name
+        size = inputs[input_name].shape[-1]
+        self.input_size = size if isinstance(size, int) else None
+
+    def reset(self) -> None:
+        pass
+
+    def __call__(self, obs: np.ndarray) -> np.ndarray:
+        return self.session.run([self.output_name], {self.input_name: obs[None, :]})[0][0]
+
+
+class TorchScriptBackend:
+    """TorchScript module on the CPU (needs the ``torch`` extra).
+
+    Recurrent policies such as unitree_rl_gym's ``motion.pt`` keep their LSTM state in
+    module buffers that ``forward`` updates in place, which an ONNX export does not
+    preserve; ``reset`` reloads the module so each episode starts from its saved state.
+    """
+
+    def __init__(self, path: Path):
+        import torch
+
+        torch.set_num_threads(1)
+        self._torch, self._path = torch, path
+        self.input_size = None
+        self.reset()
+
+    def reset(self) -> None:
+        self._module = self._torch.jit.load(str(self._path), map_location="cpu").eval()
+
+    def __call__(self, obs: np.ndarray) -> np.ndarray:
+        with self._torch.no_grad():
+            out = self._module(self._torch.from_numpy(obs).unsqueeze(0))
+        return out.numpy().reshape(-1)
+
+
+def load_backend(path: Path, input_name: str = "obs", output_name: str | None = None):
+    """``.onnx`` runs in onnxruntime; ``.pt``/``.jit`` TorchScript runs in torch."""
+    if path.suffix in (".pt", ".jit"):
+        return TorchScriptBackend(path)
+    return OnnxBackend(path, input_name, output_name)
+
+
 @dataclass(frozen=True)
 class ObsTerm:
     """One observation term, in policy order.
@@ -90,9 +144,7 @@ class PolicySpec:
 class OnnxPolicy:
     """Bind an ONNX policy to a MuJoCo model; ``step`` advances one physics step."""
 
-    def __init__(self, model: mujoco.MjModel, onnx_path: str | Path, spec: PolicySpec):
-        import onnxruntime
-
+    def __init__(self, model: mujoco.MjModel, policy_path: str | Path, spec: PolicySpec):
         self.model, self.spec = model, spec
         n = len(spec.joints)
         if not (len(spec.actuators) == len(spec.default_pose) == n):
@@ -150,20 +202,22 @@ class OnnxPolicy:
         self.action_scale = np.broadcast_to(
             np.asarray(spec.action_scale, dtype=np.float64), (n,)
         ).copy()
-        self.session = onnxruntime.InferenceSession(
-            str(onnx_path), providers=["CPUExecutionProvider"]
-        )
-        inputs = {i.name: i for i in self.session.get_inputs()}
-        if spec.input_name not in inputs:
-            raise PolicyError(f"ONNX model has no input {spec.input_name!r} ({sorted(inputs)})")
-        self.output_name = spec.output_name or self.session.get_outputs()[0].name
-        want = inputs[spec.input_name].shape[-1]
+        self.backend = load_backend(Path(policy_path), spec.input_name, spec.output_name)
+        want = self.backend.input_size
         self.frame_size = sum(self._term_size(t) for t in spec.obs)
-        if isinstance(want, int) and want != self.frame_size * spec.history:
+        size = self.frame_size * spec.history
+        if want is not None and want != size:
             raise PolicyError(
                 f"observation spec gives {self.frame_size} x {spec.history} history = "
-                f"{self.frame_size * spec.history}, ONNX input expects {want}"
+                f"{size}, ONNX input expects {want}"
             )
+        if want is None:  # TorchScript: probe once, then restore the saved state
+            try:
+                probe = self.backend(np.zeros(size, dtype=np.float32))
+            except Exception as error:  # noqa: BLE001 - torch raises many types
+                raise PolicyError(f"policy rejects a {size}-value observation: {error}") from error
+            if probe.shape != (n,):
+                raise PolicyError(f"policy returns {probe.shape[0]} actions, spec has {n} joints")
         self.policy_dt = spec.decimation * model.opt.timestep
         self.reset()
 
@@ -216,6 +270,7 @@ class OnnxPolicy:
         return n
 
     def reset(self) -> None:
+        self.backend.reset()
         self.counter = 0
         self.policy_steps = 0
         self.last_action = np.zeros(len(self.spec.joints), dtype=np.float32)
@@ -265,7 +320,7 @@ class OnnxPolicy:
     def act(self, data: mujoco.MjData, command: Sequence[float]) -> np.ndarray:
         """Run the policy once and write position targets into data.ctrl."""
         obs = self.observation(data, command)
-        out = self.session.run([self.output_name], {self.spec.input_name: obs[None, :]})[0][0]
+        out = self.backend(obs)
         self.last_action = np.asarray(out, dtype=np.float32).copy()
         self.target[: self.n] = self.default_pose + self.action_scale * self.last_action
         if self.spec.actuation == "position":

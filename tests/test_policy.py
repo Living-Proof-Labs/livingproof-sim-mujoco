@@ -275,3 +275,35 @@ def test_pd_torque_rejects_position_actuators(tmp_path):
     bad = PolicySpec(**{**s.__dict__, "actuators": ["p0", "t1"]})
     with pytest.raises(PolicyError, match="not a motor"):
         OnnxPolicy(model, write_onnx(tmp_path / "p.onnx", np.zeros((17, 2)), [0, 0]), bad)
+
+
+def test_torchscript_backend_keeps_and_resets_recurrent_state(model, tmp_path):
+    torch = pytest.importorskip("torch")
+
+    class Recurrent(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("state", torch.zeros(1, 2))
+
+        def forward(self, x):
+            self.state.copy_(self.state + 1.0)
+            return self.state + 0.0 * x[:, :2]
+
+    path = tmp_path / "p.pt"
+    torch.jit.script(Recurrent()).save(str(path))
+    policy = OnnxPolicy(model, path, spec())
+    data = mujoco.MjData(model)
+    policy.act(data, [0, 0, 0])
+    policy.act(data, [0, 0, 0])
+    assert policy.last_action.tolist() == [2.0, 2.0]  # state carried between calls
+    policy.reset()  # also undoes the size probe made at construction
+    policy.act(data, [0, 0, 0])
+    assert policy.last_action.tolist() == [1.0, 1.0]
+
+
+def test_torchscript_wrong_observation_size_is_rejected(model, tmp_path):
+    torch = pytest.importorskip("torch")
+    path = tmp_path / "p.pt"
+    torch.jit.script(torch.nn.Linear(5, 2)).save(str(path))
+    with pytest.raises(PolicyError, match="rejects"):
+        OnnxPolicy(model, path, spec())

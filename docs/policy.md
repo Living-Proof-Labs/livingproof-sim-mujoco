@@ -46,8 +46,14 @@ values, so the numbers stay in the upstream file:
   `deploy_mujoco.py` observation (47 values for G1) and a 0.8 s gait phase.
 - `playground_joystick(...)`: MuJoCo Playground `experimental/sim2sim` joystick policies.
 
-TorchScript policies are run after a one-time conversion to ONNX, done and checked for
-numerical parity by the robot package.
+## Backends
+
+The policy file's suffix picks the backend: `.onnx` runs in onnxruntime (CPU); `.pt` or
+`.jit` TorchScript runs in torch (CPU, `pip install livingproof-sim-mujoco[torch]`).
+TorchScript is run directly rather than converted: unitree_rl_gym's G1 `motion.pt` is an
+LSTM whose hidden and cell state live in module buffers updated in place, and an ONNX
+export drops that state (outputs differed by up to 14.8 on random inputs). `reset()`
+reloads the module so every episode starts from the saved state.
 
 ## Example
 
