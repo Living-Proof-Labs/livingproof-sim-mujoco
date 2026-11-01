@@ -43,6 +43,17 @@ commands:
  - bash tools/run-task.sh docs
 ```
 
+### `task hallway`
+
+```text
+task: hallway
+
+Check the pinned hallway fixture and write evidence to artifacts/hallway
+
+commands:
+ - bash tools/run-task.sh hallway
+```
+
 ### `task image`
 
 ```text
@@ -211,6 +222,20 @@ commands:
  - uv run --no-sync python tools/manual.py
 ```
 
+### `task -t Taskfile.runtime.yml hallway`
+
+```text
+task: hallway
+
+Check the pinned hallway-open fixture in MuJoCo and write the evidence bundle
+
+env:
+  UV_PYTHON_DOWNLOADS: "never"
+
+commands:
+ - uv run --no-sync python tools/hallway.py
+```
+
 ### `task -t Taskfile.runtime.yml package`
 
 ```text
@@ -280,6 +305,7 @@ env:
 commands:
  - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
  - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
+ - uv run --no-sync pytest tests/test_hallway.py --junitxml=artifacts/hallway.xml
 ```
 
 ### `task -t Taskfile.runtime.yml verify`
