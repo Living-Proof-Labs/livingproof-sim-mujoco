@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import mujoco
 import numpy as np
 import onnx
@@ -347,3 +349,14 @@ def test_target_range_clamps_policy_targets(model, tmp_path):
     policy.act(data, [0, 0, 0])
     assert data.ctrl[model.actuator("m0").id] == pytest.approx(0.3)
     assert data.ctrl[model.actuator("m1").id] == pytest.approx(-0.7)
+
+
+def test_torchscript_without_torch_hints_at_the_extra(tmp_path, monkeypatch):
+    from livingproof_sim_mujoco.policy import load_backend
+
+    monkeypatch.setitem(sys.modules, "torch", None)  # import torch -> ImportError
+    path = tmp_path / "motion.pt"
+    path.write_bytes(b"not loaded")
+    with pytest.raises(ImportError, match=r"livingproof-sim-mujoco\[torch\]") as err:
+        load_backend(path)
+    assert "motion.pt" in str(err.value)

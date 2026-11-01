@@ -64,7 +64,15 @@ class TorchScriptBackend:
     """
 
     def __init__(self, path: Path):
-        import torch
+        try:
+            import torch
+        except ImportError as e:
+            raise ImportError(
+                f"{path.name} is a TorchScript policy and needs torch, which is not installed. "
+                "Install the runner's torch extra: "
+                "pip install 'livingproof-sim-mujoco[torch]' "
+                "(uv: add livingproof-sim-mujoco[torch] to your dependencies)."
+            ) from e
 
         torch.set_num_threads(1)
         self._torch, self._path = torch, path
