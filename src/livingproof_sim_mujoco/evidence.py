@@ -83,10 +83,12 @@ def parameters(robot: Robot, name: str) -> dict:
     return sc.parameters(robot.robot(), robot.configuration(name), robot.world())
 
 
-def _trial(args):
+def run_trial(ref: str, name: str, seed: int, plan: dict, p: dict, on_step=None) -> dict:
+    """One seeded trial through ``observations.observe``. ``on_step`` (for example
+    ``livingproof_sim_mujoco.media.Recorder``) only reads ``data``, so it cannot change the
+    observation."""
     from livingproof_sim_mujoco.observations import observe
 
-    ref, name, seed, plan, p, out = args
     robot = adapter(ref)
     rs = robot.runner_settings()
     scene = robot.scene(name)
@@ -96,6 +98,7 @@ def _trial(args):
     data = mujoco.MjData(model)
     robot.initial_state(model, data, ctrl, seed, rs["initial_noise"], p["spawn"])
     command = [plan["command_speed"], 0.0, 0.0]
+    hook = on_step(model, robot.base_body(name)) if on_step is not None else None
     obs = observe(
         model,
         data,
@@ -105,10 +108,33 @@ def _trial(args):
         exit_x=p["exit_x"],
         seconds=p["time_limit"],
         sample_hz=rs["sample_hz"],
+        on_step=hook,
     )
+    if hook is not None:
+        hook.close()
+    return obs
+
+
+def observation_bytes(obs: dict) -> bytes:
+    """The exact bytes written to ``trials/seed-NN.json`` (their sha256 is the trial's)."""
+    return (json.dumps(obs, separators=(",", ":")) + "\n").encode()
+
+
+def _trial(args):
+    ref, name, seed, plan, p, out = args
+    obs = run_trial(ref, name, seed, plan, p)
     path = Path(out) / "trials" / f"seed-{seed:02d}.json"
-    path.write_text(json.dumps(obs, separators=(",", ":")) + "\n")
+    path.write_bytes(observation_bytes(obs))
     return {"seed": seed, "path": f"trials/{path.name}", "sha256": sha256(path)}
+
+
+def recording(robot: Robot, lock: dict, name: str) -> tuple[dict, dict]:
+    """(plan, scenario parameters) exactly as every evidence trial is recorded."""
+    plan = lock["plan"]
+    p = parameters(robot, name)
+    # Recording length only; the verifier applies the scenario's time limit.
+    p["time_limit"] = 2 * p["route_length"] / plan["command_speed"] + 5
+    return plan, p
 
 
 def evidence(
@@ -122,11 +148,8 @@ def evidence(
         raise SystemExit(f"{LOCK} has PENDING_RELEASE refs ({', '.join(waiting)}); run task repin")
     entry = locked_configuration(lock, name, root)
     fetch(root)
-    plan = lock["plan"]
     world = robot.world()
-    p = parameters(robot, name)
-    # Recording length only; the verifier applies the scenario's time limit.
-    p["time_limit"] = 2 * p["route_length"] / plan["command_speed"] + 5
+    plan, p = recording(robot, lock, name)
     out = Path(out)
     (out / "trials").mkdir(parents=True, exist_ok=False)
     created = dt.datetime.now(dt.timezone.utc)
