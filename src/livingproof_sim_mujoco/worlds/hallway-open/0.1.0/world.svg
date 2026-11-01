@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 360" width="800" height="360" role="img" aria-labelledby="hallway-open-0-1-0-title hallway-open-0-1-0-desc">
+<title id="hallway-open-0-1-0-title">Open hallway, hallway-open 0.1.0: top-down diagram</title>
+<desc id="hallway-open-0-1-0-desc">Top-down diagram of hallway-open 0.1.0: a 6.00 m long hallway, 1.50 m clear between two 0.15 m walls, open at both ends. Entrance (IN) at x = -3.00, exit (OUT) at x = 3.00. Passage from y = -0.50 to 0.50 m around the centreline. Spawns: spawn-entrance at (-2.50, 0.00) yaw 0°; spawn-centre at (0.00, 0.00) yaw 0°; spawn-exit at (2.50, 0.00) yaw 180°.</desc>
+<style>:root{--bg:#ffffff;--text:#0f172a;--muted:#475569;--wall:#475569;--floor:#f1f5f9;--dim:#475569;--teal:#0f766e;--amber:#b45309;--spawn:#1d4ed8}@media (prefers-color-scheme: dark){:root{--bg:#0d1117;--text:#e2e8f0;--muted:#94a3b8;--wall:#94a3b8;--floor:#1e293b;--dim:#94a3b8;--teal:#2dd4bf;--amber:#fbbf24;--spawn:#60a5fa}}text{font-family:'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;fill:var(--text);font-size:12px}.title{font-family:'Instrument Serif', Georgia, 'Times New Roman', serif;font-size:18px}.muted{fill:var(--muted)}.dimtext{font-size:13px;fill:var(--muted)}.wall{fill:var(--wall)}.floor{fill:var(--floor)}.passage{fill:var(--teal);fill-opacity:.10;stroke:var(--teal);stroke-dasharray:6 4}.centre{stroke:var(--teal);stroke-width:1.5;stroke-dasharray:2 4;fill:none}.entrance{fill:var(--teal)}.exit{stroke:var(--amber);stroke-width:6;stroke-dasharray:10 6}.tag-in{fill:var(--teal);font-weight:700}.tag-out{fill:var(--amber);font-weight:700}.spawn{fill:var(--spawn)}.yaw{fill:var(--spawn);stroke:var(--bg);stroke-width:3;paint-order:stroke;stroke-linejoin:round}.leader{stroke:var(--muted);stroke-width:1;fill:none}.dim{stroke:var(--dim);stroke-width:1;fill:none}.axis{stroke:var(--text);stroke-width:1.5;fill:none}.axishead{fill:var(--text)}</style>
+<text class="title" x="16" y="34.0">Open hallway · hallway-open 0.1.0 · top view</text>
+<rect class="wall" x="16.0" y="51.0" width="16" height="8"/>
+<text x="38.0" y="60.0">wall</text>
+<rect class="passage" x="84.8" y="51.0" width="16" height="8"/>
+<text x="106.8" y="60.0">passage</text>
+<line class="centre" x1="175.2" y1="56.0" x2="191.2" y2="56.0"/>
+<text x="197.2" y="60.0">centreline</text>
+<rect class="entrance" x="293.2" y="51.0" width="5" height="10"/>
+<text x="309.2" y="60.0">IN entrance</text>
+<line class="exit" x1="414.4" y1="51.0" x2="414.4" y2="61.0"/>
+<text x="428.4" y="60.0">OUT exit</text>
+<circle class="spawn" cx="512.0" cy="56.0" r="4"/>
+<text x="526.0" y="60.0">spawn + yaw</text>
+<rect class="floor" x="64.0" y="104.0" width="576.0" height="172.8"/>
+<rect class="wall" x="64.0" y="104.0" width="576.0" height="14.4"/>
+<rect class="wall" x="64.0" y="262.4" width="576.0" height="14.4"/>
+<rect class="passage" x="64.0" y="142.4" width="576.0" height="96.0"/>
+<polyline class="centre" points="64.0,190.4 640.0,190.4"/>
+<rect class="entrance" x="61.0" y="118.4" width="6" height="144.0"/>
+<text class="tag-in" x="54.0" y="194.6" text-anchor="end">IN</text>
+<line class="exit" x1="640.0" y1="118.4" x2="640.0" y2="262.4"/>
+<text class="tag-out" x="650.0" y="194.6" text-anchor="start">OUT</text>
+<polygon class="yaw" points="118.0,193.4 132.0,193.4 132.0,199.4 142.0,190.4 132.0,181.4 132.0,187.4 118.0,187.4"/>
+<circle class="spawn" cx="112.0" cy="190.4" r="6"/>
+<line class="leader" x1="112.0" y1="190.4" x2="112.0" y2="94.0"/>
+<text x="16.0" y="90.0">spawn-entrance (-2.50, 0.00) · yaw 0°</text>
+<polygon class="yaw" points="358.0,193.4 372.0,193.4 372.0,199.4 382.0,190.4 372.0,181.4 372.0,187.4 358.0,187.4"/>
+<circle class="spawn" cx="352.0" cy="190.4" r="6"/>
+<line class="leader" x1="352.0" y1="190.4" x2="352.0" y2="290.8"/>
+<text x="229.6" y="302.8">spawn-centre (0.00, 0.00) · yaw 0°</text>
+<polygon class="yaw" points="586.0,187.4 572.0,187.4 572.0,181.4 562.0,190.4 572.0,199.4 572.0,193.4 586.0,193.4"/>
+<circle class="spawn" cx="592.0" cy="190.4" r="6"/>
+<line class="leader" x1="592.0" y1="190.4" x2="592.0" y2="94.0"/>
+<text x="469.6" y="90.0">spawn-exit (2.50, 0.00) · yaw 180°</text>
+<line class="dim" x1="64.0" y1="324.8" x2="640.0" y2="324.8"/>
+<line class="dim" x1="64.0" y1="319.8" x2="64.0" y2="329.8"/>
+<line class="dim" x1="640.0" y1="319.8" x2="640.0" y2="329.8"/>
+<text class="dimtext" x="352.0" y="343.8" text-anchor="middle">6.00 m length</text>
+<line class="dim" x1="680.0" y1="118.4" x2="680.0" y2="262.4"/>
+<line class="dim" x1="675.0" y1="118.4" x2="685.0" y2="118.4"/>
+<line class="dim" x1="675.0" y1="262.4" x2="685.0" y2="262.4"/>
+<text class="dimtext" x="688.0" y="195.0">1.50 m clear</text>
+<line class="axis" x1="20.0" y1="343.8" x2="42.0" y2="343.8"/>
+<line class="axis" x1="20.0" y1="343.8" x2="20.0" y2="321.8"/>
+<polygon class="axishead" points="48.0,343.8 41.0,339.8 41.0,347.8"/>
+<polygon class="axishead" points="20.0,315.8 16.0,322.8 24.0,322.8"/>
+<text x="51.0" y="347.8">+x</text>
+<text x="27.0" y="319.8">+y</text>
+</svg>

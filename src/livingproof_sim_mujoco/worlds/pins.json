@@ -1,0 +1,10 @@
+{
+  "hallway-open/0.1.0": {
+    "repository": "Living-Proof-Labs/livingproof-worlds",
+    "tag": "v1.1.0",
+    "commit": "9b3e7119aa93a3370383227fb30bd39a9dd72b4b",
+    "path": "worlds/hallway-open/0.1.0",
+    "release_sha256": "ad7663f5aa853830d3910a43b32c183173095d6d5494b6983e69dd3e8371c135",
+    "extension": "hallway-open-0.1.0.mujoco.json"
+  }
+}
