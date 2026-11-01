@@ -43,6 +43,12 @@ WORLD_KEYS = {
 }
 
 
+# Only these released files are vendored and checksum-verified. The generated docs
+# listed in release.json are skipped on purpose: they are renders of world.json.
+VENDORED = {"world.json", "notes.md", "release.json"}
+GENERATED_DOCS = {"README.md", "world.svg", "world-light.svg", "world-dark.svg"}
+
+
 class FixtureError(Exception):
     """The fixture is unknown, not pinned, or does not match its released checksums."""
 
@@ -97,6 +103,9 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
         )
     for name, expected in sorted(manifest["files"].items()):
         path = directory / name
+        if name in GENERATED_DOCS:
+            # Generated docs (README, SVG renders) are not vendored; skipped on purpose.
+            continue
         if not path.is_file():
             raise FixtureError(f"{key}: missing released file {name}")
         got = sha256(path)
@@ -104,11 +113,14 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
             raise FixtureError(
                 f"{key}: checksum mismatch for {name}: expected {expected}, got {got}"
             )
-    extras = sorted(p.name for p in directory.iterdir() if p.name not in manifest["files"])
-    if extras != ["release.json"]:
+    unknown = sorted(n for n in manifest["files"] if n not in VENDORED and n not in GENERATED_DOCS)
+    if unknown:
         raise FixtureError(
-            f"{key}: files not in release.json: {', '.join(e for e in extras if e != 'release.json')}"
+            f"{key}: release.json lists files this adapter does not know: {', '.join(unknown)}"
         )
+    extras = sorted(p.name for p in directory.iterdir() if p.name not in VENDORED)
+    if extras:
+        raise FixtureError(f"{key}: files not vendored from release.json: {', '.join(extras)}")
     world = json.loads((directory / "world.json").read_text())
     extension = json.loads((root / pin["extension"]).read_text())
     return {"world": world, "extension": extension, "pin": pin}

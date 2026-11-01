@@ -8,11 +8,24 @@ from robot-capability-specs v1.3.0. No robot is involved.
 
 ## Pinning and checksums
 
-The released files are vendored unchanged under `src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/`.
-`worlds/pins.json` records the tag, full commit and the SHA-256 of `release.json`.
-Loading fails with a `FixtureError` naming the file, expected and actual hash when
-`release.json` or any listed file differs, when a listed file is missing, or when an
-unlisted file is present. Unknown identifiers or versions are reported, never substituted.
+Only `world.json`, `notes.md` and `release.json` are vendored, unchanged, under
+`src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/`. `worlds/pins.json` records the tag, the full
+commit and the SHA-256 of `release.json`. On every load the adapter checks:
+
+- `release.json` against the pinned SHA-256;
+- `world.json` and `notes.md` against `release.json`.
+
+`release.json` also lists the generated docs (`README.md`, `world.svg`,
+`world-light.svg`, `world-dark.svg`). These are renders of `world.json`, so they are
+**skipped on purpose**: they are not vendored and not checksum-checked. A test states
+this. Loading fails with a `FixtureError` when:
+
+- a vendored file's checksum does not match;
+- a vendored file is missing;
+- any other file is present (including a generated doc);
+- `release.json` lists a file the adapter doesn't know.
+
+An unknown fixture or version is reported, never substituted.
 
 ## Translation
 

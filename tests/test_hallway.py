@@ -64,7 +64,9 @@ def test_tampered_release_manifest_fails(copy_root):
 def test_missing_and_unlisted_files_fail(copy_root):
     directory = copy_root / FIXTURE / VERSION
     (directory / "extra.txt").write_text("x")
-    with pytest.raises(hallway.FixtureError, match="files not in release.json: extra.txt"):
+    with pytest.raises(
+        hallway.FixtureError, match="files not vendored from release.json: extra.txt"
+    ):
         hallway.load_fixture(FIXTURE, VERSION, copy_root)
     (directory / "extra.txt").unlink()
     (directory / "notes.md").unlink()
@@ -311,3 +313,22 @@ def test_adapter_commit_is_null_without_checkout(tmp_path, monkeypatch):
     ident = hallway.adapter_identity()
     assert ident["commit"] is None
     assert schema_errors(ident, SCHEMA["properties"]["adapter"]) == []
+
+
+def test_only_world_notes_release_are_vendored_and_generated_docs_skipped_on_purpose(copy_root):
+    directory = copy_root / FIXTURE / VERSION
+    assert sorted(p.name for p in directory.iterdir()) == ["notes.md", "release.json", "world.json"]
+    manifest = json.loads((directory / "release.json").read_text())
+    skipped = set(manifest["files"]) - hallway.VENDORED
+    # release.json lists the generated README and SVG renders; they are deliberately not vendored or checked.
+    assert (
+        skipped
+        == hallway.GENERATED_DOCS
+        == {"README.md", "world.svg", "world-light.svg", "world-dark.svg"}
+    )
+    hallway.load_fixture(FIXTURE, VERSION, copy_root)
+    (directory / "world.svg").write_text("<svg/>")  # a generated doc reappearing is still rejected
+    with pytest.raises(
+        hallway.FixtureError, match="files not vendored from release.json: world.svg"
+    ):
+        hallway.load_fixture(FIXTURE, VERSION, copy_root)
