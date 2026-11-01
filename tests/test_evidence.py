@@ -256,3 +256,14 @@ def test_stand_and_media_use_the_optional_adapter_camera(tmp_path, monkeypatch):
     monkeypatch.setattr(Toy, "camera", (0, 1), raising=False)
     with pytest.raises(ValueError, match="camera must be"):
         evidence.camera(TOY, walk.CAMERA)
+
+
+def test_robot_protocol_lists_every_adapter_method():
+    members = {n for n in vars(evidence.Robot) if not n.startswith("_")}
+    assert {"configuration", "world", "environment", "robot"} <= members
+    assert "camera" not in members  # optional attribute, read through evidence.camera()
+
+
+def test_trial_workers_are_spawned_never_forked():
+    with evidence.pool(1) as workers:
+        assert workers._mp_context.get_start_method() == "spawn"

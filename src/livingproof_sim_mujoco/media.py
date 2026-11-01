@@ -17,10 +17,8 @@ Writes ``<out>/mcap/seed-NN.mcap`` (all seeds), ``<out>/video/seed-NN-{pass,fail
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor
 import hashlib
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -214,11 +212,11 @@ def media(
         (ref, name, t["seed"], picked.get(t["seed"]), plan, p, out, t["sha256"])
         for t in manifest["trials"]
     ]
-    if jobs == 1:  # in-process: no fork after a renderer was used in this process
+    if jobs == 1:
         trials = [_record(w) for w in work]
-    else:
-        with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
-            trials = list(pool.map(_record, work))
+    else:  # spawned workers: never fork after a renderer was used in this process
+        with ev.pool(jobs) as workers:
+            trials = list(workers.map(_record, work))
     doc = {
         "format": FORMAT,
         "configuration": name,
