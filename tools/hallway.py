@@ -14,6 +14,7 @@ import sys
 os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 ROOT = Path(__file__).resolve().parents[1]
+ORTHO_HEIGHT_M = 5.0  # 960x720 shows 6.67 m x 5.0 m: the whole 6 m hallway
 
 
 def screenshots(xml, directory):
@@ -28,8 +29,11 @@ def screenshots(xml, directory):
     option = mujoco.MjvOption()
     option.sitegroup[4] = 1  # show named places
     views = {
-        # Overhead: straight down on the floor centre, +x to the right.
-        "overhead.png": dict(lookat=[0, 0, 0], distance=9.0, azimuth=90, elevation=-90),
+        # Overhead: orthographic, straight down on the floor centre, +x to the right.
+        # In orthographic mode the free camera's fovy is the visible height in metres.
+        "overhead.png": dict(
+            lookat=[0, 0, 0], distance=9.0, azimuth=90, elevation=-90, orthographic=1
+        ),
         # Interior: eye near spawn-entrance at about head height, looking toward exit (+x).
         "entrance-view.png": dict(lookat=[3.0, 0, 0.8], distance=5.6, azimuth=0, elevation=-8),
     }
@@ -38,6 +42,8 @@ def screenshots(xml, directory):
         for name, view in views.items():
             camera = mujoco.MjvCamera()
             camera.lookat[:] = view["lookat"]
+            camera.orthographic = view.get("orthographic", 0)
+            model.vis.global_.fovy = ORTHO_HEIGHT_M if camera.orthographic else 45.0
             camera.distance, camera.azimuth, camera.elevation = (
                 view["distance"],
                 view["azimuth"],
@@ -49,6 +55,11 @@ def screenshots(xml, directory):
                 **view,
                 "width": 960,
                 "height": 720,
+                **(
+                    {"projection": "orthographic", "visible_height_m": ORTHO_HEIGHT_M}
+                    if view.get("orthographic")
+                    else {"projection": "perspective", "fovy_deg": 45.0}
+                ),
                 "renderer": "MuJoCo offscreen, MUJOCO_GL=" + os.environ["MUJOCO_GL"],
             }
     return written

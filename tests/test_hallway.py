@@ -128,7 +128,7 @@ def test_unmapped_feature_is_unsupported_naming_fixture_version_feature(loaded, 
     assert str(info.value) == f"UNSUPPORTED: hallway-open 0.1.0: {feature}"
     assert info.value.record() == {
         "status": "UNSUPPORTED",
-        "fixture": "hallway-open",
+        "fixture": {"id": "hallway-open", "content_version": "0.1.0"},
         "content_version": "0.1.0",
         "feature": feature,
     }
@@ -142,6 +142,8 @@ def test_run_checks_reports_unsupported_and_never_passes(monkeypatch, loaded):
     assert record["status"] == "UNSUPPORTED"
     assert record["feature"] == "geometry 'wall-left' type 'cylinder'"
     assert record["quantities"] == []
+    assert record["fixture"] == {"id": FIXTURE, "content_version": VERSION}
+    assert schema_errors(record, SCHEMA) == []
 
 
 def test_geometry_readback_detects_a_wrong_model(loaded):
@@ -210,3 +212,102 @@ def test_result_matches_documented_schema(result):
         result["adapter"]["name"] == "livingproof-sim-mujoco"
         and result["engine"]["name"] == "mujoco"
     )
+
+
+def test_adapter_version_is_full_commit():
+    import re as _re
+
+    ident = hallway.adapter_identity()
+    assert _re.fullmatch(r"[0-9a-f]{40}", ident["version"]), ident["version"]
+    pattern = SCHEMA["properties"]["adapter"]["properties"]["version"]["pattern"]
+    assert pattern == "^[0-9a-f]{40}$"
+    assert ident["describe"] != ident["version"]
+
+
+def schema_errors(value, schema, path="$"):
+    """Minimal JSON Schema subset (type, const, enum, pattern, required, properties, items)."""
+    import re as _re
+
+    kinds = {
+        "object": dict,
+        "array": list,
+        "string": str,
+        "number": (int, float),
+        "null": type(None),
+        "boolean": bool,
+        "integer": int,
+    }
+    errs = []
+    if "type" in schema:
+        types = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
+        if not any(isinstance(value, kinds[t]) for t in types):
+            return [f"{path}: expected {types}, got {type(value).__name__}"]
+    if "const" in schema and value != schema["const"]:
+        errs.append(f"{path}: != const")
+    if "enum" in schema and value not in schema["enum"]:
+        errs.append(f"{path}: not in enum")
+    if "pattern" in schema and isinstance(value, str) and not _re.search(schema["pattern"], value):
+        errs.append(f"{path}: pattern")
+    if isinstance(value, dict):
+        errs += [f"{path}.{k}: required" for k in schema.get("required", []) if k not in value]
+        for k, sub in schema.get("properties", {}).items():
+            if k in value:
+                errs += schema_errors(value[k], sub, f"{path}.{k}")
+    if isinstance(value, list) and "items" in schema:
+        for i, item in enumerate(value):
+            errs += schema_errors(item, schema["items"], f"{path}[{i}]")
+    return errs
+
+
+def test_full_result_matches_schema(result):
+    assert schema_errors(result, SCHEMA) == []
+
+
+def test_schema_helper_rejects_string_fixture():
+    assert schema_errors({"fixture": "hallway-open"}, SCHEMA["properties"]["fixture"]) != []
+
+
+@pytest.mark.parametrize(
+    "edit, feature",
+    [
+        (lambda e: e.__setitem__("ccd", {}), "extension key 'ccd'"),
+        (lambda e: e["contact"].__setitem__("gap", 0.0), "extension key 'contact.gap'"),
+        (lambda e: e["probe"].__setitem__("roll", True), "extension key 'probe.roll'"),
+    ],
+)
+def test_unknown_extension_key_is_unsupported(loaded, edit, feature):
+    extension = copy.deepcopy(loaded["extension"])
+    edit(extension)
+    with pytest.raises(hallway.Unsupported) as info:
+        hallway.to_mjcf(loaded["world"], extension)
+    assert info.value.feature == feature
+
+
+def test_nonzero_contact_margin_is_unsupported(loaded, monkeypatch):
+    extension = copy.deepcopy(loaded["extension"])
+    extension["contact"]["margin"] = 0.005
+    with pytest.raises(hallway.Unsupported) as info:
+        hallway.to_mjcf(loaded["world"], extension)
+    assert info.value.feature.startswith("extension contact.margin 0.005")
+    monkeypatch.setattr(hallway, "load_fixture", lambda *a: {**loaded, "extension": extension})
+    record = hallway.run_checks(FIXTURE, VERSION)
+    assert record["status"] == "UNSUPPORTED" and schema_errors(record, SCHEMA) == []
+
+
+def test_adapter_commit_in_checkout():
+    import re as _re
+
+    ident = hallway.adapter_identity()
+    pattern = SCHEMA["properties"]["adapter"]["properties"]["commit"]["pattern"]
+    assert pattern == SCHEMA["properties"]["catalog"]["properties"]["commit"]["pattern"]
+    if ident["commit"] is not None:
+        assert _re.fullmatch(r"[0-9a-f]{40}", ident["commit"])
+        assert ident["version"] == ident["commit"]
+
+
+def test_adapter_commit_is_null_without_checkout(tmp_path, monkeypatch):
+    assert hallway.checkout_commit(tmp_path) is None
+    monkeypatch.setattr(hallway, "checkout_commit", lambda here=None: None)
+    ident = hallway.adapter_identity()
+    assert ident["commit"] is None
+    assert schema_errors(ident, SCHEMA["properties"]["adapter"]) == []

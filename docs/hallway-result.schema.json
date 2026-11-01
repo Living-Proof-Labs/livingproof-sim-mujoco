@@ -15,7 +15,7 @@
     "catalog": {"type": "object", "required": ["repository", "tag", "commit"], "properties": {"repository": {"type": "string"}, "tag": {"type": "string"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}},
     "worlds": {"type": "object", "description": "Pinned world-content release.", "required": ["repository", "tag", "commit", "release_sha256"], "properties": {"commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "release_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
     "engine": {"type": "object", "required": ["name", "version"], "properties": {"name": {"type": "string"}, "version": {"type": "string"}}},
-    "adapter": {"type": "object", "required": ["name", "version"], "description": "Consumer name, version and provenance (commit).", "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "provenance": {}}},
+    "adapter": {"type": "object", "required": ["name", "version", "commit"], "description": "Consumer name, version (full 40-character commit) and provenance.", "properties": {"name": {"type": "string"}, "version": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "Full git checkout HEAD, or null when not run from a checkout."}, "describe": {"type": "string"}, "provenance": {}}},
     "compile": {"type": "object", "description": "Engine-native compile check."},
     "settings": {"type": "object", "description": "Gravity/contact settings, drive method, sampling rate and measurement method."},
     "screenshots": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]}}},

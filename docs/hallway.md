@@ -37,8 +37,11 @@ place type or field) raises `UNSUPPORTED: <fixture> <version>: <feature>`.
 - **Open ends:** the sphere is driven along the centreline to `x = ±2.80` and may touch only
   the floor.
 
-The probe uses x, y and z slide joints (no rotation) and its own friction (priority 1), so the
-drive is not fighting floor friction. Every physics step is sampled (500 Hz).
+**Probe modelling (demo choices).** The sphere slides rather than rolls: it is mounted on x,
+y and z slide joints with no rotational freedom. Its friction is 0.1 (with priority 1, so this
+value wins over the floor's 1.0). It is moved by speed control (velocity servos) capped at
+0.25 m/s. These are demonstration choices made to probe collision boundaries cleanly, not a
+model of any robot or of rolling physics. Every physics step is sampled (500 Hz).
 
 ## Result format
 
@@ -48,5 +51,7 @@ records `canonical`, `measured`, `deviation` (measured − canonical), `toleranc
 under an engine-neutral `name`, so a Gazebo record with the same names can be joined for the
 cross-engine comparison. The record also names the fixture, world-contract revision,
 catalog tag and commit, pinned worlds release, engine and adapter versions.
-The bundle also contains `model.xml`, `versions.json`, `overhead.png` and `entrance-view.png`.
+The bundle also contains `model.xml`, `versions.json`, `overhead.png` (orthographic, straight
+down, 5.0 m visible height, so the parallel walls render parallel) and `entrance-view.png`
+(perspective, from the entrance).
 Screenshot failures are recorded as `BLOCKED` with the error, never faked.

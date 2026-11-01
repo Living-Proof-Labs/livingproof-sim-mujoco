@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from importlib.metadata import version
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
@@ -56,7 +57,7 @@ class Unsupported(Exception):
     def record(self) -> dict:
         return {
             "status": "UNSUPPORTED",
-            "fixture": self.fixture,
+            "fixture": {"id": self.fixture, "content_version": self.version},
             "content_version": self.version,
             "feature": self.feature,
         }
@@ -146,9 +147,37 @@ def yaw_quat(deg: float) -> list[float]:
     return [math.cos(half), 0.0, 0.0, math.sin(half)]
 
 
+# Only these keys may appear in a per-world MuJoCo extension; anything else is UNSUPPORTED.
+EXTENSION_KEYS = {
+    "": {"fixture", "content_version", "note", "option", "contact", "probe"},
+    "option": {"timestep", "integrator", "gravity", "cone"},
+    "contact": {"solref", "solimp", "friction", "condim", "margin"},
+    "probe": {"radius", "density", "friction", "drive", "kv", "force_limit", "max_speed"},
+}
+
+
+def check_extension(extension: dict, fixture: str, version_: str) -> None:
+    """Reject unknown extension keys and any setting that would move a collision boundary."""
+    for section, allowed in EXTENSION_KEYS.items():
+        block = extension if section == "" else extension.get(section)
+        if not isinstance(block, dict):
+            raise Unsupported(fixture, version_, f"extension section '{section}' missing")
+        for key in sorted(set(block) - allowed):
+            where = f"{section}.{key}" if section else key
+            raise Unsupported(fixture, version_, f"extension key '{where}'")
+    if extension["contact"]["margin"] != 0:
+        raise Unsupported(
+            fixture,
+            version_,
+            f"extension contact.margin {extension['contact']['margin']} (must be 0; "
+            "a margin moves the collision boundary)",
+        )
+
+
 def to_mjcf(world: dict, extension: dict, probe: bool = False) -> str:
     """Translate world.json to MJCF. Geometry is copied verbatim; places become sites."""
     supported(world)
+    check_extension(extension, world["id"], world["content_version"])
     opt, con = extension["option"], extension["contact"]
     out = [
         f"<mujoco model={quoteattr(world['id'] + '-' + world['content_version'])}>",
@@ -611,7 +640,41 @@ def adapter_identity() -> dict:
     from livingproof_sim_mujoco.cli import identity
 
     ident = identity()
-    return {"name": "livingproof-sim-mujoco", **ident, "mujoco": version("mujoco")}
+    return {
+        "name": "livingproof-sim-mujoco",
+        **ident,
+        # The result names the adapter by its full commit; the describe form is kept for humans.
+        "version": adapter_commit(),
+        "commit": checkout_commit(),
+        "describe": ident["version"],
+        "mujoco": version("mujoco"),
+    }
+
+
+def checkout_commit(here: Path | None = None) -> str | None:
+    """Full 40-character HEAD of the git checkout this package runs from, or None."""
+    import subprocess
+
+    here = here or Path(__file__).resolve().parent
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=here, capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return out if re.fullmatch(r"[0-9a-f]{40}", out) else None
+
+
+def adapter_commit() -> str:
+    """Full 40-character commit of this adapter: the checkout HEAD, else the build provenance."""
+    here = Path(__file__).resolve().parent
+    out = checkout_commit(here) or ""
+    if not out:
+        data = json.loads((here / "_build_provenance.json").read_text())
+        out = data["identity"]["commit"]
+    if not re.fullmatch(r"[0-9a-f]{40}", out):
+        raise FixtureError(f"adapter commit is not a full 40-character sha: {out!r}")
+    return out
 
 
 def run_checks(fixture: str, content_version: str, root: Path = WORLDS) -> dict:
