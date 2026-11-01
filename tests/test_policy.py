@@ -366,3 +366,25 @@ def test_torchscript_without_torch_hints_at_the_extra(tmp_path, monkeypatch):
     # Never a bare PyPI requirement: the name is not published there.
     assert "pip install livingproof-sim-mujoco" not in msg
     assert "pip install 'livingproof-sim-mujoco[torch]'" not in msg
+
+
+@pytest.mark.parametrize(
+    "version, direct_url, ref",
+    [
+        ("1.4.0", None, "@v1.4.0"),
+        ("1.4.1.dev3+g2cb991e", None, "@2cb991e"),
+        (
+            "1.4.1.dev3+g2cb991e",
+            '{"vcs_info": {"vcs": "git", "commit_id": "' + "a" * 40 + '"}}',
+            "@" + "a" * 40,
+        ),
+        ("1.4.0rc1", None, ""),
+        ("1.4.0.post1", '{"vcs_info": {"commit_id": "' + "b" * 40 + '"}}', "@" + "b" * 40),
+        ("0.0.0", "not json", ""),  # hatch-vcs fallback, not a release
+        (None, None, ""),
+    ],
+)
+def test_torch_hint_pins_a_tag_only_for_an_exact_release(version, direct_url, ref):
+    from livingproof_sim_mujoco import policy
+
+    assert policy.install_ref(version, direct_url) == ref

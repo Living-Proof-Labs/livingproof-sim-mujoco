@@ -22,8 +22,10 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+import json
 import math
 from pathlib import Path
+import re
 
 import mujoco
 import numpy as np
@@ -59,19 +61,36 @@ REPOSITORY = "https://github.com/Living-Proof-Labs/livingproof-sim-mujoco"
 INSTALL_DOCS = "https://docs.livingprooflabs.com/livingproof-sim-mujoco/policy/#backends"
 
 
+def install_ref(version: str | None, direct_url: str | None) -> str:
+    """``@vX.Y.Z`` only for an exact release; otherwise ``@<commit>``, or "" if unknown.
+
+    The commit comes from the PEP 610 ``direct_url.json`` of a git install, else from the
+    ``+g<hash>`` local part hatch-vcs writes into a development version.
+    """
+    if version and version != "0.0.0" and re.fullmatch(r"\d+\.\d+\.\d+", version):
+        return f"@v{version}"
+    try:
+        commit = json.loads(direct_url or "{}").get("vcs_info", {}).get("commit_id", "")
+    except ValueError:
+        commit = ""
+    if re.fullmatch(r"[0-9a-f]{40}", commit or ""):
+        return f"@{commit}"
+    m = re.search(r"\+g([0-9a-f]{7,40})\b", version or "")
+    return f"@{m.group(1)}" if m else ""
+
+
 def torch_install_hint() -> str:
-    """git+https install of this runner's release with the torch extra.
+    """git+https install of this runner with the torch extra, at this exact release or commit.
 
     The runner is not published on PyPI, so a bare package name would resolve to whatever
-    claims that name there. The URL pins the installed release tag when it is known.
+    claims that name there.
     """
     try:
-        from importlib.metadata import version
+        from importlib.metadata import distribution
 
-        ref = f"@v{version('livingproof-sim-mujoco')}"
+        dist = distribution("livingproof-sim-mujoco")
+        ref = install_ref(dist.version, dist.read_text("direct_url.json"))
     except Exception:
-        ref = ""
-    if ref in ("", "@v0.0.0"):
         ref = ""
     return f"pip install 'livingproof-sim-mujoco[torch] @ git+{REPOSITORY}.git{ref}'"
 
