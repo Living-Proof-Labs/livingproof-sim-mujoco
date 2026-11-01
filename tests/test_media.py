@@ -70,4 +70,54 @@ def test_a_rerun_that_differs_from_the_evidence_keeps_nothing(recorded):
     (tmp_path / "ev" / "manifest.json").write_text(json.dumps(m))
     with pytest.raises(RuntimeError, match="differs from the evidence"):
         media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
-    assert not (tmp_path / "m" / "mcap" / "seed-01.mcap").exists()
+    assert not (tmp_path / "m" / "mcap").exists()  # no partial files from any seed
+    assert not (tmp_path / "m" / ".media-partial").exists()
+
+
+def test_a_rerun_into_an_existing_folder_replaces_its_media(recorded):
+    tmp_path, v = recorded
+    out = tmp_path / "m"
+    first = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, out, jobs=1)
+    (out / "video" / "stale.mp4").write_bytes(b"old")
+    (out / "keep.txt").write_text("not ours")
+    again = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, out, jobs=1)
+    assert again == first
+    assert not (out / "video" / "stale.mp4").exists() and (out / "keep.txt").exists()
+    assert sorted(p.name for p in out.iterdir()) == ["keep.txt", "mcap", "media.json", "video"]
+
+
+def test_media_fetches_the_pinned_files_itself(recorded, monkeypatch):
+    tmp_path, v = recorded
+    fetched = []
+    monkeypatch.setattr(media, "fetch", lambda root: fetched.append(root))
+    media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
+    assert fetched == [Toy.root]
+
+
+def test_media_fetches_before_the_adapter_loads_from_a_fresh_checkout(recorded, monkeypatch):
+    """A fresh checkout has no pinned files; media must fetch them before loading anything."""
+    tmp_path, v = recorded
+    pinned = Toy.root / ".cache" / "toy" / "profile.json"
+    assert not pinned.exists()  # nothing fetched: a fresh checkout
+    calls = []
+
+    def needs_pins(method):
+        def load(self, *args):
+            calls.append(method.__name__)
+            if not pinned.exists():
+                raise FileNotFoundError(pinned)
+            return method(self, *args)
+
+        return load
+
+    def fetch(root):
+        calls.append("fetch")
+        pinned.parent.mkdir(parents=True, exist_ok=True)
+        pinned.write_text("{}")
+
+    for name in ("robot", "configuration", "world", "scene"):
+        monkeypatch.setattr(Toy, name, needs_pins(getattr(Toy, name)))
+    monkeypatch.setattr(media, "fetch", fetch)
+    doc = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
+    assert calls[0] == "fetch" and calls.count("fetch") == 1
+    assert len(doc["trials"]) == 2
