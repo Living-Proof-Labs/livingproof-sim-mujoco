@@ -54,3 +54,6 @@ tasks:
   render:
     desc: Render falling-sphere evidence without a server
     cmds: [bash tools/run-task.sh render]
+  hallway:
+    desc: Check the pinned hallway fixture and write evidence to artifacts/hallway
+    cmds: [bash tools/run-task.sh hallway]

@@ -24,6 +24,8 @@ tasks:
       - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
       - uv run --no-sync pytest tests/test_policy.py --junitxml=artifacts/policy.xml
       - uv run --no-sync pytest tests/test_hallway.py --junitxml=artifacts/hallway.xml
+      - uv run --no-sync pytest tests/test_observations.py --junitxml=artifacts/observations.xml
+      - uv run --no-sync pytest tests/test_contract.py --junitxml=artifacts/contract.xml
   docs:reference:
     desc: Generate CLI reference from executable help
     cmds:
@@ -56,3 +58,6 @@ tasks:
   test:preview:
     desc: Check real rendering, HTTP isolation and browser playback controls
     cmds: [uv run --no-sync pytest tests/test_preview.py --junitxml=artifacts/preview.xml]
+  hallway:
+    desc: Check the pinned hallway-open fixture in MuJoCo and write the evidence bundle
+    cmds: [uv run --no-sync python tools/hallway.py]

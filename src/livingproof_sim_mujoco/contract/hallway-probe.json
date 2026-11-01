@@ -1,0 +1,58 @@
+{
+  "format": "livingproof-world-probe/0.1",
+  "fixture": {
+    "id": "hallway-open",
+    "content_version": "0.1.0"
+  },
+  "description": "Engine-neutral collision probe for the hallway checks in hallways.md. These are demonstration choices for probing collision boundaries, not a robot model.",
+  "probe": {
+    "shape": "sphere",
+    "radius_m": 0.1,
+    "density_kg_per_m3": 1000.0,
+    "mass_kg": 4.18879,
+    "joints": [
+      "slide-x",
+      "slide-y",
+      "slide-z"
+    ],
+    "rotation": false,
+    "friction": 0.1,
+    "max_speed_m_per_s": 0.25,
+    "drive": "speed control, capped at max_speed_m_per_s; no teleporting",
+    "controller": "gain and force/effort limit are engine-specific and recorded in each result's settings; not part of this contract"
+  },
+  "gravity_m_per_s2": [
+    0.0,
+    0.0,
+    -9.81
+  ],
+  "sampling_hz": 500,
+  "checks": {
+    "floor": {
+      "start": "spawn-centre",
+      "start_z_m": 0.75,
+      "release": "from rest under gravity",
+      "settle_s": 2.0
+    },
+    "wall": {
+      "start": "spawn-centre",
+      "directions": [
+        "+y",
+        "-y"
+      ],
+      "drive_s": 5.0,
+      "settle_s": 1.5
+    },
+    "open_end": {
+      "start": "spawn-centre",
+      "path": "passage-centreline",
+      "targets_x_m": [
+        2.8,
+        -2.8
+      ],
+      "drive_s": 16.0,
+      "settle_s": 1.5
+    }
+  },
+  "source": "Values agree with livingproof-sim-mujoco cdf90a8 (hallway-open-0.1.0.mujoco.json, hallway.py _reset) and livingproof-sim-gazebo af2017c (hallway-open-0.1.0.gazebo.json, hallway.py run plan)."
+}
