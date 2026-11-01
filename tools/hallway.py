@@ -30,7 +30,6 @@ def screenshots(xml, directory):
     option.sitegroup[4] = 1  # show named places
     views = {
         # Overhead: orthographic, straight down on the floor centre, +x to the right.
-        # In orthographic mode the free camera's fovy is the visible height in metres.
         "overhead.png": dict(
             lookat=[0, 0, 0], distance=9.0, azimuth=90, elevation=-90, orthographic=1
         ),
@@ -42,8 +41,12 @@ def screenshots(xml, directory):
         for name, view in views.items():
             camera = mujoco.MjvCamera()
             camera.lookat[:] = view["lookat"]
-            camera.orthographic = view.get("orthographic", 0)
-            model.vis.global_.fovy = ORTHO_HEIGHT_M if camera.orthographic else 45.0
+            # MuJoCo 3.17 takes the free camera's projection from vis.global_ (the
+            # MjvCamera.orthographic field is ignored for free cameras); in orthographic
+            # mode fovy is the visible height in metres.
+            ortho = bool(view.get("orthographic"))
+            model.vis.global_.orthographic = int(ortho)
+            model.vis.global_.fovy = ORTHO_HEIGHT_M if ortho else 45.0
             camera.distance, camera.azimuth, camera.elevation = (
                 view["distance"],
                 view["azimuth"],
