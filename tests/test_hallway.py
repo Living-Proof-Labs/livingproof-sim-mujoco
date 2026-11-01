@@ -3,15 +3,13 @@
 
 import copy
 import json
-from pathlib import Path
 import shutil
 
 import pytest
 
-from livingproof_sim_mujoco import hallway
+from livingproof_sim_mujoco import contract, hallway
 
 FIXTURE, VERSION = "hallway-open", "0.1.0"
-SCHEMA = json.loads(Path("docs/hallway-result.schema.json").read_text())
 
 
 @pytest.fixture(scope="module")
@@ -145,7 +143,7 @@ def test_run_checks_reports_unsupported_and_never_passes(monkeypatch, loaded):
     assert record["feature"] == "geometry 'wall-left' type 'cylinder'"
     assert record["quantities"] == []
     assert record["fixture"] == {"id": FIXTURE, "content_version": VERSION}
-    assert schema_errors(record, SCHEMA) == []
+    contract.validate(record)
 
 
 def test_geometry_readback_detects_a_wrong_model(loaded):
@@ -193,80 +191,10 @@ def test_collision_checks_are_real_and_bounded(result):
         assert q[f"collision/wall{side}/reached_wall"]["contacts"] == [wall]
         assert q[f"collision/wall{side}/max_speed"]["measured"] <= 0.25
         assert q[f"collision/wall{side}/surface_past_inner_face"]["measured"] <= 0.01
-    for end in ("+2.80", "-2.80"):
+    for end in ("+x", "-x"):
         assert q[f"collision/open_end/{end}/non_floor_contacts"]["contacts"] == ["floor"]
     s = result["settings"]
     assert s["gravity"] == [0.0, 0.0, -9.81] and s["contacts_enabled"] and s["sampling_hz"] == 500.0
-
-
-def test_result_matches_documented_schema(result):
-    for key in SCHEMA["required"]:
-        assert key in result, key
-    assert result["format"] == SCHEMA["properties"]["format"]["const"]
-    item = SCHEMA["properties"]["quantities"]["items"]
-    for q in result["quantities"]:
-        assert set(item["required"]) <= set(q), q["name"]
-        assert q["kind"] in item["properties"]["kind"]["enum"]
-        assert q["unit"] in item["properties"]["unit"]["enum"]
-    assert len(result["catalog"]["commit"]) == 40 and len(result["worlds"]["commit"]) == 40
-    assert result["contract"]["world_contract_revision"] == "0.2.0"
-    assert (
-        result["adapter"]["name"] == "livingproof-sim-mujoco"
-        and result["engine"]["name"] == "mujoco"
-    )
-
-
-def test_adapter_version_is_full_commit():
-    import re as _re
-
-    ident = hallway.adapter_identity()
-    assert _re.fullmatch(r"[0-9a-f]{40}", ident["version"]), ident["version"]
-    pattern = SCHEMA["properties"]["adapter"]["properties"]["version"]["pattern"]
-    assert pattern == "^[0-9a-f]{40}$"
-    assert ident["describe"] != ident["version"]
-
-
-def schema_errors(value, schema, path="$"):
-    """Minimal JSON Schema subset (type, const, enum, pattern, required, properties, items)."""
-    import re as _re
-
-    kinds = {
-        "object": dict,
-        "array": list,
-        "string": str,
-        "number": (int, float),
-        "null": type(None),
-        "boolean": bool,
-        "integer": int,
-    }
-    errs = []
-    if "type" in schema:
-        types = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
-        if not any(isinstance(value, kinds[t]) for t in types):
-            return [f"{path}: expected {types}, got {type(value).__name__}"]
-    if "const" in schema and value != schema["const"]:
-        errs.append(f"{path}: != const")
-    if "enum" in schema and value not in schema["enum"]:
-        errs.append(f"{path}: not in enum")
-    if "pattern" in schema and isinstance(value, str) and not _re.search(schema["pattern"], value):
-        errs.append(f"{path}: pattern")
-    if isinstance(value, dict):
-        errs += [f"{path}.{k}: required" for k in schema.get("required", []) if k not in value]
-        for k, sub in schema.get("properties", {}).items():
-            if k in value:
-                errs += schema_errors(value[k], sub, f"{path}.{k}")
-    if isinstance(value, list) and "items" in schema:
-        for i, item in enumerate(value):
-            errs += schema_errors(item, schema["items"], f"{path}[{i}]")
-    return errs
-
-
-def test_full_result_matches_schema(result):
-    assert schema_errors(result, SCHEMA) == []
-
-
-def test_schema_helper_rejects_string_fixture():
-    assert schema_errors({"fixture": "hallway-open"}, SCHEMA["properties"]["fixture"]) != []
 
 
 @pytest.mark.parametrize(
@@ -293,26 +221,45 @@ def test_nonzero_contact_margin_is_unsupported(loaded, monkeypatch):
     assert info.value.feature.startswith("extension contact.margin 0.005")
     monkeypatch.setattr(hallway, "load_fixture", lambda *a: {**loaded, "extension": extension})
     record = hallway.run_checks(FIXTURE, VERSION)
-    assert record["status"] == "UNSUPPORTED" and schema_errors(record, SCHEMA) == []
+    assert record["status"] == "UNSUPPORTED"
+    contract.validate(record)
 
 
-def test_adapter_commit_in_checkout():
-    import re as _re
-
-    ident = hallway.adapter_identity()
-    pattern = SCHEMA["properties"]["adapter"]["properties"]["commit"]["pattern"]
-    assert pattern == SCHEMA["properties"]["catalog"]["properties"]["commit"]["pattern"]
-    if ident["commit"] is not None:
-        assert _re.fullmatch(r"[0-9a-f]{40}", ident["commit"])
-        assert ident["version"] == ident["commit"]
-
-
-def test_adapter_commit_is_null_without_checkout(tmp_path, monkeypatch):
-    assert hallway.checkout_commit(tmp_path) is None
-    monkeypatch.setattr(hallway, "checkout_commit", lambda here=None: None)
-    ident = hallway.adapter_identity()
-    assert ident["commit"] is None
-    assert schema_errors(ident, SCHEMA["properties"]["adapter"]) == []
+@pytest.mark.parametrize(
+    "edit, feature",
+    [
+        (
+            lambda e: e["probe"].update(radius=0.12),
+            "extension probe.radius = 0.12 contradicts hallway-probe.json (0.1)",
+        ),
+        (
+            lambda e: e["probe"].update(friction=[0.3, 0.005, 0.0001]),
+            "extension probe.friction[0] = 0.3 contradicts hallway-probe.json (0.1)",
+        ),
+        (
+            lambda e: e["probe"].update(max_speed=0.5),
+            "extension probe.max_speed = 0.5 contradicts hallway-probe.json (0.25)",
+        ),
+        (
+            lambda e: e["option"].update(timestep=0.003),
+            "extension option.timestep: physics step 0.003 s does not divide the 500 Hz sample period",
+        ),
+        (
+            lambda e: e["probe"].update(density=500.0),
+            "extension probe.density = 500.0 contradicts hallway-probe.json (1000.0)",
+        ),
+        (
+            lambda e: e["option"].update(gravity=[0.0, 0.0, -9.8]),
+            "extension option.gravity = [0.0, 0.0, -9.8] contradicts hallway-probe.json ([0.0, 0.0, -9.81])",
+        ),
+    ],
+)
+def test_extension_contradicting_shared_probe_is_unsupported(loaded, edit, feature):
+    extension = copy.deepcopy(loaded["extension"])
+    edit(extension)
+    with pytest.raises(hallway.Unsupported) as info:
+        hallway.to_mjcf(loaded["world"], extension)
+    assert info.value.feature == feature
 
 
 def test_only_world_notes_release_are_vendored_and_generated_docs_skipped_on_purpose(copy_root):
@@ -332,3 +279,22 @@ def test_only_world_notes_release_are_vendored_and_generated_docs_skipped_on_pur
         hallway.FixtureError, match="files not vendored from release.json: world.svg"
     ):
         hallway.load_fixture(FIXTURE, VERSION, copy_root)
+
+
+def test_sampling_records_physics_step_and_rate_every_step_at_0_002(result):
+    s = result["settings"]
+    assert (s["physics_step"], s["sample_rate"], s["sample_stride"]) == (0.002, 500, 1)
+    assert s["timestep"] == s["physics_step"]
+
+
+def test_finer_physics_step_samples_every_second_step(loaded):
+    import mujoco
+
+    extension = copy.deepcopy(loaded["extension"])
+    extension["option"]["timestep"] = 0.001
+    hallway.check_extension(extension, FIXTURE, VERSION)  # 0.001 s is allowed: stride 2
+    model = mujoco.MjModel.from_xml_string(hallway.to_mjcf(loaded["world"], extension, probe=True))
+    data = mujoco.MjData(model)
+    samples = hallway._drive(model, data, None, "x", 0.1, 0.0)
+    assert len(samples) == 50  # 100 physics steps, 500 Hz
+    assert samples[1]["t"] - samples[0]["t"] == pytest.approx(0.002)

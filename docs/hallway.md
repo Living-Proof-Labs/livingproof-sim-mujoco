@@ -48,7 +48,26 @@ place type or field) raises `UNSUPPORTED: <fixture> <version>: <feature>`.
   toward `+y` then `-y` for 5 s each; its surface may not pass the inner face by more than
   0.01 m, and it must actually touch the wall.
 - **Open ends:** the sphere is driven along the centreline to `x = ±2.80` and may touch only
-  the floor.
+  the floor. The quantities are named `collision/open_end/+x/…` and `…/-x/…`, with the target
+  in `canonical`.
+- **Reset:** after all runs, `mj_resetData` + `mj_forward` restores the initial state. The
+  `reset/*` quantities read the world back from `MjData` and confirm that:
+  - every geom's world centre and size is unchanged (`reset/geometry/<name>/max_shift`);
+  - every place marker is unchanged (`reset/places/max_shift`);
+  - the probe is back at its start, `spawn-centre` at `z = 0.75` (`reset/probe/x|y|z`).
+
+  All are within 0.01 m (hallways.md: "Reset restores the geometry, frame, and initial world state").
+
+**Probe parameters** are read from the shared `hallway-probe.json`. They cover the radius,
+density, friction, the 0.25 m/s cap, gravity, start height, settle and drive times, the targets
+and the 500 Hz sample rate. The MuJoCo extension may not contradict them: a different
+`probe.radius`, `probe.density`, `probe.friction[0]`, `probe.max_speed` or `option.gravity` is
+UNSUPPORTED.
+
+**Sampling.** Probe samples are taken at the shared 500 Hz, which is every `sample_stride`-th
+physics step. With MuJoCo's 0.002 s step, that is every step. A step that does not divide
+the 2 ms sample period, such as 0.003 s, is UNSUPPORTED. The result `settings` records
+`physics_step`, `sample_rate` and `sample_stride`.
 
 **Probe modelling (demo choices).** The sphere slides rather than rolls: it is mounted on x,
 y and z slide joints with no rotational freedom. Its friction is 0.1 (with priority 1, so this
@@ -58,12 +77,29 @@ model of any robot or of rolling physics. Every physics step is sampled (500 Hz)
 
 ## Result format
 
-`task hallway` writes `artifacts/hallway/result.json` in format
-`livingproof-world-result/0.1` ([schema](hallway-result.schema.json)). Each quantity
-records `canonical`, `measured`, `deviation` (measured − canonical), `tolerance` and `pass`,
-under an engine-neutral `name`, so a Gazebo record with the same names can be joined for the
-cross-engine comparison. The record also names the fixture, world-contract revision,
-catalog tag and commit, pinned worlds release, engine and adapter versions.
+`task hallway` writes `artifacts/hallway/result.json` in the shared format
+`livingproof-world-result/0.2`. The contract lives in robot-capability-specs, and three files
+are vendored from it, unchanged, into `src/livingproof_sim_mujoco/contract/`:
+
+- `hallway-result.schema.json`
+- `hallway-quantities.json`
+- `hallway-probe.json`
+
+`contract/pins.json` is the single place that holds the specs release tag, its commit and each file's
+SHA-256. Every load checks them. To move to a newer specs commit, run
+`python tools/pin_contract.py <specs checkout> <tag>`; `--check` confirms the vendored files match the tag. Currently pinned to v1.4.0 (cb57ede).
+
+Each quantity uses its shared name, `kind`, `unit` and `comparison`, and records
+`canonical`, `measured`, `deviation` and `tolerance`. The comparison decides `pass`:
+
+- `within`: |measured − canonical| ≤ tolerance;
+- `at_most`: measured ≤ canonical + tolerance. This is used for penetration, distance past a
+  wall face and the speed cap.
+
+`adapter.version` is a semantic version. `adapter.commit` is the full commit: from git in a
+checkout (`provenance: git`), or from `_build_provenance.json` in an installed package
+(`provenance: package`). It is `null` only when neither knows it. The record is validated
+against the vendored schema and the required names before it is written.
 The bundle also contains `model.xml`, `versions.json`, `overhead.png` (orthographic, straight
 down, 5.0 m visible height, so the parallel walls render parallel) and `entrance-view.png`
 (perspective, from the entrance).

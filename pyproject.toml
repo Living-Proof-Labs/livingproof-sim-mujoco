@@ -25,6 +25,7 @@ local_scheme = "no-local-version"
 path = "hatch_build.py"
 [dependency-groups]
 dev = [
+    "jsonschema==4.25.1",
     "pytest==8.4.2",
     "pillow==11.3.0",
     "ruff==0.14.2",

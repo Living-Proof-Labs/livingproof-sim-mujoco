@@ -88,7 +88,7 @@ def main(argv=None):
     if result["status"] == "UNSUPPORTED":
         (args.out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         print(
-            f"UNSUPPORTED: {result['fixture']} {result['content_version']}: {result['feature']}",
+            f"UNSUPPORTED: {result['fixture']['id']} {result['fixture']['content_version']}: {result['feature']}",
             file=sys.stderr,
         )
         return 3
@@ -106,6 +106,9 @@ def main(argv=None):
         k: result[k] for k in ("fixture", "contract", "catalog", "worlds", "engine", "adapter")
     }
     (args.out / "versions.json").write_text(json.dumps(versions, indent=2) + "\n")
+    from livingproof_sim_mujoco import contract
+
+    contract.validate(result)  # shared 0.2 schema + required names, before writing
     (args.out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     failed = [q["name"] for q in result["quantities"] if not q["pass"]]
     print(
