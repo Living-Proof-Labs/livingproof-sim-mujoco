@@ -92,3 +92,32 @@ def test_media_fetches_the_pinned_files_itself(recorded, monkeypatch):
     monkeypatch.setattr(media, "fetch", lambda root: fetched.append(root))
     media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
     assert fetched == [Toy.root]
+
+
+def test_media_fetches_before_the_adapter_loads_from_a_fresh_checkout(recorded, monkeypatch):
+    """A fresh checkout has no pinned files; media must fetch them before loading anything."""
+    tmp_path, v = recorded
+    pinned = Toy.root / ".cache" / "toy" / "profile.json"
+    assert not pinned.exists()  # nothing fetched: a fresh checkout
+    calls = []
+
+    def needs_pins(method):
+        def load(self, *args):
+            calls.append(method.__name__)
+            if not pinned.exists():
+                raise FileNotFoundError(pinned)
+            return method(self, *args)
+
+        return load
+
+    def fetch(root):
+        calls.append("fetch")
+        pinned.parent.mkdir(parents=True, exist_ok=True)
+        pinned.write_text("{}")
+
+    for name in ("robot", "configuration", "world", "scene"):
+        monkeypatch.setattr(Toy, name, needs_pins(getattr(Toy, name)))
+    monkeypatch.setattr(media, "fetch", fetch)
+    doc = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
+    assert calls[0] == "fetch" and calls.count("fetch") == 1
+    assert len(doc["trials"]) == 2

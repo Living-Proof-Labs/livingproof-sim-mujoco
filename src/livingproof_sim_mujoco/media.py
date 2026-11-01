@@ -200,6 +200,9 @@ def media(
     ref: str, name: str, evidence_dir: Path, verification: Path, out: Path, *, jobs=None
 ) -> dict:
     robot = ev.adapter(ref)
+    # Pinned upstream files first: adapters load their profile and model from them, so a
+    # fresh checkout (no pins fetched yet) would otherwise fail with FileNotFoundError.
+    fetch(Path(robot.root))
     manifest = json.loads((Path(evidence_dir) / "manifest.json").read_text())
     if manifest["configuration"]["name"] != name:
         raise SystemExit(f"evidence is for {manifest['configuration']['name']}, not {name}")
@@ -208,7 +211,6 @@ def media(
         raise SystemExit(f"evidence was recorded with a different {ev.LOCK}")
     plan, p = ev.recording(robot, lock, name)
     picked = pick(json.loads(Path(verification).read_text()))
-    fetch(Path(robot.root))  # pinned upstream files, verified, before any re-run
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     # Record into a staging folder: a mismatch or crash leaves no partial files, and a
