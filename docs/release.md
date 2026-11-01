@@ -1,7 +1,8 @@
 # Distribution and release
 
 [Package release v1.0.0](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/releases/tag/v1.0.0)
-is the published release verified on 2026-10-27; v1.0.1 is still a draft.
+is the first published release, verified on 2026-10-27. Later releases are on the
+[releases page](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/releases).
 This development manual and its tested candidate metadata are separate from
 that package release. Historical manuals are not maintained; consult the
 [source release tags](https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tags).
@@ -19,12 +20,13 @@ Python 3.11 Linux amd64 environment. Install Debian with
 `sudo apt install ./livingproof-sim-mujoco_*_amd64.deb`. Do not use sudo for Task.
 
 The workflow reuses collaboration-guidelines v4.3.0 semantic-release to create
-a draft after main verification. It assembles and tests products from that tag
-and attaches all assets before publication. Runtime distribution is a Docker
-image archive (`docker load -i runtime-amd64.tar.gz`) attached to the release;
-there is no registry grant or new public package setting. An authorized release
-operator must inspect the draft, tests and checksums before publishing it. No
-release or image is published by this implementation branch.
+a draft after main verification. It assembles and tests products from that tag,
+attaches all assets to the draft, and then publishes the release automatically
+(`gh release edit --draft=false`), the same way capability-verifier and
+livingproof-capability-report publish theirs. A release is never visible
+without its tested assets; if assembly or smoke tests fail, it stays a draft.
+Runtime distribution is a Docker image archive (`docker load -i runtime-amd64.tar.gz`)
+attached to the release; there is no registry grant or new public package setting.
 
 Release gates: independent PR review; hosted passing and deliberately failing
 JUnit case publication; public unauthenticated downloads of all assets; two
