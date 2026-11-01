@@ -25,6 +25,8 @@ attaches all assets to the draft, and then publishes the release automatically
 (`gh release edit --draft=false`), the same way capability-verifier and
 livingproof-capability-report publish theirs. A release is never visible
 without its tested assets; if assembly or smoke tests fail, it stays a draft.
+Uploads use `--clobber`, so re-running the job after a partial upload replaces
+the assets and still publishes.
 Runtime distribution is a Docker image archive (`docker load -i runtime-amd64.tar.gz`)
 attached to the release; there is no registry grant or new public package setting.
 

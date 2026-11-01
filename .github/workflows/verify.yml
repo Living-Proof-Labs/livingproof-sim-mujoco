@@ -175,7 +175,7 @@ jobs:
       - name: Attach tested assets to the draft
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/*.deb dist/SHA256SUMS
+        run: gh release upload "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/*.deb dist/SHA256SUMS --clobber
       # Same mechanism as capability-verifier and livingproof-capability-report: semantic-release
       # creates a draft so assets attach before anyone can download it, then this publishes it.
       - name: Publish the release once every tested asset is attached
