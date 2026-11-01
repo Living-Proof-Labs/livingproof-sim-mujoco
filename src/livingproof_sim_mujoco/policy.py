@@ -137,6 +137,8 @@ class PolicySpec:
     kd: Sequence[float] = field(default_factory=tuple)
     hold: Sequence[tuple[str, str, float, float, float]] = field(default_factory=tuple)
     # pd_torque only: (joint, actuator, target, kp, kd) for joints outside the policy
+    target_range: Sequence[tuple[float, float]] = field(default_factory=tuple)
+    # optional per-joint clamp of policy targets, as a position actuator's ctrlrange does
     input_name: str = "obs"
     output_name: str | None = None  # default: the model's first output
 
@@ -190,6 +192,10 @@ class OnnxPolicy:
         self.default_pose = np.asarray(spec.default_pose, dtype=np.float64)
         self._kp = np.array(list(spec.kp) + [h[3] for h in spec.hold], dtype=np.float64)
         self._kd = np.array(list(spec.kd) + [h[4] for h in spec.hold], dtype=np.float64)
+        if spec.target_range and len(spec.target_range) != n:
+            raise PolicyError("target_range needs one (low, high) per policy joint")
+        rng = np.asarray(spec.target_range, dtype=np.float64).reshape(-1, 2)
+        self._lo, self._hi = (rng[:, 0], rng[:, 1]) if len(rng) else (-np.inf, np.inf)
         self._hold_target = np.array([h[2] for h in spec.hold], dtype=np.float64)
         self._free = next(
             (
@@ -322,7 +328,8 @@ class OnnxPolicy:
         obs = self.observation(data, command)
         out = self.backend(obs)
         self.last_action = np.asarray(out, dtype=np.float32).copy()
-        self.target[: self.n] = self.default_pose + self.action_scale * self.last_action
+        raw = self.default_pose + self.action_scale * self.last_action
+        self.target[: self.n] = np.clip(raw, self._lo, self._hi)
         if self.spec.actuation == "position":
             data.ctrl[self._act] = self.target
         if self.spec.gait_offsets:

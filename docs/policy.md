@@ -32,6 +32,7 @@ gains (`hold`).
 | `history` | stacked observation frames, newest last |
 | `gait_hz`, `gait_offsets`, `phase_order` | phase clock advanced once per policy step and wrapped to [-pi, pi] |
 | `actuation`, `kp`, `kd`, `hold` | see Timing |
+| `target_range` | optional per-joint clamp of policy targets, as a position actuator's `ctrlrange` does |
 
 Mismatches fail at construction: wrong actuator type for the actuation mode, an actuator
 that does not drive its joint, unknown names, or an observation size that differs from the

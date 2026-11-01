@@ -307,3 +307,12 @@ def test_torchscript_wrong_observation_size_is_rejected(model, tmp_path):
     torch.jit.script(torch.nn.Linear(5, 2)).save(str(path))
     with pytest.raises(PolicyError, match="rejects"):
         OnnxPolicy(model, path, spec())
+
+
+def test_target_range_clamps_policy_targets(model, tmp_path):
+    clamp = spec(target_range=[(-0.2, 0.3), (-1.0, 1.0)])
+    policy = OnnxPolicy(model, constant(tmp_path, [1.0, -1.0]), clamp)
+    data = mujoco.MjData(model)
+    policy.act(data, [0, 0, 0])
+    assert data.ctrl[model.actuator("m0").id] == pytest.approx(0.3)
+    assert data.ctrl[model.actuator("m1").id] == pytest.approx(-0.7)
