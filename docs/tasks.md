@@ -280,6 +280,7 @@ env:
 commands:
  - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
  - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
+ - uv run --no-sync pytest tests/test_policy.py --junitxml=artifacts/policy.xml
 ```
 
 ### `task -t Taskfile.runtime.yml verify`

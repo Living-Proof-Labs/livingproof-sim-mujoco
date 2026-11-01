@@ -28,6 +28,12 @@ input or engine errors return 2. JSON includes actual steps, simulation time,
 first 16 initial/final qpos values, model dimensions, engine and build identity.
 Native warnings fail execution. XML includes resolve using MuJoCo's native loader.
 
+## Policy runner
+
+`OnnxPolicy` runs a published ONNX locomotion policy: the policy at its control rate
+(for example 50 Hz) and the joint PD inside every 500 Hz physics step. See
+[docs/policy.md](docs/policy.md).
+
 ## Development
 
 Docker and Task 3.54.0 are host prerequisites. `task setup`, `task verify`,
