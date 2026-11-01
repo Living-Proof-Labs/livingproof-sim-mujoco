@@ -10,13 +10,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import re
 from importlib.metadata import version
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
 
+from livingproof_sim_mujoco import contract
+
 WORLDS = Path(__file__).parent / "worlds"
-RESULT_FORMAT = "livingproof-world-result/0.1"
+RESULT_FORMAT = contract.RESULT_FORMAT
 SUPPORTED_FORMAT = "livingproof-world/0.1"
 GEOMETRY_KEYS = {"name", "type", "role", "centre", "size"}
 PLACE_KEYS = {
@@ -41,6 +42,12 @@ WORLD_KEYS = {
     "provenance",
     "license",
 }
+
+
+# Only these released files are vendored and checksum-verified. The generated docs
+# listed in release.json are skipped on purpose: they are renders of world.json.
+VENDORED = {"world.json", "notes.md", "release.json"}
+GENERATED_DOCS = {"README.md", "world.svg", "world-light.svg", "world-dark.svg"}
 
 
 class FixtureError(Exception):
@@ -97,6 +104,9 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
         )
     for name, expected in sorted(manifest["files"].items()):
         path = directory / name
+        if name in GENERATED_DOCS:
+            # Generated docs (README, SVG renders) are not vendored; skipped on purpose.
+            continue
         if not path.is_file():
             raise FixtureError(f"{key}: missing released file {name}")
         got = sha256(path)
@@ -104,11 +114,14 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
             raise FixtureError(
                 f"{key}: checksum mismatch for {name}: expected {expected}, got {got}"
             )
-    extras = sorted(p.name for p in directory.iterdir() if p.name not in manifest["files"])
-    if extras != ["release.json"]:
+    unknown = sorted(n for n in manifest["files"] if n not in VENDORED and n not in GENERATED_DOCS)
+    if unknown:
         raise FixtureError(
-            f"{key}: files not in release.json: {', '.join(e for e in extras if e != 'release.json')}"
+            f"{key}: release.json lists files this adapter does not know: {', '.join(unknown)}"
         )
+    extras = sorted(p.name for p in directory.iterdir() if p.name not in VENDORED)
+    if extras:
+        raise FixtureError(f"{key}: files not vendored from release.json: {', '.join(extras)}")
     world = json.loads((directory / "world.json").read_text())
     extension = json.loads((root / pin["extension"]).read_text())
     return {"world": world, "extension": extension, "pin": pin}
@@ -165,6 +178,25 @@ def check_extension(extension: dict, fixture: str, version_: str) -> None:
         for key in sorted(set(block) - allowed):
             where = f"{section}.{key}" if section else key
             raise Unsupported(fixture, version_, f"extension key '{where}'")
+    shared = contract.probe()["probe"]
+    pr, opt = extension["probe"], extension["option"]
+    try:
+        contract.sampling(opt["timestep"])  # the step must give the shared sample rate
+    except contract.ContractError as exc:
+        raise Unsupported(fixture, version_, f"extension option.timestep: {exc}") from None
+    for key, have, want in (
+        ("probe.radius", pr["radius"], shared["radius_m"]),
+        ("probe.density", pr["density"], shared["density_kg_per_m3"]),
+        ("probe.friction[0]", pr["friction"][0], shared["friction"]),
+        ("probe.max_speed", pr["max_speed"], shared["max_speed_m_per_s"]),
+        ("option.gravity", list(opt["gravity"]), contract.probe()["gravity_m_per_s2"]),
+    ):
+        if have != want:
+            raise Unsupported(
+                fixture,
+                version_,
+                f"extension {key} = {have!r} contradicts hallway-probe.json ({want!r})",
+            )
     if extension["contact"]["margin"] != 0:
         raise Unsupported(
             fixture,
@@ -224,7 +256,7 @@ def to_mjcf(world: dict, extension: dict, probe: bool = False) -> str:
     if probe:
         pr = extension["probe"]
         out += [
-            '    <body name="probe" pos="0 0 0">',
+            f'    <body name="probe" pos="0 0 {start_z()!r}">',
             '      <joint name="probe-x" type="slide" axis="1 0 0"/>',
             '      <joint name="probe-y" type="slide" axis="0 1 0"/>',
             '      <joint name="probe-z" type="slide" axis="0 0 1"/>',
@@ -249,25 +281,24 @@ def to_mjcf(world: dict, extension: dict, probe: bool = False) -> str:
     return "\n".join(out) + "\n"
 
 
+def start_z() -> float:
+    return float(contract.probe()["checks"]["floor"]["start_z_m"])
+
+
 def compile_model(xml: str):
     import mujoco
 
     return mujoco.MjModel.from_xml_string(xml)
 
 
-def quantity(name, kind, canonical, measured, tolerance, unit, method):
-    deviation = None if measured is None else measured - canonical
-    return {
-        "name": name,
-        "kind": kind,
-        "unit": unit,
-        "canonical": canonical,
-        "measured": measured,
-        "deviation": deviation,
-        "tolerance": tolerance,
-        "pass": deviation is not None and abs(deviation) <= tolerance + 1e-12,
-        "method": method,
-    }
+def quantity(name, kind, canonical, measured, tolerance, unit, method, **extra):
+    """A 0.2 quantity; kind/unit/comparison must agree with hallway-quantities.json."""
+    q = contract.quantity(name, canonical, measured, tolerance, method, **extra)
+    if (q["kind"], q["unit"]) != (kind, unit):
+        raise contract.ContractError(
+            f"{name}: adapter says {kind}/{unit}, contract {q['kind']}/{q['unit']}"
+        )
+    return q
 
 
 def measure_geometry(model, world: dict) -> list[dict]:
@@ -466,7 +497,8 @@ def _drive(model, data, target, axis, seconds, speed):
         model, mujoco.mjtObj.mjOBJ_ACTUATOR, "drive-" + ("y" if axis == "x" else "x")
     )
     samples = []
-    for _ in range(int(round(seconds / model.opt.timestep))):
+    stride = contract.sampling(float(model.opt.timestep))["sample_stride"]
+    for step in range(int(round(seconds / model.opt.timestep))):
         pos = data.qpos[j[axis]]
         command = speed if target is None else max(-speed, min(speed, 10.0 * (target - pos)))
         data.ctrl[act] = command
@@ -474,12 +506,15 @@ def _drive(model, data, target, axis, seconds, speed):
         mujoco.mj_step(model, data)
         if any(w.number for w in data.warning):
             raise RuntimeError("MuJoCo raised a simulation warning")
+        if (step + 1) % stride:
+            continue  # sample at the shared rate: every stride-th physics step
         samples.append(
             {
                 "t": float(data.time),
+                # world = joint position + body offset (0, 0, start_z); qpos is post-step
                 "x": float(data.qpos[j["x"]]),
                 "y": float(data.qpos[j["y"]]),
-                "z": float(data.qpos[j["z"]]),
+                "z": float(data.qpos[j["z"]]) + start_z(),
                 "vx": float(data.qvel[j["x"]]),
                 "vy": float(data.qvel[j["y"]]),
                 "contacts": sorted(_contacts(model, data, g)),
@@ -489,12 +524,37 @@ def _drive(model, data, target, axis, seconds, speed):
 
 
 def _reset(model, data, settle=1.5):
+    """mj_resetData restores the initial state: probe at rest at spawn-centre, z = start_z."""
     import mujoco
 
-    j, _ = _probe_ids(model)
     mujoco.mj_resetData(model, data)
-    data.qpos[j["z"]] = 0.75  # release from rest at spawn-centre (spec: centre at z = 0.75 m)
+    mujoco.mj_forward(model, data)
     return _drive(model, data, 0.0, "x", settle, 0.0)
+
+
+def _snapshot(model, data) -> dict:
+    """World positions of every static geom, every site and the probe, read from MjData."""
+    import mujoco
+
+    def name(kind, i):
+        return mujoco.mj_id2name(model, kind, i)
+
+    return {
+        "geoms": {
+            name(mujoco.mjtObj.mjOBJ_GEOM, i): [float(v) for v in data.geom_xpos[i]]
+            for i in range(model.ngeom)
+            if name(mujoco.mjtObj.mjOBJ_GEOM, i) != "probe"
+        },
+        "sizes": {
+            name(mujoco.mjtObj.mjOBJ_GEOM, i): [float(v) for v in model.geom_size[i]]
+            for i in range(model.ngeom)
+        },
+        "places": {
+            name(mujoco.mjtObj.mjOBJ_SITE, i): [float(v) for v in data.site_xpos[i]]
+            for i in range(model.nsite)
+        },
+        "probe": [float(v) for v in data.geom_xpos[_probe_ids(model)[1]]],
+    }
 
 
 def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
@@ -503,12 +563,16 @@ def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
     model = compile_model(to_mjcf(world, extension, probe=True))
     data = mujoco.MjData(model)
     tol = world["tolerances"]["distance_m"]
-    r = extension["probe"]["radius"]
-    speed = extension["probe"]["max_speed"]
+    shared = contract.probe()
+    r = shared["probe"]["radius_m"]
+    speed = shared["probe"]["max_speed_m_per_s"]
+    checks = shared["checks"]
     half = world["dimensions"]["clear_width"] / 2
     out, notes = [], {}
 
-    drop = _reset(model, data, settle=2.0)
+    mujoco.mj_forward(model, data)
+    before = _snapshot(model, data)
+    drop = _reset(model, data, settle=checks["floor"]["settle_s"])
     penetration = max(0.0, max(-(s["z"] - r) for s in drop))
     out.append(
         quantity(
@@ -536,8 +600,8 @@ def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
     notes["floor_contacts"] = sorted({c for s in drop for c in s["contacts"]})
 
     for sign, label in ((1, "+y"), (-1, "-y")):
-        _reset(model, data)
-        push = _drive(model, data, None, "y", 5.0, sign * speed)
+        _reset(model, data, settle=checks["wall"]["settle_s"])
+        push = _drive(model, data, None, "y", checks["wall"]["drive_s"], sign * speed)
         overshoot = max(sign * s["y"] + r - half for s in push)
         touched = sorted({c for s in push for c in s["contacts"]} - {"floor"})
         max_speed = max(abs(s["vy"]) for s in push)
@@ -553,19 +617,15 @@ def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
             )
         )
         out.append(
-            {
-                **quantity(
-                    f"collision/wall{label}/max_speed",
-                    "drive",
-                    speed,
-                    max_speed,
-                    0.0,
-                    "m/s",
-                    "max |vy| over steps; must not exceed the drive limit",
-                ),
-                "deviation": max_speed - speed,
-                "pass": max_speed <= speed + 1e-9,
-            }
+            quantity(
+                f"collision/wall{label}/max_speed",
+                "drive",
+                speed,
+                max_speed,
+                0.0,
+                "m/s",
+                "max |vy| over steps; at_most the 0.25 m/s cap",
+            )
         )
         out.append(
             {
@@ -582,14 +642,15 @@ def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
             }
         )
 
-    for target in (2.8, -2.8):
-        _reset(model, data)
-        run = _drive(model, data, target, "x", 16.0, speed)
+    for target in checks["open_end"]["targets_x_m"]:
+        end = "+x" if target > 0 else "-x"
+        _reset(model, data, settle=checks["open_end"]["settle_s"])
+        run = _drive(model, data, target, "x", checks["open_end"]["drive_s"], speed)
         touched = sorted({c for s in run for c in s["contacts"]})
         others = [c for c in touched if c != "floor"]
         out.append(
             quantity(
-                f"collision/open_end/{target:+.2f}/final_x",
+                f"collision/open_end/{end}/final_x",
                 "collision",
                 target,
                 run[-1]["x"],
@@ -601,7 +662,7 @@ def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
         out.append(
             {
                 **quantity(
-                    f"collision/open_end/{target:+.2f}/non_floor_contacts",
+                    f"collision/open_end/{end}/non_floor_contacts",
                     "collision",
                     0.0,
                     float(len(others)),
@@ -614,7 +675,7 @@ def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
         )
         out.append(
             quantity(
-                f"collision/open_end/{target:+.2f}/max_abs_y",
+                f"collision/open_end/{end}/max_abs_y",
                 "collision",
                 0.0,
                 max(abs(s["y"]) for s in run),
@@ -623,62 +684,93 @@ def collision_checks(world: dict, extension: dict) -> tuple[list[dict], dict]:
                 "max |y| during the drive",
             )
         )
+    # hallways.md: reset restores the geometry, frame and initial world state.
+    _reset(model, data, settle=0.0)
+    after = _snapshot(model, data)
+    out += reset_checks(before, after, tol)
     notes.update(
         gravity=[float(v) for v in model.opt.gravity],
         contacts_enabled=not bool(model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT),
         timestep=float(model.opt.timestep),
-        sampling_hz=1.0 / float(model.opt.timestep),
+        **contract.sampling(float(model.opt.timestep)),
+        sampling_hz=contract.sampling(float(model.opt.timestep))["sample_rate"],
         drive_method=f"{extension['probe']['drive']}, |command| <= {speed} m/s, kv {extension['probe']['kv']}, "
         f"force limit {extension['probe']['force_limit']} N; no teleporting",
-        measurement_method="joint positions and contact list sampled every physics step",
-        probe={k: extension["probe"][k] for k in ("radius", "density", "friction")},
+        measurement_method="joint positions and contact list sampled at sample_rate (every sample_stride-th physics step)",
+        probe={
+            **shared["probe"],
+            "density": extension["probe"]["density"],
+            "source": "hallway-probe.json",
+        },
+        reset_method="mj_resetData + mj_forward after all runs, then readback from MjData",
     )
     return out, notes
+
+
+def reset_checks(before: dict, after: dict, tol: float) -> list[dict]:
+    """reset/* quantities: geometry and places unchanged, probe back at its start."""
+
+    def shift(a, b):
+        return max(abs(x - y) for x, y in zip(a, b))
+
+    out = [
+        quantity(
+            f"reset/geometry/{n}/max_shift",
+            "reset",
+            0.0,
+            max(
+                shift(before["geoms"][n], after["geoms"][n]),
+                shift(before["sizes"][n], after["sizes"][n]),
+            ),
+            tol,
+            "m",
+            "max |change| of world centre and half-size, before the runs vs after reset",
+        )
+        for n in sorted(before["geoms"])
+    ]
+    out.append(
+        quantity(
+            "reset/places/max_shift",
+            "reset",
+            0.0,
+            max(shift(before["places"][n], after["places"][n]) for n in before["places"]),
+            tol,
+            "m",
+            "max |change| of any place marker, before the runs vs after reset",
+        )
+    )
+    start = [0.0, 0.0, start_z()]
+    out += [
+        quantity(
+            f"reset/probe/{a}",
+            "reset",
+            c,
+            v,
+            tol,
+            "m",
+            "probe centre after reset; start is spawn-centre at start_z_m",
+        )
+        for a, c, v in zip("xyz", start, after["probe"])
+    ]
+    return out
 
 
 def adapter_identity() -> dict:
     from livingproof_sim_mujoco.cli import identity
 
     ident = identity()
-    return {
-        "name": "livingproof-sim-mujoco",
-        **ident,
-        # The result names the adapter by its full commit; the describe form is kept for humans.
-        "version": adapter_commit(),
-        "commit": checkout_commit(),
-        "describe": ident["version"],
-        "mujoco": version("mujoco"),
-    }
-
-
-def checkout_commit(here: Path | None = None) -> str | None:
-    """Full 40-character HEAD of the git checkout this package runs from, or None."""
-    import subprocess
-
-    here = here or Path(__file__).resolve().parent
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=here, capture_output=True, text=True, check=True
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    return out if re.fullmatch(r"[0-9a-f]{40}", out) else None
-
-
-def adapter_commit() -> str:
-    """Full 40-character commit of this adapter: the checkout HEAD, else the build provenance."""
-    here = Path(__file__).resolve().parent
-    out = checkout_commit(here) or ""
-    if not out:
-        data = json.loads((here / "_build_provenance.json").read_text())
-        out = data["identity"]["commit"]
-    if not re.fullmatch(r"[0-9a-f]{40}", out):
-        raise FixtureError(f"adapter commit is not a full 40-character sha: {out!r}")
-    return out
+    return contract.adapter(
+        "livingproof-sim-mujoco",
+        Path(__file__).resolve().parent,
+        ident["version"],
+        ident["provenance"],
+        package_version=ident["package_version"],
+        mujoco=version("mujoco"),
+    )
 
 
 def run_checks(fixture: str, content_version: str, root: Path = WORLDS) -> dict:
-    """Return one engine-neutral result record (see docs/hallway-result.schema.json)."""
+    """Return one engine-neutral result record (livingproof-world-result/0.2, contract/hallway-result.schema.json)."""
     loaded = load_fixture(fixture, content_version, root)
     world, extension, pin = loaded["world"], loaded["extension"], loaded["pin"]
     spec = world["specification"]
