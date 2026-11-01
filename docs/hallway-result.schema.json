@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/docs/hallway-result.schema.json",
+  "title": "livingproof-world-result/0.1",
+  "description": "Engine-neutral result of one engine loading one versioned world fixture. A Gazebo consumer emits the same shape; a verifier joins two records on quantity name.",
+  "type": "object",
+  "required": ["format", "status", "fixture", "contract", "catalog", "engine", "adapter", "quantities"],
+  "properties": {
+    "format": {"const": "livingproof-world-result/0.1"},
+    "status": {"enum": ["PASS", "FAIL", "UNSUPPORTED"], "description": "PASS only if every quantity passes. UNSUPPORTED is never a pass."},
+    "feature": {"type": "string", "description": "Required when status is UNSUPPORTED: the declared feature that could not be mapped."},
+    "fixture": {"type": "object", "required": ["id", "content_version"], "properties": {"id": {"type": "string"}, "content_version": {"type": "string"}}},
+    "content_version": {"type": "string", "description": "Repeated at top level for UNSUPPORTED records."},
+    "contract": {"type": "object", "required": ["world_contract_revision"], "properties": {"world_contract_revision": {"type": "string"}, "document": {"type": "string"}, "document_revision": {"type": "string"}}},
+    "catalog": {"type": "object", "required": ["repository", "tag", "commit"], "properties": {"repository": {"type": "string"}, "tag": {"type": "string"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}},
+    "worlds": {"type": "object", "description": "Pinned world-content release.", "required": ["repository", "tag", "commit", "release_sha256"], "properties": {"commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "release_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "engine": {"type": "object", "required": ["name", "version"], "properties": {"name": {"type": "string"}, "version": {"type": "string"}}},
+    "adapter": {"type": "object", "required": ["name", "version", "commit"], "description": "Consumer name, version (full 40-character commit) and provenance.", "properties": {"name": {"type": "string"}, "version": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "Full git checkout HEAD, or null when not run from a checkout."}, "describe": {"type": "string"}, "provenance": {}}},
+    "compile": {"type": "object", "description": "Engine-native compile check."},
+    "settings": {"type": "object", "description": "Gravity/contact settings, drive method, sampling rate and measurement method."},
+    "screenshots": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["PASS", "BLOCKED", "NOT-RUN"]}}},
+    "quantities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "unit", "canonical", "measured", "deviation", "tolerance", "pass", "method"],
+        "properties": {
+          "name": {"type": "string", "description": "Engine-neutral key, e.g. clear_width, place/spawn-exit/yaw, collision/wall+y/surface_past_inner_face."},
+          "kind": {"enum": ["dimension", "frame", "place", "collision", "drive"]},
+          "unit": {"enum": ["m", "deg", "m/s", "count", "bool"]},
+          "canonical": {"type": "number"},
+          "measured": {"type": ["number", "null"]},
+          "deviation": {"type": ["number", "null"], "description": "measured - canonical"},
+          "tolerance": {"type": "number", "description": "pass when |deviation| <= tolerance (drive: measured <= canonical)"},
+          "pass": {"type": "boolean"},
+          "method": {"type": "string"},
+          "contacts": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "hallway-open",
+  "content_version": "0.1.0",
+  "files": {
+    "README.md": "b7e1f00ccfbba4523577eeb380cfdf977587715e568fce501de86a43b65f2bb2",
+    "notes.md": "a77c0f00eb413595303a4d248e7fdca89be2c2937b1452c5fa33955d0f00cbac",
+    "world-dark.svg": "d2648d57b4c17e6b6850cef552d671dc5e2504ec0001c654a9ad7e1b28138bf0",
+    "world-light.svg": "cbe20f52ec5cc80c24a741e1093cf8bc6369f82aabc39698d2e300d60e3de48c",
+    "world.json": "d60bb8aa6a72c8403fb6674cc9d803962c1484bc3e163527988e8c57ccec775c",
+    "world.svg": "e988e2c1d7dabe909f74d7b3afdb953ac91be7066c499ff760daf5b6cf0d4072"
+  }
+}
