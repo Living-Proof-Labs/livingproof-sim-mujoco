@@ -213,3 +213,21 @@ def test_evidence_refuses_pending_refs(tmp_path, monkeypatch):
     with pytest.raises(SystemExit, match="PENDING_RELEASE refs \\(runner\\)"):
         evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", jobs=1)
     assert not (tmp_path / "out").exists()
+
+
+def test_stand_runs_the_zero_command_check_through_the_adapter(tmp_path, monkeypatch):
+    from livingproof_sim_mujoco import walk
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    lock = _repo(repo)
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.setattr(
+        Toy, "runner_settings", lambda self: {"initial_noise": {}, "sample_hz": 50.0,
+                                              "stand_seconds": 0.2}
+    )  # fmt: skip
+    result = walk.stand(TOY, "stock", tmp_path / "out")
+    assert result["check"] == "zero-command-stand" and result["seed"] == 1
+    assert result["configuration_sha256"] == lock["configurations"][0]["sha256"]
+    assert result["seconds"] == 0.2 and result["clip"] == "stand-zero-command.mp4"
+    assert json.loads((tmp_path / "out" / "stand.json").read_text()) == result

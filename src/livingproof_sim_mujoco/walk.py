@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """Generic walk helpers shared by robot packages: runner settings, the seeded initial
-state, a recorded simulation and the zero-command standing summary. Never grades."""
+state, a recorded simulation and the zero-command standing check. Never grades.
+
+    python -m livingproof_sim_mujoco.walk stand <module:adapter> --configuration NAME [--out DIR]
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 from pathlib import Path
+import sys
 
 import mujoco
 import numpy as np
@@ -123,3 +128,65 @@ def stand_summary(name, digest, seconds, samples, end, clip, fall_height) -> dic
         "max_abs_lateral": round(max(abs(s[2]) for s in samples), 4),
         "clip": clip,
     }
+
+
+CAMERA = (3.6, -38.0, 200.0)  # tracking distance, elevation, azimuth; adapter.camera overrides
+
+
+def stand(ref, name: str, out: Path | None = None) -> dict:
+    """Zero-command standing check (seed 1) through a robot adapter (``module:NAME`` or the
+    adapter object, as ``livingproof_sim_mujoco.evidence`` uses); not part of any grade."""
+    from livingproof_sim_mujoco import evidence as ev
+    from livingproof_sim_mujoco.pins import fetch
+
+    robot = ev.adapter(ref) if isinstance(ref, str) else ref
+    root = Path(robot.root)
+    fetch(root)
+    entry = ev.locked_configuration(ev.load_lock(root), name, root)
+    p = ev.parameters(robot, name)
+    rs = robot.runner_settings()
+    seconds = rs["stand_seconds"]
+    scene = robot.scene(name)
+    model = scene.model
+    ctrl = robot.controller(name, scene)
+    policy = robot.policy(model, ctrl)
+    data = mujoco.MjData(model)
+    robot.initial_state(model, data, ctrl, 1, rs["initial_noise"], p["spawn"])
+    command = [0.0, 0.0, 0.0]
+    samples, end, clip = simulate(
+        model,
+        data,
+        lambda d: policy.step(d, command),
+        base_body=robot.base_body(name),
+        seconds=seconds,
+        p=p,
+        sample_hz=rs["sample_hz"],
+        stop_at_exit=False,
+        clip=Path(out) / "stand-zero-command.mp4" if out else None,
+        camera_view=getattr(robot, "camera", None) or CAMERA,
+    )
+    result = stand_summary(name, entry["sha256"], seconds, samples, end, clip, p["fall_height"])
+    if out:
+        Path(out).mkdir(parents=True, exist_ok=True)
+        (Path(out) / "stand.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = ap.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("stand", help="zero-command standing check, seed 1")
+    s.add_argument("adapter", help="robot adapter, module:NAME (e.g. lpl_g1.adapter:ROBOT)")
+    s.add_argument("--configuration", required=True)
+    s.add_argument("--out", type=Path, default=None, help="default <robot root>/artifacts/<name>")
+    a = ap.parse_args(argv)
+    from livingproof_sim_mujoco import evidence as ev
+
+    robot = ev.adapter(a.adapter)
+    out = a.out or Path(robot.root) / "artifacts" / a.configuration
+    print(json.dumps(stand(robot, a.configuration, out), indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
