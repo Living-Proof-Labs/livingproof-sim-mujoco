@@ -8,7 +8,7 @@ from pathlib import Path
 import mujoco
 import pytest
 
-from livingproof_sim_mujoco import evidence, pins, scenario
+from livingproof_sim_mujoco import evidence, observations, pins, scenario
 
 WORLD = {
     "dimensions": {"clear_width": 1.6},
@@ -200,6 +200,52 @@ def test_evidence_runs_every_seed_through_the_adapter(tmp_path, monkeypatch):
     assert obs["end"] == "crossed_exit"
     with pytest.raises(SystemExit, match="is not in"):
         evidence.evidence("test_evidence:TOY", "other", tmp_path / "out2", jobs=1)
+
+
+def test_unmet_precondition_never_starts_the_simulator_or_a_worker(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.syspath_prepend(str(Path(__file__).parent))
+    calls = []
+
+    def spy(what):
+        def f(*a, **k):
+            calls.append(what)
+            raise AssertionError(f"{what} called for an unsupported robot")
+
+        return f
+
+    monkeypatch.setattr(evidence, "pool", spy("pool"))
+    monkeypatch.setattr(evidence, "run_trial", spy("run_trial"))
+    monkeypatch.setattr(observations, "observe", spy("observe"))
+    monkeypatch.setattr(evidence.mujoco, "MjData", spy("MjData"))
+    unmet = {"name": "fits_width", "met": False, "detail": "1.41 m vs 1.4 m"}
+    monkeypatch.setattr(
+        evidence.sc,
+        "preconditions",
+        lambda *a, **k: [unmet, {"name": "simulator_declared", "met": True, "detail": "x"}],
+    )
+    m = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", jobs=1)
+    assert calls == []
+    assert m["trials"] == [] and m["preconditions"][0] == unmet
+    assert list((tmp_path / "out" / "trials").iterdir()) == []
+    assert json.loads((tmp_path / "out" / "manifest.json").read_text())["trials"] == []
+    assert "walls" not in m["environment"]
+
+
+def test_optional_unmet_precondition_still_runs_the_trials(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.syspath_prepend(str(Path(__file__).parent))
+    real = evidence.sc.preconditions
+    optional = {"name": "nice_to_have", "met": False, "detail": "x", "required": False}
+    monkeypatch.setattr(evidence.sc, "preconditions", lambda *a, **k: real(*a, **k) + [optional])
+    m = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", jobs=1)
+    assert [t["seed"] for t in m["trials"]] == [1, 2]
 
 
 def test_evidence_refuses_pending_refs(tmp_path, monkeypatch):

@@ -149,6 +149,18 @@ def _trial(args):
     return {"seed": seed, "path": f"trials/{path.name}", "sha256": sha256(path)}
 
 
+def unmet_required(preconditions: list) -> dict | None:
+    """The first required precondition that is not met, else None.
+
+    An unmet one means the robot cannot attempt the scenario: no simulator is
+    started and no trial is recorded (the verifier grades it UNSUPPORTED).
+    """
+    for c in preconditions:
+        if c.get("required", True) and not c["met"]:
+            return c
+    return None
+
+
 def recording(robot: Robot, lock: dict, name: str) -> tuple[dict, dict]:
     """(plan, scenario parameters) exactly as every evidence trial is recorded."""
     plan = lock["plan"]
@@ -174,11 +186,17 @@ def evidence(
     out = Path(out)
     (out / "trials").mkdir(parents=True, exist_ok=False)
     created = dt.datetime.now(dt.timezone.utc)
-    work = [(ref, name, s, plan, p, out) for s in plan["seeds"]]
-    with pool(jobs) as workers:
-        trials = list(workers.map(_trial, work))
-    conf_path = root / entry["path"]
     profile = robot.robot()
+    checked = sc.preconditions(
+        profile, world, name, robot.configuration, width_decimals=robot.width_decimals
+    )
+    unmet = unmet_required(checked)
+    trials = []
+    if unmet is None:
+        work = [(ref, name, s, plan, p, out) for s in plan["seeds"]]
+        with pool(jobs) as workers:
+            trials = list(workers.map(_trial, work))
+    conf_path = root / entry["path"]
     manifest = {
         "format": FORMAT,
         "run_id": f"walk-hallway-{robot.id}-{name}-{created:%Y%m%dT%H%M%SZ}",
@@ -186,9 +204,7 @@ def evidence(
         "lock": {"path": LOCK, "sha256": sha256(root / LOCK), "content": lock},
         "pending_release": waiting,
         "plan": plan,
-        "preconditions": sc.preconditions(
-            profile, world, name, robot.configuration, width_decimals=robot.width_decimals
-        ),
+        "preconditions": checked,
         "robot": {
             "id": robot.id,
             "profile_sha256": sha256(root / "robot.json"),
@@ -214,9 +230,15 @@ def evidence(
                 "tag": lock["releases"]["runner"]["tag"],
                 "commit": lock["releases"]["runner"]["commit"],
             },
-            "base_body": robot.base_body(name),
-            "walls": robot.scene(name).walls,
-            **robot.environment(name),
+            **(
+                {}
+                if unmet is not None
+                else {
+                    "base_body": robot.base_body(name),
+                    "walls": robot.scene(name).walls,
+                    **robot.environment(name),
+                }
+            ),
             "source_commit": sc.git_head(root)[0],
         },
         "trials": sorted(trials, key=lambda t: t["seed"]),
@@ -234,6 +256,10 @@ def main(argv=None) -> int:
     ap.add_argument("--allow-pending", action="store_true", help="local runs before releases exist")
     a = ap.parse_args(argv)
     m = evidence(a.adapter, a.configuration, a.out, jobs=a.jobs, allow_pending=a.allow_pending)
+    unmet = unmet_required(m["preconditions"])
+    if unmet is not None:
+        print(f"UNSUPPORTED: precondition {unmet['name']} unmet: {unmet['detail']}; no trials run")
+        return 0
     print(f"{len(m['trials'])} observations -> {a.out / 'manifest.json'}")
     return 0  # evidence only: no grade, so nothing to signal in the exit code
 
