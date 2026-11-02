@@ -4,12 +4,26 @@ world. Evidence only: grading belongs to the capability verifier."""
 from __future__ import annotations
 
 import subprocess
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 SCENARIO = "walk-hallway@0.1.0"
 COMMAND_SPEED = 0.5  # m/s, shared
 WALL_CLEARANCE = {"humanoid": 0.05, "quadruped": 0.10}  # m, walk-hallway README
 SPAWN, EXIT = "spawn-entrance", "exit"
+
+
+def millimetres(metres: float) -> int:
+    """Metres to integer millimetres, rounding half up (from the decimal text, not the binary float)."""
+    return int((Decimal(str(metres)) * 1000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def fits_width(width: float, clearance: float, clear_width: float) -> bool:
+    """walk-hallway fit rule: width + 2 x clearance <= clear width, compared in whole millimetres.
+
+    Comparing floats would reject exact fits (1.30 + 2 x 0.05 > 1.40 in binary floating point).
+    """
+    return millimetres(width) + 2 * millimetres(clearance) <= millimetres(clear_width)
 
 
 def place(world: dict, name: str) -> dict:
@@ -47,7 +61,7 @@ def preconditions(
     out = [
         (
             "fits_width",
-            need <= clear,
+            fits_width(width, WALL_CLEARANCE[robot["class"]], clear),
             f"{width} + 2 x clearance = {need:.{width_decimals}f} m vs {clear} m",
         )
     ]
