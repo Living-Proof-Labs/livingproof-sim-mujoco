@@ -121,3 +121,15 @@ def test_media_fetches_before_the_adapter_loads_from_a_fresh_checkout(recorded, 
     doc = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
     assert calls[0] == "fetch" and calls.count("fetch") == 1
     assert len(doc["trials"]) == 2
+
+
+def test_a_replay_that_really_differs_is_still_refused(recorded):
+    # Pinning makes the same run reproduce; it must not make a different run pass. Seed 1's
+    # replay against the evidence of seed 2 (a different trial) is a real mismatch.
+    tmp_path, v = recorded
+    m = json.loads((tmp_path / "ev" / "manifest.json").read_text())
+    m["trials"][0]["sha256"] = m["trials"][1]["sha256"]
+    (tmp_path / "ev" / "manifest.json").write_text(json.dumps(m))
+    with pytest.raises(RuntimeError, match="differs from the evidence"):
+        media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m", jobs=1)
+    assert not (tmp_path / "m" / "mcap").exists()
