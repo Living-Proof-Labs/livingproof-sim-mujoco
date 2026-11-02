@@ -126,6 +126,9 @@ class TorchScriptBackend:
     """
 
     def __init__(self, path: Path):
+        from livingproof_sim_mujoco import cpu
+
+        cpu.pin()  # refuses a torch loaded with another CPU dispatch
         try:
             import torch
         except ImportError as e:
