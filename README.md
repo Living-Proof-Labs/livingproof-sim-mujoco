@@ -47,8 +47,10 @@ hallway. Only collision geometry counts (contype/conaffinity nonzero, an explici
 pair, or the same geom group as those, which is how the G1 and Go1 mark their collision
 class); visual-only meshes never do. A geom counts for a wall only while it is alongside it (within the
 wall's x and z span, or overlapping it at its end), so a part past the wall's end is not in
-the wall. Bodies with no collision geom are listed in
-`wall_intrusion.geometry.bodies_without_collision_geoms` and warned about; a robot with no
+the wall. A body with no collision geom at all (the G1's
+shoulders, torso and pelvis, for example) falls back to its visual geoms so it is still
+measured; such bodies are listed in `wall_intrusion.geometry.visual_fallback_bodies` (and
+`bodies_without_collision_geoms`) and warned about; a robot with no
 collision geom at all is refused.
 The trial ends `left_hallway` (with `left_hallway.via` naming the wall, or
 `exit-outside-segment`) as soon as any robot collision geom reaches past a wall's outer face, or

@@ -240,7 +240,7 @@ def test_collision_class_group_counts_without_contype_or_pair():
     assert reach.record["bodies_without_collision_geoms"] == []
 
 
-def test_bodies_without_collision_geoms_are_listed_and_warned_about():
+def test_bodies_without_collision_geoms_fall_back_to_visual_geoms_and_are_recorded():
     xml = """
 <mujoco>
   <worldbody>
@@ -254,9 +254,13 @@ def test_bodies_without_collision_geoms_are_listed_and_warned_about():
 </mujoco>
 """
     m = mujoco.MjModel.from_xml_string(xml)
-    with pytest.warns(UserWarning, match="no collision geom: arm"):
-        _, record = collision_geoms(m)
-    assert record["bodies_without_collision_geoms"] == ["arm"]
+    with pytest.warns(UserWarning, match="visual geoms for bodies with no collision geom: arm"):
+        reach = Reach(m)
+    assert reach.record["bodies_without_collision_geoms"] == ["arm"]
+    assert reach.record["visual_fallback_bodies"] == ["arm"]
+    d = mujoco.MjData(m)
+    mujoco.mj_forward(m, d)
+    assert reach(d)[-1] == pytest.approx(0.5)  # the arm's visual box: 0.3 + 0.2
 
 
 def test_a_robot_with_no_collision_geoms_is_refused():
@@ -298,3 +302,52 @@ def test_a_part_beyond_the_walls_end_is_not_in_the_wall(x, reach):
     mujoco.mj_forward(m, d)
     r = Reach(m).toward(d, wall_faces(m, ["wall-left"]))["wall-left"]
     assert r == (None if reach is None else pytest.approx(reach))
+
+
+G1_SHOULDER = """
+<mujoco>
+  <option timestep="0.01" gravity="0 0 0"/>
+  <worldbody>
+    <geom name="wall-left" type="box" pos="0 0.825 1.25" size="3 0.075 1.25" contype="0" conaffinity="0"/>
+    <geom name="wall-right" type="box" pos="0 -0.825 1.25" size="3 0.075 1.25" contype="0" conaffinity="0"/>
+    <geom name="floor" type="plane" size="9 9 1"/>
+    <body name="pelvis" pos="0 0.4 0.8">
+      <freejoint/>
+      <geom type="box" size="0.1 0.3 0.1" contype="0" conaffinity="0" group="2"/>
+      <body name="left_hip_roll_link" pos="0 0 -0.3">
+        <geom name="left_thigh" type="capsule" size="0.05 0.2" contype="0" conaffinity="0" group="3"/>
+        <geom type="box" pos="0 0.3 0" size="0.05 0.1 0.05" contype="0" conaffinity="0" group="2"/>
+      </body>
+      <body name="left_shoulder_roll_link" pos="0 0.25 0.3">
+        <geom type="box" size="0.05 0.1042 0.05" contype="0" conaffinity="0" group="2"/>
+      </body>
+    </body>
+  </worldbody>
+  <contact><pair geom1="left_thigh" geom2="floor"/></contact>
+</mujoco>
+"""
+
+
+def test_g1_seed_18_shoulder_with_only_visual_geoms_still_touches_the_wall():
+    """#25 review round 2: G1 stock seed 18's left shoulder links have only visual geoms
+    and overlap wall-left by 4.2 mm. They fall back to visual geoms, so the contact counts.
+    The visual box on the thigh's body (which has a collision geom) reaches 0.80 m and
+    stays excluded; otherwise the depth would read 0.05 m."""
+    m = mujoco.MjModel.from_xml_string(G1_SHOULDER)
+    d = mujoco.MjData(m)
+    mujoco.mj_forward(m, d)
+    with pytest.warns(UserWarning, match="left_shoulder_roll_link"):
+        o = observe(
+            m,
+            d,
+            lambda data: mujoco.mj_step(m, data),
+            base_body="pelvis",
+            walls=["wall-left", "wall-right"],
+            exit_x=10.0,
+            seconds=0.1,
+        )
+    geometry = o["wall_intrusion"]["geometry"]
+    assert geometry["visual_fallback_bodies"] == ["left_shoulder_roll_link", "pelvis"]
+    assert [c["wall"] for c in o["wall_contacts"]] == ["wall-left"]
+    assert o["wall_contacts"][0]["depth"] == pytest.approx(0.0042)
+    assert o["end"] == "time_limit" and o["left_hallway"] is None

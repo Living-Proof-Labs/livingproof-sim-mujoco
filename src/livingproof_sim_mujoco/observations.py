@@ -78,8 +78,10 @@ def collision_geoms(model: mujoco.MjModel) -> tuple[list[int], dict]:
     contype/conaffinity or a pair, or shares a geom group with one that does. Visual-only
     geoms (their own group, contype = conaffinity = 0) never count.
 
-    Bodies whose geoms are all visual are listed (``bodies_without_collision_geoms``) and
-    warned about, not silently skipped: wall intrusion cannot see them. A robot with no
+    A body whose geoms are all visual (for example the G1's shoulders, torso and pelvis)
+    falls back to those visual geoms, so it is still measured: it is listed in
+    ``bodies_without_collision_geoms`` and ``visual_fallback_bodies`` and warned about.
+    Visual geoms of a body that has collision geoms stay excluded. A robot with no
     collision geom at all fails closed (ValueError)."""
     robot = [g for g in range(model.ngeom) if model.geom_bodyid[g] != 0]
     paired = {int(g) for g in (*model.pair_geom1, *model.pair_geom2)}
@@ -94,8 +96,14 @@ def collision_geoms(model: mujoco.MjModel) -> tuple[list[int], dict]:
         - {model.body(b).name for b in covered}
     )
     if uncovered:
+        fallback = set(uncovered)
+        chosen = sorted(
+            set(chosen)
+            | {g for g in robot if model.body(int(model.geom_bodyid[g])).name in fallback}
+        )
         warnings.warn(
-            "wall intrusion ignores bodies with no collision geom: " + ", ".join(uncovered),
+            "wall intrusion uses visual geoms for bodies with no collision geom: "
+            + ", ".join(uncovered),
             stacklevel=2,
         )
     record = {
@@ -103,6 +111,7 @@ def collision_geoms(model: mujoco.MjModel) -> tuple[list[int], dict]:
         "collision_groups": groups,
         "geoms": len(chosen),
         "bodies_without_collision_geoms": uncovered,
+        "visual_fallback_bodies": uncovered,
     }
     return chosen, record
 
