@@ -13,7 +13,8 @@ into and through them. Each wall's inner and outer faces come from its box geom.
   exactly, meshes as their convex hulls, which enclose the mesh) to each wall geom,
   capped at ``DISTMAX``: the clearance while the robot is clear of the wall.
 - Wall intrusion is how far the farthest robot part reaches past a wall's inner face,
-  measured across the hallway (y) on the same geometry (``Reach``). It grows with how
+  measured across the hallway (y) on the robot's collision geometry only (``Reach``,
+  ``collision_geoms``): what physics would touch, not visual-only meshes. It grows with how
   far the robot is in the wall, unlike a penetration depth, which against a thin wall
   peaks and falls as a body passes through. A contact is any sample with intrusion at or
   above zero; its ``depth`` is the largest intrusion while it lasts.
@@ -25,6 +26,7 @@ into and through them. Each wall's inner and outer faces come from its box geom.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 
 import mujoco
@@ -52,14 +54,60 @@ def wall_faces(model: mujoco.MjModel, walls: list[str]) -> dict[str, dict]:
     return out
 
 
+COLLISION_RULE = (
+    "contype or conaffinity nonzero, or in an explicit contact pair, "
+    "plus every geom in the same geom group as those (the robot's collision class)"
+)
+
+
+def collision_geoms(model: mujoco.MjModel) -> tuple[list[int], dict]:
+    """The robot's collision geoms, and a record of how they were chosen.
+
+    Robots mark collision geometry in different ways: Booster T1 sets contype/conaffinity
+    on its collision primitives; the Unitree G1 and Go1 (MuJoCo Playground) zero both and
+    collide through explicit ``<pair>`` elements or a few foot geoms, keeping the rest of
+    their collision class in one geom group (3). So a geom counts when it collides by
+    contype/conaffinity or a pair, or shares a geom group with one that does. Visual-only
+    geoms (their own group, contype = conaffinity = 0) never count.
+
+    Bodies whose geoms are all visual are listed (``bodies_without_collision_geoms``) and
+    warned about, not silently skipped: wall intrusion cannot see them. A robot with no
+    collision geom at all fails closed (ValueError)."""
+    robot = [g for g in range(model.ngeom) if model.geom_bodyid[g] != 0]
+    paired = {int(g) for g in (*model.pair_geom1, *model.pair_geom2)}
+    marked = {g for g in robot if model.geom_contype[g] or model.geom_conaffinity[g] or g in paired}
+    if not marked:
+        raise ValueError("robot has no collision geoms; wall intrusion cannot be measured")
+    groups = sorted({int(model.geom_group[g]) for g in marked})
+    chosen = [g for g in robot if g in marked or int(model.geom_group[g]) in groups]
+    covered = {int(model.geom_bodyid[g]) for g in chosen}
+    uncovered = sorted(
+        {model.body(int(model.geom_bodyid[g])).name for g in robot}
+        - {model.body(b).name for b in covered}
+    )
+    if uncovered:
+        warnings.warn(
+            "wall intrusion ignores bodies with no collision geom: " + ", ".join(uncovered),
+            stacklevel=2,
+        )
+    record = {
+        "rule": COLLISION_RULE,
+        "collision_groups": groups,
+        "geoms": len(chosen),
+        "bodies_without_collision_geoms": uncovered,
+    }
+    return chosen, record
+
+
 class Reach:
-    """How far the robot's geometry reaches across the hallway: for each side (+y, -y),
-    the largest y-extent of any robot geom on that side. Primitives exactly; meshes from
-    their compiled vertices (the convex hull's extent equals the mesh's)."""
+    """How far the robot's collision geometry reaches across the hallway: for each side
+    (+y, -y), the largest y-extent of any collision geom on that side (``collision_geoms``).
+    Primitives exactly; meshes from their compiled vertices (the convex hull's extent
+    equals the mesh's)."""
 
     def __init__(self, model: mujoco.MjModel):
         self.model = model
-        self.robot = [g for g in range(model.ngeom) if model.geom_bodyid[g] != 0]
+        self.robot, self.record = collision_geoms(model)
         self.verts = {}
         for g in self.robot:
             if model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH:
@@ -93,7 +141,7 @@ class Reach:
     def __call__(self, data: mujoco.MjData) -> dict[int, float]:
         """{+1: highest y of any robot part, -1: -(lowest y)}; both are distances from y = 0
         on that side (negative when the whole robot is on the other side)."""
-        lo, hi = zip(*(self.extent(data, g) for g in self.robot)) if self.robot else ((0,), (0,))
+        lo, hi = zip(*(self.extent(data, g) for g in self.robot))
         return {1: max(hi), -1: -min(lo)}
 
 
@@ -214,9 +262,10 @@ def observe(
         "wall_contacts": contacts,
         "wall_distance": {"method": "mj_geomDistance", "distmax": DISTMAX},
         "wall_intrusion": {
-            "method": "robot geometry y-extent past each wall's inner face",
+            "method": "robot collision-geometry y-extent past each wall's inner face",
             "half_width": round(half_width, 4) if np.isfinite(half_width) else None,
             "walls": {w: {k: round(v, 4) for k, v in f.items()} for w, f in faces.items()},
+            "geometry": reach.record,
         },
         "trace": {"columns": COLUMNS, "samples": samples},
     }

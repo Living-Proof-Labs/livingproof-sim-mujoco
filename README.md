@@ -42,9 +42,14 @@ evidence only (`livingproof-hallway-observation/2.0.0`): the base position trace
 wall contact with its start, end and depth. The walls are visual only, so a robot can
 move into and through them. Wall distance is the signed `mj_geomDistance` from every
 robot geom to the wall geoms (the clearance). A contact's depth is the wall intrusion:
-how far the farthest robot part reaches past the wall's inner face, across the hallway.
+how far the farthest robot collision geom reaches past the wall's inner face, across the
+hallway. Only collision geometry counts (contype/conaffinity nonzero, an explicit contact
+pair, or the same geom group as those, which is how the G1 and Go1 mark their collision
+class); visual-only meshes never do. Bodies with no collision geom are listed in
+`wall_intrusion.geometry.bodies_without_collision_geoms` and warned about; a robot with no
+collision geom at all is refused.
 The trial ends `left_hallway` (with `left_hallway.via` naming the wall, or
-`exit-outside-segment`) as soon as any robot part reaches past a wall's outer face, or
+`exit-outside-segment`) as soon as any robot collision geom reaches past a wall's outer face, or
 when the base reaches the exit line with |y| above the half-width; only a crossing within
 the exit segment ends `crossed_exit`. Format 2.0.0 replaced 1.0.0's depth (a penetration
 distance that peaks and falls as a body passes through a thin wall) and added the
