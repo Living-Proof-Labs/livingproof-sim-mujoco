@@ -304,4 +304,4 @@ def test_observations_are_reexported_from_hallway():
     from livingproof_sim_mujoco import observations
 
     assert hallway.observe is observations.observe
-    assert hallway.FORMAT == "livingproof-hallway-observation/1.0.0"
+    assert hallway.FORMAT == "livingproof-hallway-observation/2.0.0"
