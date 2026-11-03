@@ -127,7 +127,9 @@ def test_wall_slide_intrusion_grows_with_depth_unlike_penetration_distance():
     m = mujoco.MjModel.from_xml_string(SLAB)
     d = mujoco.MjData(m)
     faces = wall_faces(m, ["wall-right"])
-    assert faces["wall-right"] == pytest.approx({"side": -1, "inner": 0.75, "outer": 0.9})
+    right = {k: v for k, v in faces["wall-right"].items() if k != "span"}
+    assert right == pytest.approx({"side": -1, "inner": 0.75, "outer": 0.9})
+    assert faces["wall-right"]["span"][0] == pytest.approx((-3, 3))
     reach, dist = Reach(m), WallDistance(m, ["wall-right"])
     intrusions, distances = [], []
     for y in [-0.3 - 0.05 * i for i in range(20)]:
@@ -260,3 +262,39 @@ def test_bodies_without_collision_geoms_are_listed_and_warned_about():
 def test_a_robot_with_no_collision_geoms_is_refused():
     with pytest.raises(ValueError, match="no collision geoms"):
         collision_geoms(mujoco.MjModel.from_xml_string(HALL.replace('contype="1"', 'contype="0"')))
+
+
+SHORT_WALL = """
+<mujoco>
+  <worldbody>
+    <geom name="wall-left" type="box" pos="0 0.825 1.25" size="3 0.075 1.25" contype="0" conaffinity="0"/>
+    <body name="base" pos="0 0 0.3">
+      <freejoint/>
+      <geom type="sphere" size="0.05" contype="1" conaffinity="0"/>
+      <geom type="capsule" fromto="0.3 0.6 0 0.5 0.8 0" size="0.02" contype="1" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>
+"""
+
+
+@pytest.mark.parametrize(
+    ("x", "reach"),
+    [
+        (2.0, 0.82),  # the leg is alongside the wall and past its inner face (0.75)
+        (2.5, 0.82),  # the leg straddles the wall's end and really overlaps it
+        (2.65, 0.05),  # straddles the end but is clear of it: only the body counts
+        (2.75, 0.05),  # the leg is wholly beyond the wall's end
+        (3.0, None),  # nothing is alongside the wall
+    ],
+)
+def test_a_part_beyond_the_walls_end_is_not_in_the_wall(x, reach):
+    """Go1 seeds 2 and 15 (#25 review): at the exit a front leg reaches past y = 0.75 but
+    beyond the wall's end (x = 3), clear of the wall. Only geoms alongside the wall, or
+    really overlapping it at its end, count."""
+    m = mujoco.MjModel.from_xml_string(SHORT_WALL)
+    d = mujoco.MjData(m)
+    d.qpos[0] = x
+    mujoco.mj_forward(m, d)
+    r = Reach(m).toward(d, wall_faces(m, ["wall-left"]))["wall-left"]
+    assert r == (None if reach is None else pytest.approx(reach))

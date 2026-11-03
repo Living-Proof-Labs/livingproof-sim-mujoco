@@ -14,7 +14,11 @@ into and through them. Each wall's inner and outer faces come from its box geom.
   capped at ``DISTMAX``: the clearance while the robot is clear of the wall.
 - Wall intrusion is how far the farthest robot part reaches past a wall's inner face,
   measured across the hallway (y) on the robot's collision geometry only (``Reach``,
-  ``collision_geoms``): what physics would touch, not visual-only meshes. It grows with how
+  ``collision_geoms``): what physics would touch, not visual-only meshes.
+  Only geoms alongside a wall count for it: within its x and z span, or overlapping
+  it at the span's edge (negative ``mj_geomDistance``), so a part beyond the wall's
+  end is never in the wall. The trace's ``wall_intrusion`` is null when no collision
+  geom is alongside any wall. It grows with how
   far the robot is in the wall, unlike a penetration depth, which against a thin wall
   peaks and falls as a body passes through. A contact is any sample with intrusion at or
   above zero; its ``depth`` is the largest intrusion while it lasts.
@@ -51,6 +55,10 @@ def wall_faces(model: mujoco.MjModel, walls: list[str]) -> dict[str, dict]:
         if abs(y) <= half:
             raise ValueError(f"wall {name} straddles the centreline")
         out[name] = {"side": 1 if y > 0 else -1, "inner": abs(y) - half, "outer": abs(y) + half}
+        x, z = model.geom_pos[g.id][[0, 2]]
+        hx, hz = model.geom_size[g.id][[0, 2]]
+        # The wall's geom id and its x and z span, for ``Reach.toward`` (not in the output).
+        out[name]["span"] = {"id": g.id, 0: (x - hx, x + hx), 2: (z - hz, z + hz)}
     return out
 
 
@@ -115,14 +123,14 @@ class Reach:
                 a, n = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
                 self.verts[g] = np.array(model.mesh_vert[a : a + n], dtype=float)
 
-    def extent(self, data: mujoco.MjData, g: int) -> tuple[float, float]:
-        """(lowest y, highest y) of geom ``g`` in world coordinates."""
+    def extent(self, data: mujoco.MjData, g: int, axis: int = 1) -> tuple[float, float]:
+        """(lowest, highest) world coordinate of geom ``g`` along ``axis`` (default y)."""
         m, t = self.model, self.model.geom_type[g]
         c, rot = data.geom_xpos[g], data.geom_xmat[g].reshape(3, 3)
-        size, row = m.geom_size[g], rot[1]  # row: geom axes' y components
+        size, row = m.geom_size[g], rot[axis]  # row: geom axes' components along axis
         G = mujoco.mjtGeom
         if t == G.mjGEOM_MESH:
-            ys = c[1] + self.verts[g] @ row
+            ys = c[axis] + self.verts[g] @ row
             return float(ys.min()), float(ys.max())
         if t == G.mjGEOM_SPHERE:
             r = size[0]
@@ -136,13 +144,44 @@ class Reach:
             r = float(np.sqrt(((row * size) ** 2).sum()))
         else:  # planes, heightfields, SDFs: no finite robot extent we can measure
             raise ValueError(f"robot geom {g} has unsupported type {int(t)}")
-        return float(c[1] - r), float(c[1] + r)
+        return float(c[axis] - r), float(c[axis] + r)
 
     def __call__(self, data: mujoco.MjData) -> dict[int, float]:
         """{+1: highest y of any robot part, -1: -(lowest y)}; both are distances from y = 0
         on that side (negative when the whole robot is on the other side)."""
         lo, hi = zip(*(self.extent(data, g) for g in self.robot))
         return {1: max(hi), -1: -min(lo)}
+
+    def toward(self, data: mujoco.MjData, faces: dict) -> dict[str, float | None]:
+        """For each wall, how far toward its side the collision geoms *alongside it* reach.
+
+        A geom counts for a wall only where it can be in the wall: its x and z extents lie
+        within the wall's span, or it straddles the span's edge and its signed
+        ``mj_geomDistance`` to the wall is negative (it really overlaps). A part beyond the
+        wall's end (for example a quadruped's front leg past x = 3 at the exit) is not in the
+        wall however far sideways it reaches. None when no collision geom is alongside."""
+        out = {}
+        for w, f in faces.items():
+            span, best = f["span"], None
+            for g in self.robot:
+                inside = True
+                for axis in (0, 2):
+                    lo, hi = self.extent(data, g, axis)
+                    a, b = span[axis]
+                    if hi < a or lo > b:
+                        break
+                    inside = inside and a <= lo and hi <= b
+                else:
+                    if not inside and (
+                        mujoco.mj_geomDistance(self.model, data, g, span["id"], DISTMAX, None)
+                        >= 0.0
+                    ):
+                        continue
+                    lo, hi = self.extent(data, g)
+                    r = hi if f["side"] > 0 else -lo
+                    best = r if best is None else max(best, r)
+            out[w] = best
+        return out
 
 
 class WallDistance:
@@ -215,17 +254,18 @@ def observe(
             x, y, z = (float(v) for v in data.xpos[base])
             per_wall = distance(data)
             d = min(per_wall.values(), default=DISTMAX)
-            r = reach(data)
-            intrusion = {w: r[f["side"]] - f["inner"] for w, f in faces.items()}
-            wall, deepest = max(intrusion.items(), key=lambda kv: kv[1], default=(None, -DISTMAX))
+            r = reach.toward(data, faces)
+            intrusion = {w: r[w] - f["inner"] for w, f in faces.items() if r[w] is not None}
+            wall, deepest = max(intrusion.items(), key=lambda kv: kv[1], default=(None, None))
             samples.append(
-                [t, round(x, 4), round(y, 4), round(z, 4), round(d, 4), round(deepest, 4)]
+                [t, round(x, 4), round(y, 4), round(z, 4), round(d, 4)]
+                + [None if deepest is None else round(deepest, 4)]
             )
             if abs(y - centreline_y) > lateral["value"]:
                 lateral = {"value": round(abs(y - centreline_y), 4), "time": t}
             if z < height["value"]:
                 height = {"value": round(z, 4), "time": t}
-            if deepest >= 0.0:
+            if deepest is not None and deepest >= 0.0:
                 if open_contact is None:
                     open_contact = {"wall": wall, "start": t, "end": t, "depth": 0.0}
                     contacts.append(open_contact)
@@ -233,7 +273,7 @@ def observe(
                 open_contact["depth"] = round(max(open_contact["depth"], deepest), 4)
             else:
                 open_contact = None
-            through = [w for w, f in faces.items() if r[f["side"]] > f["outer"]]
+            through = [w for w, f in faces.items() if r[w] is not None and r[w] > f["outer"]]
             if through:
                 left = {"time": t, "via": through[0], "x": round(x, 4), "y": round(y, 4)}
                 end = "left_hallway"
@@ -264,7 +304,9 @@ def observe(
         "wall_intrusion": {
             "method": "robot collision-geometry y-extent past each wall's inner face",
             "half_width": round(half_width, 4) if np.isfinite(half_width) else None,
-            "walls": {w: {k: round(v, 4) for k, v in f.items()} for w, f in faces.items()},
+            "walls": {
+                w: {k: round(v, 4) for k, v in f.items() if k != "span"} for w, f in faces.items()
+            },
             "geometry": reach.record,
         },
         "trace": {"columns": COLUMNS, "samples": samples},

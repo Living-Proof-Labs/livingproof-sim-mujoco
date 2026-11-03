@@ -45,7 +45,9 @@ robot geom to the wall geoms (the clearance). A contact's depth is the wall intr
 how far the farthest robot collision geom reaches past the wall's inner face, across the
 hallway. Only collision geometry counts (contype/conaffinity nonzero, an explicit contact
 pair, or the same geom group as those, which is how the G1 and Go1 mark their collision
-class); visual-only meshes never do. Bodies with no collision geom are listed in
+class); visual-only meshes never do. A geom counts for a wall only while it is alongside it (within the
+wall's x and z span, or overlapping it at its end), so a part past the wall's end is not in
+the wall. Bodies with no collision geom are listed in
 `wall_intrusion.geometry.bodies_without_collision_geoms` and warned about; a robot with no
 collision geom at all is refused.
 The trial ends `left_hallway` (with `left_hallway.via` naming the wall, or
