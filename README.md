@@ -37,12 +37,19 @@ Native warnings fail execution. XML includes resolve using MuJoCo's native loade
 ## Hallway observations
 
 `livingproof_sim_mujoco.hallway.observe` records one hallway-walk trial as
-evidence only (`livingproof-hallway-observation/1.0.0`): the base position trace,
+evidence only (`livingproof-hallway-observation/2.0.0`): the base position trace,
 `max_abs_lateral` and `min_base_height` with their times, `exit_time`, and every
-wall contact with its start, end and depth. Wall distance is the signed
-`mj_geomDistance` from every robot geom to the wall geoms; there is no box check.
-It applies no thresholds and decides no outcome. The capability verifier's
-evaluators do that.
+wall contact with its start, end and depth. The walls are visual only, so a robot can
+move into and through them. Wall distance is the signed `mj_geomDistance` from every
+robot geom to the wall geoms (the clearance). A contact's depth is the wall intrusion:
+how far the farthest robot part reaches past the wall's inner face, across the hallway.
+The trial ends `left_hallway` (with `left_hallway.via` naming the wall, or
+`exit-outside-segment`) as soon as any robot part reaches past a wall's outer face, or
+when the base reaches the exit line with |y| above the half-width; only a crossing within
+the exit segment ends `crossed_exit`. Format 2.0.0 replaced 1.0.0's depth (a penetration
+distance that peaks and falls as a body passes through a thin wall) and added the
+`wall_intrusion` trace column, `left_hallway` and `wall_intrusion` fields. It applies no
+thresholds and decides no outcome. The capability verifier's evaluators do that.
 
 ## Development
 
