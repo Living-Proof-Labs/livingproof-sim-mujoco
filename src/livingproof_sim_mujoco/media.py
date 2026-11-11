@@ -29,7 +29,7 @@ import numpy as np
 from livingproof_sim_mujoco import evidence as ev
 from livingproof_sim_mujoco.pins import fetch, sha256
 
-FORMAT = "livingproof-hallway-media/1.0.0"
+FORMAT = "livingproof-hallway-media/2.0.0"
 FPS = 25
 SIZE = (360, 640)  # height, width
 MCAP_HZ = 50

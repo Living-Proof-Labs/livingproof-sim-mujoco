@@ -38,7 +38,8 @@ RUN_MANIFEST_FORMAT = "livingproof-run-manifest/0.1"
 PENDING = "PENDING_RELEASE"
 # Evidence exits: 0 recorded (an unmet precondition is still recorded, with no trials);
 # 1 a lock, plan, or manifest error (SystemExit text); 2 argparse. The physics command
-# uses 2, 124, 130, and 143. The hallway fixture tool uses 1 for a non-PASS result.
+# uses 2, 124, 130, and 143. The hallway fixture tool uses 0 for PASS, 1 for a non-PASS
+# result, 2 for a fixture error, and 3 for UNSUPPORTED.
 # 4 is only a test-system reproducibility finding, not a robot grade and not those codes.
 EXIT_REPRODUCIBILITY = 4
 LOCK = "verification.lock.json"

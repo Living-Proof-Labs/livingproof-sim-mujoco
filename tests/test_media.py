@@ -48,7 +48,7 @@ def test_every_trial_gets_an_mcap_and_only_picked_trials_a_video(recorded):
     tmp_path, v = recorded
     doc = media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m")
     out = tmp_path / "m"
-    assert doc["format"] == media.FORMAT
+    assert doc["format"] == media.FORMAT == "livingproof-hallway-media/2.0.0"
     manifest = json.loads((tmp_path / "ev" / "manifest.json").read_text())
     for t, e in zip(doc["trials"], manifest["trials"]["results"]):
         assert t["observation_sha256"] == e["sha256"]  # the recording is of the graded trial
