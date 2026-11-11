@@ -61,6 +61,18 @@ product downloads remain pending. ARM, macOS, Windows and hosted devcontainer
 execution remain unverified. Engine startup and software tests are not robot
 capability evidence. No substantive merge or release has occurred.
 
+## Evidence command
+
+`python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> [--trials N]`
+records observations and does not grade the robot.
+
+- Exit 0: the observations were recorded. An unmet precondition is also exit 0: no trial runs, and the manifest says so.
+- Exit 1: the lock, plan, or manifest is unusable. Those are `SystemExit` messages.
+- Exit 2: the command line is unusable (argparse).
+- Exit 4: `trials.count` is greater than 1 and the trials disagree. The manifest records that as a test-system reproducibility finding (`trials.reproducibility.finding`). It is not a robot grade. The physics command's exits (2, 124, 130, 143) and the hallway fixture tool's exit 1 (a non-PASS world result) are different programs and are not this code.
+
+The generated command reference in `docs/command.md` is the physics command `livingproof-sim-mujoco`. It does not list this module, so those exits stay as they are.
+
 ## Evidence media
 
 `python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>

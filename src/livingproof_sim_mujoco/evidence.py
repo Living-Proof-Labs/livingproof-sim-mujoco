@@ -36,6 +36,11 @@ from livingproof_sim_mujoco.pins import fetch, sha256
 FORMAT = "livingproof-hallway-evidence/1.0.0"
 RUN_MANIFEST_FORMAT = "livingproof-run-manifest/0.1"
 PENDING = "PENDING_RELEASE"
+# Evidence exits: 0 recorded (an unmet precondition is still recorded, with no trials);
+# 1 a lock, plan, or manifest error (SystemExit text); 2 argparse. The physics command
+# uses 2, 124, 130, and 143. The hallway fixture tool uses 1 for a non-PASS result.
+# 4 is only a test-system reproducibility finding, not a robot grade and not those codes.
+EXIT_REPRODUCIBILITY = 4
 LOCK = "verification.lock.json"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -523,6 +528,14 @@ def main(argv=None) -> int:
         "already sets trials.count. Example: --trials 3",
     )
     ap.add_argument("--allow-pending", action="store_true", help="local runs before releases exist")
+    ap.epilog = (
+        "Exit 0: observations recorded. Exit 1: the lock, plan, or manifest is unusable. "
+        "Exit 2: the command line is unusable. "
+        f"Exit {EXIT_REPRODUCIBILITY}: trials.count > 1 and the trials disagree. "
+        "That exit is a test-system reproducibility finding recorded in the manifest, "
+        "not a robot grade. Example: python -m livingproof_sim_mujoco.evidence "
+        "lpl_g1.adapter:ROBOT stock out --trials 3"
+    )
     a = ap.parse_args(argv)
     m = evidence(a.adapter, a.configuration, a.out, trials=a.trials, allow_pending=a.allow_pending)
     unmet = unmet_required(m["preconditions"])
@@ -530,13 +543,14 @@ def main(argv=None) -> int:
         print(f"UNSUPPORTED: precondition {unmet['name']} unmet: {unmet['detail']}; no trials run")
         return 0
     finding = m["trials"]["reproducibility"]["finding"]
-    if finding is not None:
-        print(finding["detail"], file=sys.stderr)
     print(
         f"{m['trials']['count']} observations in {m['host']['wall_clock_s']}s "
         f"-> {a.out / 'manifest.json'}"
     )
-    return 0  # evidence only: a reproducibility finding is not a robot grade
+    if finding is not None:
+        print(finding["detail"], file=sys.stderr)
+        return EXIT_REPRODUCIBILITY
+    return 0
 
 
 if __name__ == "__main__":

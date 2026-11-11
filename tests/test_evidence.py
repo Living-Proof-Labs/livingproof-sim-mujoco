@@ -263,6 +263,9 @@ def test_evidence_runs_identical_trials_and_ignores_seeds(tmp_path, monkeypatch)
     }
     with pytest.raises(SystemExit, match="is not in"):
         evidence.evidence("test_evidence:TOY", "other", tmp_path / "out2")
+    assert (
+        evidence.main(["test_evidence:TOY", "stock", str(tmp_path / "agree"), "--trials", "2"]) == 0
+    )
 
 
 def test_unmet_precondition_never_starts_the_simulator_or_a_worker(tmp_path, monkeypatch):
@@ -385,7 +388,7 @@ def test_disagreeing_trials_are_a_test_system_finding(tmp_path, monkeypatch):
     def vary(*args, **kwargs):
         obs = real(*args, **kwargs)
         calls["n"] += 1
-        if calls["n"] == 2:
+        if calls["n"] % 2 == 0:
             obs = {**obs, "end": "fell"}
         return obs
 
@@ -397,6 +400,13 @@ def test_disagreeing_trials_are_a_test_system_finding(tmp_path, monkeypatch):
     assert "not a robot FAIL" in finding["detail"]
     assert finding["outcomes"] == ["crossed_exit", "fell"]
     assert all("status" not in t for t in m["trials"]["results"])
+    code = evidence.main(["test_evidence:TOY", "stock", str(tmp_path / "cli"), "--trials", "2"])
+    assert code == evidence.EXIT_REPRODUCIBILITY == 4
+    assert code not in {0, 1, 2}
+    written = json.loads((tmp_path / "cli" / "manifest.json").read_text())
+    assert written["trials"]["reproducibility"]["finding"]["kind"] == "test-system"
+    assert written["trials"]["reproducibility"]["finding"]["name"] == "reproducibility"
+    assert "not a robot FAIL" in written["trials"]["reproducibility"]["finding"]["detail"]
 
 
 def test_nominal_start_accepts_a_retired_adapter_and_refuses_its_offset():
