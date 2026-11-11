@@ -453,23 +453,30 @@ def _git_source_commit() -> tuple[str | None, str]:
 def adapter_commit() -> str:
     """40-character commit of livingproof-sim-mujoco.
 
-    Try the packaged ``_build_provenance.json`` ``identity.commit``, then the
-    installed distribution's PEP 610 ``direct_url.json`` ``vcs_info.commit_id``,
-    then git only when this module is the package source tree. An enclosing
-    repository is never used. When none yields a 40-character commit, exit 1
-    and name each source. The Debian package and the runtime image call this
-    function; the Debian payload drops ``direct_url.json`` and keeps the snapshot.
+    When this module is the package's own source tree (a checkout or an editable
+    install) and git HEAD resolves, that live HEAD is used, so a later commit is
+    seen without reinstalling. If git does not resolve there, or this is an
+    installed copy, use the packaged ``_build_provenance.json`` ``identity.commit``,
+    then the installed distribution's PEP 610 ``direct_url.json``
+    ``vcs_info.commit_id``. An enclosing repository is never used. When none
+    yields a 40-character commit, exit 1 and name each source. The Debian package
+    and the runtime image call this function; the Debian payload drops
+    ``direct_url.json`` and keeps the snapshot.
     """
-    tried: list[tuple[str, tuple[str | None, str]]] = [
-        ("package provenance (_build_provenance.json)", _build_provenance_commit()),
-        ("direct_url.json vcs_info", _direct_url_commit()),
-        ("git", _git_source_commit()),
+    git_commit, git_why = _git_source_commit()
+    if git_commit:
+        return git_commit
+    package_commit, package_why = _build_provenance_commit()
+    if package_commit:
+        return package_commit
+    direct_commit, direct_why = _direct_url_commit()
+    if direct_commit:
+        return direct_commit
+    failed = [
+        f"package provenance (_build_provenance.json): {package_why}",
+        f"direct_url.json vcs_info: {direct_why}",
+        f"git: {git_why}",
     ]
-    failed: list[str] = []
-    for label, (commit, why) in tried:
-        if commit:
-            return commit
-        failed.append(f"{label}: {why}")
     raise SystemExit(
         "run manifest simulator.adapter_commit needs the 40-character git commit of "
         "livingproof-sim-mujoco. Every source failed:\n" + "\n".join(f"- {line}" for line in failed)

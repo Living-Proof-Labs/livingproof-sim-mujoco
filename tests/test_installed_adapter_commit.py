@@ -124,21 +124,69 @@ def _run_manifest_validator():
     return Draft202012Validator(run, registry=registry)
 
 
-def test_checkout_uses_its_own_git_commit_not_a_stale_snapshot():
-    """A snapshot without a 40-hex commit does not hide this checkout. A real one is used first."""
-    head = _git(ROOT, "rev-parse", "HEAD")
-    path = Path(evidence.__file__).resolve().parent / "_build_provenance.json"
-    original = path.read_text(encoding="utf-8") if path.is_file() else None
-    try:
-        path.write_text(json.dumps({"identity": {"commit": "not-a-commit"}}), encoding="utf-8")
-        assert evidence.adapter_commit() == head
-        path.write_text(json.dumps({"identity": {"commit": "ab" * 20}}), encoding="utf-8")
-        assert evidence.adapter_commit() == "ab" * 20
-    finally:
-        if original is None:
-            path.unlink(missing_ok=True)
-        else:
-            path.write_text(original, encoding="utf-8")
+def _commit(repo: Path, message: str, *, allow_empty: bool = False) -> str:
+    command = [
+        "git",
+        "-C",
+        str(repo),
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "-q",
+        "-m",
+        message,
+    ]
+    if allow_empty:
+        command.append("--allow-empty")
+    subprocess.run(command, check=True)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def test_editable_install_sees_a_later_commit_without_reinstall(tmp_path):
+    """An editable install keeps using git HEAD after a commit, not the install snapshot."""
+    if shutil.which("uv") is None:
+        pytest.skip("uv is required to editable-install the package")
+    project = tmp_path / "project"
+    shutil.copytree(
+        ROOT / "src",
+        project / "src",
+        ignore=shutil.ignore_patterns("__pycache__", "_build_provenance.json", "*.pyc"),
+    )
+    for name in ("pyproject.toml", "hatch_build.py", "README.md", ".gitignore"):
+        shutil.copy(ROOT / name, project / name)
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    subprocess.run(["git", "-C", str(project), "add", "."], check=True)
+    installed = _commit(project, "install")
+    venv = tmp_path / "venv"
+    subprocess.run(["uv", "venv", str(venv)], check=True)
+    python = venv / "bin" / "python"
+    subprocess.run(
+        ["uv", "pip", "install", "--python", str(python), "-e", str(project)],
+        check=True,
+    )
+    loaded = subprocess.check_output(
+        [
+            str(python),
+            "-c",
+            "import livingproof_sim_mujoco, pathlib; "
+            "print(pathlib.Path(livingproof_sim_mujoco.__file__).resolve())",
+        ],
+        text=True,
+    ).strip()
+    assert loaded.startswith(str((project / "src").resolve()))
+    snapshot = project / "src" / "livingproof_sim_mujoco" / "_build_provenance.json"
+    if not snapshot.is_file():
+        snapshot.write_text(json.dumps({"identity": {"commit": installed}}), encoding="utf-8")
+    stale = json.loads(snapshot.read_text(encoding="utf-8"))["identity"]["commit"]
+    assert stale == installed
+    live = _commit(project, "later", allow_empty=True)
+    assert live != stale
+    assert json.loads(snapshot.read_text(encoding="utf-8"))["identity"]["commit"] == stale
+    seen = _run(python, project)
+    assert seen.returncode == 0, seen.stderr
+    assert json.loads(seen.stdout)["commit"] == live
 
 
 def test_run_manifest_records_checkout_provenance(tmp_path, monkeypatch):

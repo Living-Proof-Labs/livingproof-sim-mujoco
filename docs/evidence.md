@@ -75,15 +75,17 @@ copy `seeds` or `required_passes` from the lock.
 
 `simulator.adapter_commit` in `run-manifest.json` is the 40-character commit of this
 adapter. The field is required by `livingproof-run-manifest/0.1`; the object has no
-provenance field. The commit is read from the packaged `_build_provenance.json`
-`identity.commit`, then from the installed distribution's PEP 610 `direct_url.json`
-`vcs_info.commit_id`, then from git only when this module is the package source tree
-and that repository's toplevel contains this package's `pyproject.toml` or
-`src/livingproof_sim_mujoco` source. An enclosing repository is not used. When none of
-those yields a 40-character commit, the command exits 1 and names each source and why
-it failed. The Debian package and the runtime image call this same function. The Debian
-payload drops `direct_url.json`, so that install uses the build snapshot. The runtime
-image pip-installs the same wheel and has no separate commit lookup.
+provenance field. When this module is the package's own source tree (a checkout or an
+editable install) and git HEAD resolves, that live HEAD is used, so a later commit is
+seen without reinstalling. The toplevel must contain this package's `pyproject.toml` or
+`src/livingproof_sim_mujoco` source. If that git lookup fails, or this is an installed
+copy, the commit is read from the packaged `_build_provenance.json` `identity.commit`,
+then from the installed distribution's PEP 610 `direct_url.json` `vcs_info.commit_id`.
+An enclosing repository is not used. When none of those yields a 40-character commit,
+the command exits 1 and names each source and why it failed. The Debian package and the
+runtime image call this same function. The Debian payload drops `direct_url.json`, so
+that install uses the build snapshot. The runtime image pip-installs the same wheel and
+has no separate commit lookup.
 
 The generated command reference in `docs/command.md` is the physics command `livingproof-sim-mujoco`. It does not list this module, so those exits stay as they are.
 
