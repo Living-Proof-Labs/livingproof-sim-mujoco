@@ -147,11 +147,28 @@ def test_step_that_cannot_sample_at_the_shared_rate_is_refused(step):
         contract.sampling(step)
 
 
-def test_adapter_is_semver_plus_full_commit_from_git(result):
-    a = result["adapter"]
-    assert contract.SEMVER.match(a["version"]) and not contract.SHA.match(a["version"])
-    if (Path(__file__).parents[1] / ".git").exists():
-        assert a["provenance"] == "git" and re.fullmatch(r"[0-9a-f]{40}", a["commit"])
+def test_adapter_commit_follows_the_imported_package(result):
+    """A checkout reports git. An installed wheel reports the recorded package commit.
+
+    The tests may sit inside this repository while pytest imports a wheel. A .git
+    directory beside the tests does not make that wheel a checkout.
+    """
+    from livingproof_sim_mujoco.cli import identity
+
+    adapter = result["adapter"]
+    assert contract.SEMVER.match(adapter["version"]) and not contract.SHA.match(adapter["version"])
+    assert re.fullmatch(r"[0-9a-f]{40}", adapter["commit"])
+    source = identity()["provenance"]
+    if source == "checkout":
+        assert adapter["provenance"] == "git"
+    elif source == "recorded-build":
+        saved = json.loads(
+            (Path(hallway.__file__).resolve().parent / "_build_provenance.json").read_text()
+        )
+        assert adapter["provenance"] == "package"
+        assert adapter["commit"] == saved["identity"]["commit"]
+    else:
+        pytest.fail(f"unexpected identity provenance {source}")
 
 
 def test_adapter_outside_a_checkout_uses_package_provenance_or_null(tmp_path):

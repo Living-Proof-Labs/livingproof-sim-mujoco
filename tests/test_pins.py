@@ -158,6 +158,52 @@ def test_fetch_honours_an_http_date_retry_after(tmp_path, clock, monkeypatch):
     assert spans == []
 
 
+def test_fetch_caps_a_huge_retry_after(tmp_path, clock, caplog):
+    _write_pins(tmp_path, hashlib.sha256(PAYLOAD).hexdigest())
+    sleeps, spans = clock
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        if len(calls) == 1:
+            raise _http_error(url, 429, retry_after="999999")
+        return _Body(PAYLOAD)
+
+    caplog.set_level(logging.WARNING, logger="livingproof_sim_mujoco.pins")
+    assert pins.fetch(tmp_path, opener) == [tmp_path / ".cache/g/a.txt"]
+    assert calls == [URL, URL]
+    assert sleeps == [float(pins.MAX_RETRY_AFTER_SECONDS)]
+    assert pins.MAX_RETRY_AFTER_SECONDS == 120
+    assert spans == []
+    assert any(
+        "999999" in record.getMessage() and "cap" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_fetch_falls_back_when_retry_after_is_unparseable(tmp_path, clock, caplog):
+    _write_pins(tmp_path, hashlib.sha256(PAYLOAD).hexdigest())
+    sleeps, spans = clock
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        if len(calls) == 1:
+            raise _http_error(url, 429, retry_after="soon")
+        return _Body(PAYLOAD)
+
+    caplog.set_level(logging.WARNING, logger="livingproof_sim_mujoco.pins")
+    assert pins.fetch(tmp_path, opener) == [tmp_path / ".cache/g/a.txt"]
+    assert (tmp_path / ".cache/g/a.txt").read_bytes() == PAYLOAD
+    assert calls == [URL, URL]
+    assert sleeps == [10.0]
+    assert spans == [(-2.0, 2.0)]
+    assert any(
+        "soon" in record.getMessage() and "unparseable" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 def test_fetch_raises_after_the_last_transient_failure(tmp_path, clock, caplog):
     _write_pins(tmp_path, hashlib.sha256(PAYLOAD).hexdigest())
     sleeps, spans = clock

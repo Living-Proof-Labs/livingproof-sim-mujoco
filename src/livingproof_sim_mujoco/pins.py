@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import random
+import re
 import tempfile
 import time
 import urllib.error
@@ -24,10 +25,13 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Five attempts. The four waits are 10s, 20s, 40s and 80s, each jittered by 20%
-# (about 2-3 minutes altogether). Retry-After replaces that wait when it is present.
+# (about 2-3 minutes altogether). A usable Retry-After replaces that wait, and is
+# never longer than MAX_RETRY_AFTER_SECONDS.
 MAX_ATTEMPTS = 5
+MAX_RETRY_AFTER_SECONDS = 120
 _BACKOFF_BASE_SECONDS = 10.0
 _BACKOFF_JITTER = 0.2
+_RETRY_AFTER_INTEGER = re.compile(r"-?\d+")
 
 
 class ChecksumError(RuntimeError):
@@ -56,7 +60,22 @@ def local(group_name: str, path: str, root: Path) -> Path:
     return Path(root) / load_pins(root)["groups"][group_name]["dest"] / path
 
 
-def _retry_after_seconds(exc: BaseException) -> float | None:
+def _ignore_retry_after(url: str, text: str, reason: str) -> None:
+    logger.warning(
+        "ignoring Retry-After %r for %s (%s); using normal backoff",
+        text,
+        url,
+        reason,
+    )
+
+
+def _retry_after_seconds(url: str, exc: BaseException) -> float | None:
+    """Seconds to wait, or None when the header is absent or unusable.
+
+    Integer seconds and HTTP-date values are accepted. A negative, blank, or
+    unparseable value is ignored so the caller uses jittered backoff. Parsing
+    never raises.
+    """
     headers = getattr(exc, "headers", None)
     getter = getattr(headers, "get", None)
     if not callable(getter):
@@ -66,16 +85,28 @@ def _retry_after_seconds(exc: BaseException) -> float | None:
         return None
     text = str(raw).strip()
     if not text:
+        _ignore_retry_after(url, text, "missing")
         return None
+    if _RETRY_AFTER_INTEGER.fullmatch(text):
+        seconds = int(text)
+        if seconds < 0:
+            _ignore_retry_after(url, text, "negative")
+            return None
+        return float(seconds)
     try:
-        return max(0.0, float(text))
-    except ValueError:
         when = email.utils.parsedate_to_datetime(text)
+    except (TypeError, ValueError, OverflowError):
+        when = None
     if when is None:
+        _ignore_retry_after(url, text, "unparseable")
         return None
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
-    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+    delay = (when - datetime.now(timezone.utc)).total_seconds()
+    if delay < 0:
+        _ignore_retry_after(url, text, "negative")
+        return None
+    return delay
 
 
 def _backoff_seconds(attempt: int) -> float:
@@ -180,9 +211,18 @@ def _download(url: str, dest: Path, expected: str, label: str, opener) -> None:
                         f"download of {url} failed after {MAX_ATTEMPTS} attempts: {exc}"
                     ) from exc
                 raise
-            delay = _retry_after_seconds(exc)
+            delay = _retry_after_seconds(url, exc)
             if delay is None:
                 delay = _backoff_seconds(attempt)
+            elif delay > MAX_RETRY_AFTER_SECONDS:
+                logger.warning(
+                    "Retry-After for %s is %.0fs, above the %ss cap; waiting %ss",
+                    url,
+                    delay,
+                    MAX_RETRY_AFTER_SECONDS,
+                    MAX_RETRY_AFTER_SECONDS,
+                )
+                delay = float(MAX_RETRY_AFTER_SECONDS)
             logger.warning(
                 "download attempt %s/%s failed for %s: %s; retrying in %.1fs",
                 attempt,
