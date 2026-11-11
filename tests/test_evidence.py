@@ -131,8 +131,9 @@ def test_pins_fetch_verifies_and_never_accepts_a_wrong_download(tmp_path):
         def __init__(self, b):
             self.b = b
 
-        def read(self):
-            return self.b
+        def read(self, _size=-1):
+            data, self.b = self.b, b""
+            return data
 
     def opener(url):
         seen.append(url)
