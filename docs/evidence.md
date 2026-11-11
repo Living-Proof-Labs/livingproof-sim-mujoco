@@ -69,22 +69,21 @@ records observations and does not grade the robot. The manifest format is
 copy `seeds` or `required_passes` from the lock.
 
 - Exit 0: the observations were recorded. An unmet precondition is also exit 0: no trial runs, and the manifest says so.
-- Exit 1: the lock, plan, or manifest is unusable. Those are `SystemExit` messages. A missing adapter commit is not one of these: the run is still recorded.
+- Exit 1: the lock, plan, or manifest is unusable. Those are `SystemExit` messages. One case is an unknown adapter commit: no manifest is written.
 - Exit 2: the command line is unusable (argparse).
 - Exit 4: `trials.count` is greater than 1 and the trials disagree. The manifest records that as a test-system reproducibility finding (`trials.reproducibility.finding`). It is not a robot grade. The physics command's exits (2, 124, 130, 143) and the hallway fixture tool's exit 1 (a non-PASS world result) are different programs and are not this code.
 
-`simulator.adapter_commit` in `run-manifest.json`, and the same field on the evidence
-manifest's `environment.simulator`, is the commit of this adapter. `provenance` says where
-it was read. A source checkout uses that checkout's git HEAD (`git`), and only when the git
-toplevel contains this package's `pyproject.toml` or `src/livingproof_sim_mujoco` source.
-An installed copy reads `identity.commit` from the packaged `_build_provenance.json`
-(`package`). If that snapshot has no commit, it reads `vcs_info.commit_id` from the
-installed distribution's PEP 610 `direct_url.json` (`direct-url`). When none of those is
-known, the commit is null and `provenance` is `unknown`. The command does not use whatever
-repository happens to contain the virtualenv, and it does not exit because that repository
-is absent. The Debian package and the runtime image call this same function. The Debian
-payload drops `direct_url.json`, so that install uses the build snapshot. The runtime image
-pip-installs the same wheel and has no separate commit lookup.
+`simulator.adapter_commit` in `run-manifest.json` is the 40-character commit of this
+adapter. The field is required by `livingproof-run-manifest/0.1`; the object has no
+provenance field. The commit is read from the packaged `_build_provenance.json`
+`identity.commit`, then from the installed distribution's PEP 610 `direct_url.json`
+`vcs_info.commit_id`, then from git only when this module is the package source tree
+and that repository's toplevel contains this package's `pyproject.toml` or
+`src/livingproof_sim_mujoco` source. An enclosing repository is not used. When none of
+those yields a 40-character commit, the command exits 1 and names each source and why
+it failed. The Debian package and the runtime image call this same function. The Debian
+payload drops `direct_url.json`, so that install uses the build snapshot. The runtime
+image pip-installs the same wheel and has no separate commit lookup.
 
 The generated command reference in `docs/command.md` is the physics command `livingproof-sim-mujoco`. It does not list this module, so those exits stay as they are.
 

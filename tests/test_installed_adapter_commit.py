@@ -17,16 +17,12 @@ PROBE = """
 import json, sys
 from livingproof_sim_mujoco.evidence import adapter_commit
 try:
-    result = adapter_commit()
+    commit = adapter_commit()
 except SystemExit as exc:
     code = exc.code if isinstance(exc.code, int) else 1
     print(json.dumps({"exit": code, "message": str(exc)}))
     sys.exit(code)
-if isinstance(result, str):
-    print(json.dumps({"commit": result, "provenance": None, "returned": "str"}))
-else:
-    commit, provenance = result
-    print(json.dumps({"commit": commit, "provenance": provenance, "returned": "tuple"}))
+print(json.dumps({"commit": commit, "exit": 0}))
 """
 
 
@@ -104,13 +100,40 @@ def _direct_urls(site: Path) -> list[Path]:
     return list(site.parent.glob("*.dist-info/direct_url.json"))
 
 
+def _run_manifest_validator():
+    """Published livingproof-run-manifest/0.1 schema. The specs pin is contract/pins.json."""
+    import urllib.request
+
+    from referencing import Registry, Resource
+    from jsonschema import Draft202012Validator
+
+    pins = json.loads((ROOT / "src/livingproof_sim_mujoco/contract/pins.json").read_text())
+    base = (
+        "https://raw.githubusercontent.com/Living-Proof-Labs/robot-capability-specs/"
+        f"{pins['commit']}/specs/robots/"
+    )
+    run = json.loads(urllib.request.urlopen(base + "run-manifest.schema.json", timeout=30).read())
+    profile = json.loads(
+        urllib.request.urlopen(base + "robot-profile.schema.json", timeout=30).read()
+    )
+    profile_uri = (
+        "https://github.com/Living-Proof-Labs/robot-capability-specs/"
+        "specs/robots/robot-profile.schema.json"
+    )
+    registry = Registry().with_resource(profile_uri, Resource.from_contents(profile))
+    return Draft202012Validator(run, registry=registry)
+
+
 def test_checkout_uses_its_own_git_commit_not_a_stale_snapshot():
+    """A snapshot without a 40-hex commit does not hide this checkout. A real one is used first."""
     head = _git(ROOT, "rev-parse", "HEAD")
     path = Path(evidence.__file__).resolve().parent / "_build_provenance.json"
     original = path.read_text(encoding="utf-8") if path.is_file() else None
     try:
+        path.write_text(json.dumps({"identity": {"commit": "not-a-commit"}}), encoding="utf-8")
+        assert evidence.adapter_commit() == head
         path.write_text(json.dumps({"identity": {"commit": "ab" * 20}}), encoding="utf-8")
-        assert evidence.adapter_commit() == (head, "git")
+        assert evidence.adapter_commit() == "ab" * 20
     finally:
         if original is None:
             path.unlink(missing_ok=True)
@@ -129,17 +152,20 @@ def test_run_manifest_records_checkout_provenance(tmp_path, monkeypatch):
     evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", trials=1)
     run = json.loads((tmp_path / "out" / "run-manifest.json").read_text())
     manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
-    head = _git(ROOT, "rev-parse", "HEAD")
-    assert run["simulator"]["adapter_commit"] == head
-    assert run["simulator"]["provenance"] == "git"
-    assert manifest["environment"]["simulator"]["adapter_commit"] == head
-    assert manifest["environment"]["simulator"]["provenance"] == "git"
+    assert set(run["simulator"]) == {"engine", "version", "adapter", "adapter_commit"}
+    assert "provenance" not in run["simulator"]
+    assert "provenance" not in manifest["environment"]["simulator"]
+    assert (
+        run["simulator"]["adapter_commit"] == manifest["environment"]["simulator"]["adapter_commit"]
+    )
+    assert len(run["simulator"]["adapter_commit"]) == 40
+    _run_manifest_validator().validate(run)
 
 
 def test_installed_wheel_records_the_build_commit(tmp_path):
     """A wheel installed inside another git repo records the build commit.
 
-    The same wheel outside any repository must not exit 1. Dropping
+    The same wheel outside any repository still returns that commit. Dropping
     ``direct_url.json`` is the Debian payload; a file-install ``direct_url.json``
     without ``vcs_info.commit_id`` is the runtime image. Neither may replace the
     packaged ``identity.commit``.
@@ -163,7 +189,7 @@ def test_installed_wheel_records_the_build_commit(tmp_path):
     got = json.loads(inside.stdout)
     assert got["commit"] == build_commit, got
     assert got["commit"] != foreign_head
-    assert got["provenance"] == "package"
+    assert "provenance" not in got
 
     outside = Path("/tmp") / f"sim-mujoco-outside-{os.getpid()}"
     here = outside.resolve()
@@ -186,7 +212,7 @@ def test_installed_wheel_records_the_build_commit(tmp_path):
         assert image_like.returncode == 0, image_like.stderr
         image_got = json.loads(image_like.stdout)
         assert image_got["commit"] == build_commit
-        assert image_got["provenance"] == "package"
+        assert "provenance" not in image_got
 
         for path in directs:
             path.unlink()
@@ -194,14 +220,60 @@ def test_installed_wheel_records_the_build_commit(tmp_path):
         assert deb_like.returncode == 0, deb_like.stderr
         deb_got = json.loads(deb_like.stdout)
         assert deb_got["commit"] == build_commit
-        assert deb_got["provenance"] == "package"
+        assert "provenance" not in deb_got
+    finally:
+        shutil.rmtree(outside, ignore_errors=True)
 
+
+def test_unknown_commit_exits_without_a_manifest(tmp_path):
+    """No package snapshot and no direct_url, outside any repository: exit 1, no manifest."""
+    if shutil.which("uv") is None:
+        pytest.skip("uv is required to build and install the wheel")
+    out = tmp_path / "dist"
+    subprocess.run(["uv", "build", "--wheel", "--out-dir", str(out)], cwd=ROOT, check=True)
+    wheel = next(out.glob("*.whl"))
+    outside = Path("/tmp") / f"sim-mujoco-unknown-{os.getpid()}"
+    here = outside.resolve()
+    while here != here.parent:
+        assert not (here / ".git").exists(), here
+        here = here.parent
+    outside.mkdir()
+    try:
+        venv = outside / "venv"
+        subprocess.run(["uv", "venv", str(venv)], check=True)
+        python = venv / "bin" / "python"
+        _install(python, wheel)
+        site = _site(python)
+        for path in _direct_urls(site):
+            path.unlink()
         (site / "_build_provenance.json").unlink()
-        unknown = _run(outside_python, outside)
-        assert unknown.returncode == 0, unknown.stderr
-        unknown_got = json.loads(unknown.stdout)
-        assert unknown_got["commit"] is None
-        assert unknown_got["provenance"] == "unknown"
+        destination = outside / "evidence-out"
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.pop("PYTHONPATH", None)
+        env.pop("VIRTUAL_ENV", None)
+        proc = subprocess.run(
+            [
+                str(python),
+                "-m",
+                "livingproof_sim_mujoco.evidence",
+                "missing:ROBOT",
+                "stock",
+                str(destination),
+            ],
+            cwd=outside,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert proc.returncode != 0, proc.stdout
+        message = proc.stderr + proc.stdout
+        assert "package provenance (_build_provenance.json)" in message
+        assert "direct_url.json vcs_info" in message
+        assert "no source tree containing this package" in message
+        assert not destination.exists()
+        assert not (destination / "manifest.json").exists()
+        assert not (destination / "run-manifest.json").exists()
     finally:
         shutil.rmtree(outside, ignore_errors=True)
 

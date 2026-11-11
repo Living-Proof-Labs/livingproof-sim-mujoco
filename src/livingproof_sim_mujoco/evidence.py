@@ -398,56 +398,82 @@ def _source_tree_root() -> Path | None:
     return root
 
 
-def _build_provenance_commit() -> str | None:
-    """``identity.commit`` written into the wheel by the hatch build hook."""
+def _build_provenance_commit() -> tuple[str | None, str]:
+    """``identity.commit`` from the packaged snapshot, and why it was not usable."""
     path = Path(__file__).resolve().parent / "_build_provenance.json"
+    if not path.is_file():
+        return None, "file is missing, so identity.commit was not read"
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
-        commit = saved.get("identity", {}).get("commit")
+        commit = saved.get("identity", {}).get("commit") if isinstance(saved, dict) else None
     except (OSError, ValueError, AttributeError):
-        return None
-    return _valid_commit(commit)
+        return None, "file is not JSON, so identity.commit was not read"
+    found = _valid_commit(commit)
+    if found:
+        return found, ""
+    if commit in (None, ""):
+        return None, "identity.commit is missing"
+    return None, f"identity.commit {commit!r} is not 40 hex characters"
 
 
-def _direct_url_commit() -> str | None:
-    """PEP 610 ``direct_url.json`` ``vcs_info.commit_id`` of the installed distribution."""
+def _direct_url_commit() -> tuple[str | None, str]:
+    """PEP 610 ``vcs_info.commit_id``, and why it was not usable."""
     try:
         text = metadata.distribution("livingproof-sim-mujoco").read_text("direct_url.json")
     except Exception:
-        return None
+        return (
+            None,
+            "the installed distribution has no direct_url.json, so vcs_info.commit_id was not read",
+        )
     if not text:
-        return None
+        return None, "file is absent, so vcs_info.commit_id was not read"
     try:
         commit = json.loads(text).get("vcs_info", {}).get("commit_id")
     except (ValueError, AttributeError):
-        return None
-    return _valid_commit(commit)
+        return None, "vcs_info.commit_id is missing"
+    found = _valid_commit(commit)
+    if found:
+        return found, ""
+    if commit in (None, ""):
+        return None, "vcs_info.commit_id is missing"
+    return None, f"vcs_info.commit_id {commit!r} is not 40 hex characters"
 
 
-def adapter_commit() -> tuple[str | None, str]:
-    """(commit, provenance) of livingproof-sim-mujoco for the run manifest.
-
-    A source checkout uses its own git HEAD (``git``), so a leftover build snapshot
-    cannot hide the checkout and an enclosing repository is never consulted.
-    An installed copy reads ``identity.commit`` from the packaged
-    ``_build_provenance.json`` (``package``), then PEP 610 ``direct_url.json``
-    ``vcs_info.commit_id`` (``direct-url``). When none of those is a 40-character
-    commit, the commit is null and provenance is ``unknown``; evidence still records
-    the run. The Debian package and the runtime image import this function. The
-    Debian payload drops ``direct_url.json``, so that install uses the build snapshot.
-    """
+def _git_source_commit() -> tuple[str | None, str]:
+    """HEAD when this module is the package source tree, and why it was not usable."""
     root = _source_tree_root()
-    if root is not None:
-        commit = _valid_commit(_git_text(root, "rev-parse", "HEAD"))
+    if root is None:
+        return None, "no source tree containing this package"
+    found = _valid_commit(_git_text(root, "rev-parse", "HEAD"))
+    if found:
+        return found, ""
+    return None, "source tree HEAD is not a 40-character commit"
+
+
+def adapter_commit() -> str:
+    """40-character commit of livingproof-sim-mujoco.
+
+    Try the packaged ``_build_provenance.json`` ``identity.commit``, then the
+    installed distribution's PEP 610 ``direct_url.json`` ``vcs_info.commit_id``,
+    then git only when this module is the package source tree. An enclosing
+    repository is never used. When none yields a 40-character commit, exit 1
+    and name each source. The Debian package and the runtime image call this
+    function; the Debian payload drops ``direct_url.json`` and keeps the snapshot.
+    """
+    tried: list[tuple[str, tuple[str | None, str]]] = [
+        ("package provenance (_build_provenance.json)", _build_provenance_commit()),
+        ("direct_url.json vcs_info", _direct_url_commit()),
+        ("git", _git_source_commit()),
+    ]
+    failed: list[str] = []
+    for label, (commit, why) in tried:
         if commit:
-            return commit, "git"
-    commit = _build_provenance_commit()
-    if commit:
-        return commit, "package"
-    commit = _direct_url_commit()
-    if commit:
-        return commit, "direct-url"
-    return None, "unknown"
+            return commit
+        failed.append(f"{label}: {why}")
+    raise SystemExit(
+        "run manifest simulator.adapter_commit needs the 40-character git commit of "
+        "livingproof-sim-mujoco. Every source failed:\n" + "\n".join(f"- {line}" for line in failed)
+    )
 
 
 def build_run_manifest(
@@ -460,10 +486,9 @@ def build_run_manifest(
     run_id: str,
     profile_sha256: str,
     robot_commit: str,
-    adapter_source: tuple[str | None, str],
+    adapter_sha: str,
 ) -> dict:
     """``livingproof-run-manifest/0.1``, written before the first trial."""
-    adapter_commit_value, adapter_provenance = adapter_source
     specs = lock.get("releases", {}).get("specs")
     if not isinstance(specs, dict):
         raise SystemExit(
@@ -497,14 +522,7 @@ def build_run_manifest(
             "engine": "mujoco",
             "version": mujoco.__version__,
             "adapter": "livingproof-sim-mujoco",
-            # Null when the commit is unknown. A known commit is still 40 hex characters.
-            # ``provenance`` says which source supplied it (git, package, direct-url, unknown).
-            "adapter_commit": (
-                _require("simulator.adapter_commit", adapter_commit_value, _COMMIT)
-                if adapter_commit_value
-                else None
-            ),
-            "provenance": adapter_provenance,
+            "adapter_commit": _require("simulator.adapter_commit", adapter_sha, _COMMIT),
         },
         "robot": {
             "id": robot.id,
@@ -525,6 +543,8 @@ def build_run_manifest(
 def evidence(
     ref: str, name: str, out: Path, *, trials: int | None = None, allow_pending=False
 ) -> dict:
+    # Before any output directory or manifest. An unknown commit exits 1.
+    adapter_sha = adapter_commit()
     robot = adapter(ref)
     root = Path(robot.root)
     lock = load_lock(root)
@@ -548,7 +568,6 @@ def evidence(
     unmet = unmet_required(checked)
     profile_sha = sha256(root / "robot.json")
     robot_commit = sc.git_head(root)[0]
-    adapter_source = adapter_commit()
     results = []
     started = time.perf_counter()
     if unmet is None:
@@ -562,7 +581,7 @@ def evidence(
             run_id,
             profile_sha,
             robot_commit,
-            adapter_source,
+            adapter_sha,
         )
         # Before the first trial, as the run-manifest schema requires.
         (out / "run-manifest.json").write_text(json.dumps(document, indent=2) + "\n")
@@ -604,8 +623,7 @@ def evidence(
                 "id": "mujoco",
                 "version": mujoco.__version__,
                 "adapter": "livingproof-sim-mujoco",
-                "adapter_commit": adapter_source[0],
-                "provenance": adapter_source[1],
+                "adapter_commit": adapter_sha,
             },
             "runner": {
                 "version": metadata.version("livingproof-sim-mujoco"),
