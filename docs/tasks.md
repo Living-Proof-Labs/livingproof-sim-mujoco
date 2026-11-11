@@ -310,6 +310,7 @@ commands:
  - uv run --no-sync pytest tests/test_observations.py --junitxml=artifacts/observations.xml
  - uv run --no-sync pytest tests/test_contract.py --junitxml=artifacts/contract.xml
  - uv run --no-sync pytest tests/test_installed_adapter_commit.py --junitxml=artifacts/installed-adapter.xml
+ - uv run --no-sync pytest tests/test_pins.py --junitxml=artifacts/pins.xml
 ```
 
 ### `task -t Taskfile.runtime.yml verify`
