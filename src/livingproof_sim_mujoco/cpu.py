@@ -19,6 +19,36 @@ import sys
 PINNED = {"MKL_ENABLE_INSTRUCTIONS": "SSE4_2", "ATEN_CPU_CAPABILITY": "avx2"}
 
 
+def host_cpus() -> dict:
+    """CPUs visible to this process. Nothing in the trial loop uses these as a pool size.
+
+    ``os.cpu_count`` is the machine's logical count and is not a scheduler affinity.
+    ``os.process_cpu_count`` exists on Python 3.13 and later. ``sched_getaffinity`` is
+    the set this process is allowed to run on.
+    """
+    affinity = sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None
+    process_count = os.process_cpu_count() if hasattr(os, "process_cpu_count") else None
+    return {
+        "sched_affinity": affinity,
+        "sched_affinity_count": None if affinity is None else len(affinity),
+        "process_cpu_count": process_count,
+        "os_cpu_count": os.cpu_count(),
+    }
+
+
+def one_torch_thread() -> None:
+    """One torch intra-op thread in this process, once torch is installed.
+
+    Identical trials stay on one kernel schedule. A process without torch (an ONNX
+    policy, for example) is unchanged.
+    """
+    try:
+        import torch
+    except ImportError:
+        return
+    torch.set_num_threads(1)
+
+
 def pin() -> None:
     """Set the pinned dispatch. torch reads it once, at import: if torch is already loaded
     with other settings, refuse rather than produce host-dependent observations."""

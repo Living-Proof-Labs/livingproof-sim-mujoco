@@ -51,7 +51,7 @@ def test_actuator_table_and_pd_torque():
     assert t.actuator_gainprm[0][0] == 1.0 and t.actuator_ctrllimited[0] == 0
 
 
-def test_initial_state_is_seeded_and_simulate_records_samples():
+def test_initial_state_is_the_nominal_pose_and_simulate_records_samples():
     _, _, m = compiled()
     ctrl = SimpleNamespace(
         initial_qpos=m.key("home").qpos.copy(),
@@ -60,18 +60,21 @@ def test_initial_state_is_seeded_and_simulate_records_samples():
     noise = dict(
         joint_pos_rad=0.1, joint_vel_rad_s=0.1, base_xy_m=0.01, base_yaw_rad=0.05, base_vel_m_s=0.0
     )
-    a, b = mujoco.MjData(m), mujoco.MjData(m)
-    walk.initial_state(m, a, ctrl, 3, noise, "spawn-entrance")
+    a, b, c = (mujoco.MjData(m) for _ in range(3))
+    walk.initial_state(m, a, ctrl, "spawn-entrance")
     walk.initial_state(m, b, ctrl, 3, noise, "spawn-entrance")
-    assert np.array_equal(a.qpos, b.qpos) and a.ctrl[0] == 0.2
-    assert abs(a.qpos[0] + 0.5) <= 0.01
+    assert np.array_equal(a.qpos, b.qpos) and np.all(a.qvel == 0) and a.ctrl[0] == 0.2
+    pos, _yaw = scene.place_pose(m, "spawn-entrance")
+    assert np.allclose(a.qpos[0:2], pos[0:2])
+    walk.initial_state(m, c, ctrl, "spawn-entrance", start_offset={"base_xy_m": [0.05, -0.01]})
+    assert np.allclose(c.qpos[0:2], pos[0:2] + np.array([0.05, -0.01]))
     p = {"exit_x": 0.5, "fall_height": 0.3}
     samples, end, clip = walk.simulate(
         m, a, lambda d: mujoco.mj_step(m, d), base_body="base", seconds=0.2, p=p, sample_hz=50
     )
     assert samples[0][0] == 0.0 and end == "time_limit" and clip is None
     s = walk.stand_summary("stock", "x", 0.2, samples, end, clip, 0.3)
-    assert s["standing"] and s["seed"] == 1
+    assert s["standing"] and "seed" not in s
 
 
 def test_measure_extents_over_keyframes():

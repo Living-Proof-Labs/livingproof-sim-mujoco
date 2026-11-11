@@ -61,16 +61,30 @@ product downloads remain pending. ARM, macOS, Windows and hosted devcontainer
 execution remain unverified. Engine startup and software tests are not robot
 capability evidence. No substantive merge or release has occurred.
 
+## Evidence command
+
+`python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> [--trials N]`
+records observations and does not grade the robot. The manifest format is
+`livingproof-hallway-evidence/2.0.0`. Its `plan` records `trials.count` and does not
+copy `seeds` or `required_passes` from the lock.
+
+- Exit 0: the observations were recorded. An unmet precondition is also exit 0: no trial runs, and the manifest says so.
+- Exit 1: the lock, plan, or manifest is unusable. Those are `SystemExit` messages.
+- Exit 2: the command line is unusable (argparse).
+- Exit 4: `trials.count` is greater than 1 and the trials disagree. The manifest records that as a test-system reproducibility finding (`trials.reproducibility.finding`). It is not a robot grade. The physics command's exits (2, 124, 130, 143) and the hallway fixture tool's exit 1 (a non-PASS world result) are different programs and are not this code.
+
+The generated command reference in `docs/command.md` is the physics command `livingproof-sim-mujoco`. It does not list this module, so those exits stay as they are.
+
 ## Evidence media
 
 `python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>
-<verification.json> <out>` (install the `media` extra) re-runs every seed of an evidence
-run with a read-only recorder. It writes an MCAP file per trial (`/base_pose` as
+<verification.json> <out>` (install the `media` extra) re-runs every trial of an evidence
+run, in sequence, with a read-only recorder. It writes an MCAP file per trial (`/base_pose` as
 `foxglove.PoseInFrame` and `/joint_states`, JSON, 50 Hz, zstd) and an mp4 screencast of
-the verifier's first PASS seed and first FAIL seed only, plus `media.json` with each
-file's size and sha256. Each re-run observation must hash to that seed's evidence
+the verifier's first PASS trial and first FAIL trial only, plus `media.json` with each
+file's size and sha256. Each re-run observation must hash to that trial's evidence
 sha256, or nothing is kept (recording goes to a staging folder, so a mismatch leaves no
-partial files from any seed), so every recording is of the trial that was graded. It
+partial files from any trial), so every recording is of the trial that was graded. It
 fetches and verifies the pinned upstream files itself, before the adapter loads anything,
 and re-running into an existing folder replaces only its `mcap/`, `video/` and
 `media.json`. Media never grades and never changes evidence. An adapter may set the

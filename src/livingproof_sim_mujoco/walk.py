@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Generic walk helpers shared by robot packages: runner settings, the seeded initial
+"""Generic walk helpers shared by robot packages: runner settings, the nominal initial
 state, a recorded simulation and the zero-command standing check. Never grades.
 
     python -m livingproof_sim_mujoco.walk stand <module:adapter> --configuration NAME [--out DIR]
@@ -32,29 +32,75 @@ def joint_dofs(model: mujoco.MjModel) -> tuple[np.ndarray, np.ndarray]:
     return model.jnt_qposadr[hinge], model.jnt_dofadr[hinge]
 
 
-def initial_state(model, data, ctrl, seed: int, noise: dict, spawn: str) -> None:
-    """The controller's initial pose at the world's named place plus the seed's noise."""
-    rng = np.random.default_rng(seed)
-    qadr, vadr = joint_dofs(model)
-    # fixed draw order, so every configuration and robot sees identical noise for a seed
-    dq = rng.uniform(-1, 1, len(qadr)) * noise["joint_pos_rad"]
-    dv = rng.uniform(-1, 1, len(vadr)) * noise["joint_vel_rad_s"]
-    dxy = rng.uniform(-1, 1, 2) * noise["base_xy_m"]
-    dyaw = rng.uniform(-1, 1) * noise["base_yaw_rad"]
-    dbase = rng.uniform(-1, 1, 6) * noise["base_vel_m_s"]
+def initial_state(model, data, ctrl, spawn, noise=None, retired_spawn=None, *, start_offset=None):
+    """The controller's exact nominal pose at the world's named place. Velocities are zero.
+
+    Certification calls ``initial_state(model, data, ctrl, spawn)``. A declared comparison
+    may pass one ``start_offset`` (``base_xy_m`` in metres and/or ``base_yaw_rad``). That
+    is a single named change for the run, not a sweep.
+
+    Adapters that still call ``initial_state(model, data, ctrl, seed, noise, spawn)`` keep
+    working. The seed and the noise dict are ignored, including ``initial_noise``.
+    """
+    if isinstance(spawn, str):
+        place = spawn
+        if retired_spawn is not None:
+            raise TypeError(
+                "initial_state(model, data, ctrl, spawn, start_offset=None). "
+                f"Got an extra positional place {retired_spawn!r}. "
+                "Example: initial_state(model, data, ctrl, 'spawn-entrance')"
+            )
+    elif isinstance(retired_spawn, str):
+        place = retired_spawn  # retired (seed, noise, spawn); seed and noise are ignored
+    else:
+        raise TypeError(
+            "initial_state(model, data, ctrl, spawn) expects the world's place name. "
+            "The retired (seed, noise, spawn) form is accepted and the seed and noise "
+            f"are ignored, but the place was {retired_spawn!r}. "
+            "Example: initial_state(model, data, ctrl, 'spawn-entrance')"
+        )
+    dxy, dyaw = _start_offset(start_offset)
     mujoco.mj_resetData(model, data)
     data.qpos[:] = ctrl.initial_qpos
-    position, yaw = place_pose(model, spawn)
+    position, yaw = place_pose(model, place)
     data.qpos[0:2] = position[0:2] + dxy
     yaw += dyaw
     data.qpos[3:7] = [math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]
-    data.qpos[qadr] += dq
-    data.qvel[vadr] = dv
-    data.qvel[0:6] = dbase
+    data.qvel[:] = 0.0
     if ctrl.spec.actuation == "position":  # hold the default pose until the first tick,
         for name, q in zip(ctrl.spec.actuators, ctrl.spec.default_pose):  # as keyframe ctrl
             data.ctrl[model.actuator(name).id] = q
     mujoco.mj_forward(model, data)
+
+
+def _start_offset(start_offset) -> tuple[np.ndarray, float]:
+    """One declared xy/yaw change. Absent means the exact nominal pose."""
+    if start_offset is None:
+        return np.zeros(2), 0.0
+    if not isinstance(start_offset, dict):
+        raise TypeError(
+            "start_offset must be a dict with base_xy_m and/or base_yaw_rad, "
+            f"got {type(start_offset).__name__}. "
+            "Example: start_offset={'base_xy_m': [0.0, 0.05]}"
+        )
+    unknown = set(start_offset) - {"base_xy_m", "base_yaw_rad"}
+    if unknown:
+        raise ValueError(
+            "start_offset only accepts base_xy_m and base_yaw_rad "
+            f"(one named comparison change), got {sorted(unknown)}. "
+            "Example: start_offset={'base_xy_m': [0.0, 0.05]}"
+        )
+    dxy = np.zeros(2)
+    if "base_xy_m" in start_offset:
+        raw = start_offset["base_xy_m"]
+        if len(raw) != 2:
+            raise ValueError(
+                "start_offset base_xy_m must be [x, y] in metres. "
+                "Example: start_offset={'base_xy_m': [0.0, 0.05]}"
+            )
+        dxy = np.array([float(raw[0]), float(raw[1])], dtype=float)
+    dyaw = float(start_offset.get("base_yaw_rad", 0.0))
+    return dxy, dyaw
 
 
 def simulate(
@@ -111,7 +157,7 @@ def simulate(
 
 
 def stand_summary(name, digest, seconds, samples, end, clip, fall_height) -> dict:
-    """Zero-command standing check result (seed 1); not part of the scenario grade."""
+    """Zero-command standing check at the nominal pose; not part of the scenario grade."""
     zs = [s[3] for s in samples]
     last = samples[-30:]  # final 0.6 s
     return {
@@ -119,7 +165,6 @@ def stand_summary(name, digest, seconds, samples, end, clip, fall_height) -> dic
         "configuration": name,
         "configuration_sha256": digest,
         "seconds": seconds,
-        "seed": 1,
         "standing": end == "time_limit" and min(zs) >= fall_height,
         "end": end,
         "min_base_height": round(min(zs), 4),
@@ -138,8 +183,9 @@ CAMERA = (
 
 
 def stand(ref, name: str, out: Path | None = None) -> dict:
-    """Zero-command standing check (seed 1) through a robot adapter (``module:NAME`` or the
-    adapter object, as ``livingproof_sim_mujoco.evidence`` uses); not part of any grade."""
+    """Zero-command standing check at the nominal pose through a robot adapter
+    (``module:NAME`` or the adapter object, as ``livingproof_sim_mujoco.evidence`` uses);
+    not part of any grade."""
     from livingproof_sim_mujoco import evidence as ev
     from livingproof_sim_mujoco.pins import fetch
 
@@ -155,7 +201,7 @@ def stand(ref, name: str, out: Path | None = None) -> dict:
     ctrl = robot.controller(name, scene)
     policy = robot.policy(model, ctrl)
     data = mujoco.MjData(model)
-    robot.initial_state(model, data, ctrl, 1, rs["initial_noise"], p["spawn"])
+    ev.nominal_start(robot, model, data, ctrl, p["spawn"], None)
     command = [0.0, 0.0, 0.0]
     samples, end, clip = simulate(
         model,
@@ -179,7 +225,7 @@ def stand(ref, name: str, out: Path | None = None) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("stand", help="zero-command standing check, seed 1")
+    s = sub.add_parser("stand", help="zero-command standing check at the nominal pose")
     s.add_argument("adapter", help="robot adapter, module:NAME (e.g. lpl_g1.adapter:ROBOT)")
     s.add_argument("--configuration", required=True)
     s.add_argument("--out", type=Path, default=None, help="default <robot root>/artifacts/<name>")
