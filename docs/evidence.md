@@ -64,13 +64,13 @@ capability evidence. No substantive merge or release has occurred.
 ## Evidence media
 
 `python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>
-<verification.json> <out>` (install the `media` extra) re-runs every seed of an evidence
-run with a read-only recorder. It writes an MCAP file per trial (`/base_pose` as
+<verification.json> <out>` (install the `media` extra) re-runs every trial of an evidence
+run, in sequence, with a read-only recorder. It writes an MCAP file per trial (`/base_pose` as
 `foxglove.PoseInFrame` and `/joint_states`, JSON, 50 Hz, zstd) and an mp4 screencast of
-the verifier's first PASS seed and first FAIL seed only, plus `media.json` with each
-file's size and sha256. Each re-run observation must hash to that seed's evidence
+the verifier's first PASS trial and first FAIL trial only, plus `media.json` with each
+file's size and sha256. Each re-run observation must hash to that trial's evidence
 sha256, or nothing is kept (recording goes to a staging folder, so a mismatch leaves no
-partial files from any seed), so every recording is of the trial that was graded. It
+partial files from any trial), so every recording is of the trial that was graded. It
 fetches and verifies the pinned upstream files itself, before the adapter loads anything,
 and re-running into an existing folder replaces only its `mcap/`, `video/` and
 `media.json`. Media never grades and never changes evidence. An adapter may set the

@@ -87,7 +87,7 @@ are vendored from it, unchanged, into `src/livingproof_sim_mujoco/contract/`:
 
 `contract/pins.json` is the single place that holds the specs release tag, its commit and each file's
 SHA-256. Every load checks them. To move to a newer specs commit, run
-`python tools/pin_contract.py <specs checkout> <tag>`; `--check` confirms the vendored files match the tag. Currently pinned to v1.4.0 (cb57ede).
+`python tools/pin_contract.py <specs checkout> <tag>`; `--check` confirms the vendored files match the tag. Currently pinned to v2.0.2 (16524cbf). The three hallway contract files are unchanged from v1.4.0.
 
 Each quantity uses its shared name, `kind`, `unit` and `comparison`, and records
 `canonical`, `measured`, `deviation` and `tolerance`. The comparison decides `pass`:

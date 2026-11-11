@@ -2,15 +2,15 @@
 for linking from the capability report. Never grades.
 
 Generic over robots (the same ``module:NAME`` adapter as ``livingproof_sim_mujoco.evidence``).
-It reads the verifier's ``verification.json`` only to pick the first PASS seed and the first
-FAIL seed for video. Every seed is re-run exactly as the evidence job ran it, with a
-read-only ``on_step`` recorder, and the re-run observation must hash to that seed's evidence
-sha256 or nothing is kept: each recording is provably of the graded trial.
+It reads the verifier's ``verification.json`` only to pick the first PASS trial and the first
+FAIL trial for video. Every trial is re-run in sequence, exactly as the evidence job ran it,
+with a read-only ``on_step`` recorder, and the re-run observation must hash to that trial's
+evidence sha256 or nothing is kept: each recording is provably of the graded trial.
 
     python -m livingproof_sim_mujoco.media <module:adapter> <configuration> \\
         <evidence dir> <verification.json> <out>
 
-Writes ``<out>/mcap/seed-NN.mcap`` (all seeds), ``<out>/video/seed-NN-{pass,fail}.mp4``
+Writes ``<out>/mcap/trial-NN.mcap`` (every trial), ``<out>/video/trial-NN-{pass,fail}.mp4``
 (at most two) and ``<out>/media.json``. Needs the ``media`` extra (mcap, imageio-ffmpeg).
 """
 
@@ -58,13 +58,13 @@ JOINT_SCHEMA = {
 
 
 def pick(verification: dict) -> dict[int, str]:
-    """{seed: status} for the first PASS and the first FAIL trial, as the verifier decided."""
-    trials = sorted(verification["trials"], key=lambda t: t["seed"])
+    """{index: status} for the first PASS and the first FAIL trial, as the verifier decided."""
+    trials = sorted(verification["trials"], key=lambda t: t["index"])
     out = {}
     for status in ("PASS", "FAIL"):
         t = next((t for t in trials if t["status"] == status), None)
         if t is not None:
-            out[t["seed"]] = status
+            out[t["index"]] = status
     return out
 
 
@@ -169,34 +169,32 @@ def _file(path: Path, out: Path) -> dict:
 
 
 def _record(args):
-    ref, name, seed, status, plan, p, out, expected = args
+    ref, name, index, status, plan, p, out, expected, start_offset = args
     robot = ev.adapter(ref)
-    mcap = out / "mcap" / f"seed-{seed:02d}.mcap"
-    video = out / "video" / f"seed-{seed:02d}-{status.lower()}.mp4" if status else None
+    mcap = out / "mcap" / f"trial-{index:02d}.mcap"
+    video = out / "video" / f"trial-{index:02d}-{status.lower()}.mp4" if status else None
     camera = ev.camera(robot, CAMERA)
 
     def hook(model, base_body):
         return Recorder(model, base_body, mcap_path=mcap, video_path=video, camera=camera)
 
-    obs = ev.run_trial(ref, name, seed, plan, p, on_step=hook)
+    obs = ev.run_trial(ref, name, plan, p, on_step=hook, start_offset=start_offset)
     got = hashlib.sha256(ev.observation_bytes(obs)).hexdigest()
     if got != expected:
         for path in (mcap, video):
             if path is not None:
                 path.unlink(missing_ok=True)
         raise RuntimeError(
-            f"seed {seed}: re-run observation {got[:12]} differs from the evidence "
+            f"trial {index}: re-run observation {got[:12]} differs from the evidence "
             f"{expected[:12]}; no recording kept for a different run"
         )
-    trial = {"seed": seed, "observation_sha256": got, "mcap": _file(mcap, out)}
+    trial = {"index": index, "observation_sha256": got, "mcap": _file(mcap, out)}
     if video is not None:
         trial.update(status=status, video=_file(video, out))
     return trial
 
 
-def media(
-    ref: str, name: str, evidence_dir: Path, verification: Path, out: Path, *, jobs=None
-) -> dict:
+def media(ref: str, name: str, evidence_dir: Path, verification: Path, out: Path) -> dict:
     robot = ev.adapter(ref)
     # Pinned upstream files first: adapters load their profile and model from them, so a
     # fresh checkout (no pins fetched yet) would otherwise fail with FileNotFoundError.
@@ -209,6 +207,7 @@ def media(
         raise SystemExit(f"evidence was recorded with a different {ev.LOCK}")
     plan, p = ev.recording(robot, lock, name)
     picked = pick(json.loads(Path(verification).read_text()))
+    offset = ev.declared_offset(plan)
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     # Record into a staging folder: a mismatch or crash leaves no partial files, and a
@@ -218,15 +217,11 @@ def media(
     (stage / "mcap").mkdir(parents=True)
     (stage / "video").mkdir()
     work = [
-        (ref, name, t["seed"], picked.get(t["seed"]), plan, p, stage, t["sha256"])
-        for t in manifest["trials"]
+        (ref, name, t["index"], picked.get(t["index"]), plan, p, stage, t["sha256"], offset)
+        for t in manifest["trials"]["results"]
     ]
-    try:
-        if jobs == 1:
-            trials = [_record(w) for w in work]
-        else:  # spawned workers: never fork after a renderer was used in this process
-            with ev.pool(jobs) as workers:
-                trials = list(workers.map(_record, work))
+    try:  # one process, in order: the same nominal trial as the evidence run
+        trials = [_record(w) for w in work]
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)
         raise
@@ -234,7 +229,7 @@ def media(
         "format": FORMAT,
         "configuration": name,
         "run_id": manifest["run_id"],
-        "trials": sorted(trials, key=lambda t: t["seed"]),
+        "trials": sorted(trials, key=lambda t: t["index"]),
     }
     for part in ("mcap", "video"):
         shutil.rmtree(out / part, ignore_errors=True)
@@ -251,15 +246,14 @@ def main(argv=None) -> int:
     ap.add_argument("evidence", type=Path, help="evidence directory (manifest.json)")
     ap.add_argument("verification", type=Path, help="the verifier's verification.json")
     ap.add_argument("out", type=Path)
-    ap.add_argument("--jobs", type=int, default=None)
     a = ap.parse_args(argv)
-    doc = media(a.adapter, a.configuration, a.evidence, a.verification, a.out, jobs=a.jobs)
+    doc = media(a.adapter, a.configuration, a.evidence, a.verification, a.out)
     mcap = sum(t["mcap"]["bytes"] for t in doc["trials"])
     print(f"{len(doc['trials'])} MCAP recordings ({mcap} B), all matching their evidence")
     for t in doc["trials"]:
         if "video" in t:
             print(
-                f"seed {t['seed']:2d} {t['status']}: {t['video']['path']} {t['video']['bytes']} B"
+                f"trial {t['index']:2d} {t['status']}: {t['video']['path']} {t['video']['bytes']} B"
             )
     return 0
 

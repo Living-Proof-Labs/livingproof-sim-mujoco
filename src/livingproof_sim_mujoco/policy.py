@@ -41,7 +41,14 @@ class OnnxBackend:
     def __init__(self, path: Path, input_name: str, output_name: str | None):
         import onnxruntime
 
-        self.session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        options = onnxruntime.SessionOptions()
+        # One thread, matching torch.set_num_threads(1): identical trials must not
+        # fan out across a host-sized pool.
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        self.session = onnxruntime.InferenceSession(
+            str(path), sess_options=options, providers=["CPUExecutionProvider"]
+        )
         inputs = {i.name: i for i in self.session.get_inputs()}
         if input_name not in inputs:
             raise PolicyError(f"ONNX model has no input {input_name!r} ({sorted(inputs)})")
