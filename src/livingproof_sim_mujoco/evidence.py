@@ -351,17 +351,135 @@ def robot_repo(root: Path, lock: dict) -> str:
     )
 
 
-def adapter_commit() -> str:
-    root = Path(__file__).resolve().parents[2]
+def _valid_commit(value: object) -> str | None:
+    return value if isinstance(value, str) and _COMMIT.fullmatch(value) else None
+
+
+def _git_text(cwd: Path, *args: str) -> str | None:
     try:
-        head, _dirty = sc.git_head(root)
-    except (subprocess.CalledProcessError, OSError):
-        head = ""
-    if _COMMIT.fullmatch(head or ""):
-        return head
+        found = subprocess.run(
+            ["git", "-C", str(cwd), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if found.returncode != 0:
+        return None
+    return found.stdout.strip()
+
+
+def _source_tree_root() -> Path | None:
+    """Git toplevel when this module is the package source, else None.
+
+    An installed copy lives under ``site-packages``. Git would walk up from there
+    to whatever repository encloses the virtualenv; that commit is not this package.
+    Accept the toplevel only when it contains this package's source (the module
+    directory is ``src/livingproof_sim_mujoco`` or ``livingproof_sim_mujoco``) and,
+    when ``pyproject.toml`` is present, that file names livingproof-sim-mujoco.
+    """
+    package_dir = Path(__file__).resolve().parent
+    top = _git_text(package_dir, "rev-parse", "--show-toplevel")
+    if not top:
+        return None
+    root = Path(top).resolve()
+    if package_dir not in {
+        (root / "src" / "livingproof_sim_mujoco").resolve(),
+        (root / "livingproof_sim_mujoco").resolve(),
+    }:
+        return None
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file() and "livingproof-sim-mujoco" not in pyproject.read_text(
+        encoding="utf-8", errors="replace"
+    ):
+        return None
+    return root
+
+
+def _build_provenance_commit() -> tuple[str | None, str]:
+    """``identity.commit`` from the packaged snapshot, and why it was not usable."""
+    path = Path(__file__).resolve().parent / "_build_provenance.json"
+    if not path.is_file():
+        return None, "file is missing, so identity.commit was not read"
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        commit = saved.get("identity", {}).get("commit") if isinstance(saved, dict) else None
+    except (OSError, ValueError, AttributeError):
+        return None, "file is not JSON, so identity.commit was not read"
+    found = _valid_commit(commit)
+    if found:
+        return found, ""
+    if commit in (None, ""):
+        return None, "identity.commit is missing"
+    return None, f"identity.commit {commit!r} is not 40 hex characters"
+
+
+def _direct_url_commit() -> tuple[str | None, str]:
+    """PEP 610 ``vcs_info.commit_id``, and why it was not usable."""
+    try:
+        text = metadata.distribution("livingproof-sim-mujoco").read_text("direct_url.json")
+    except Exception:
+        return (
+            None,
+            "the installed distribution has no direct_url.json, so vcs_info.commit_id was not read",
+        )
+    if not text:
+        return None, "file is absent, so vcs_info.commit_id was not read"
+    try:
+        commit = json.loads(text).get("vcs_info", {}).get("commit_id")
+    except (ValueError, AttributeError):
+        return None, "vcs_info.commit_id is missing"
+    found = _valid_commit(commit)
+    if found:
+        return found, ""
+    if commit in (None, ""):
+        return None, "vcs_info.commit_id is missing"
+    return None, f"vcs_info.commit_id {commit!r} is not 40 hex characters"
+
+
+def _git_source_commit() -> tuple[str | None, str]:
+    """HEAD when this module is the package source tree, and why it was not usable."""
+    root = _source_tree_root()
+    if root is None:
+        return None, "no source tree containing this package"
+    found = _valid_commit(_git_text(root, "rev-parse", "HEAD"))
+    if found:
+        return found, ""
+    return None, "source tree HEAD is not a 40-character commit"
+
+
+def adapter_commit() -> str:
+    """40-character commit of livingproof-sim-mujoco.
+
+    When this module is the package's own source tree (a checkout or an editable
+    install) and git HEAD resolves, that live HEAD is used, so a later commit is
+    seen without reinstalling. If git does not resolve there, or this is an
+    installed copy, use the packaged ``_build_provenance.json`` ``identity.commit``,
+    then the installed distribution's PEP 610 ``direct_url.json``
+    ``vcs_info.commit_id``. An enclosing repository is never used. When none
+    yields a 40-character commit, exit 1 and name each source. The Debian package
+    and the runtime image call this function; the Debian payload drops
+    ``direct_url.json`` and keeps the snapshot.
+    """
+    git_commit, git_why = _git_source_commit()
+    if git_commit:
+        return git_commit
+    package_commit, package_why = _build_provenance_commit()
+    if package_commit:
+        return package_commit
+    direct_commit, direct_why = _direct_url_commit()
+    if direct_commit:
+        return direct_commit
+    failed = [
+        f"package provenance (_build_provenance.json): {package_why}",
+        f"direct_url.json vcs_info: {direct_why}",
+        f"git: {git_why}",
+    ]
     raise SystemExit(
         "run manifest simulator.adapter_commit needs the 40-character git commit of "
-        "livingproof-sim-mujoco. Run evidence from a git checkout of the adapter."
+        "livingproof-sim-mujoco. Every source failed:\n" + "\n".join(f"- {line}" for line in failed)
     )
 
 
@@ -375,6 +493,7 @@ def build_run_manifest(
     run_id: str,
     profile_sha256: str,
     robot_commit: str,
+    adapter_sha: str,
 ) -> dict:
     """``livingproof-run-manifest/0.1``, written before the first trial."""
     specs = lock.get("releases", {}).get("specs")
@@ -410,7 +529,7 @@ def build_run_manifest(
             "engine": "mujoco",
             "version": mujoco.__version__,
             "adapter": "livingproof-sim-mujoco",
-            "adapter_commit": _require("simulator.adapter_commit", adapter_commit(), _COMMIT),
+            "adapter_commit": _require("simulator.adapter_commit", adapter_sha, _COMMIT),
         },
         "robot": {
             "id": robot.id,
@@ -431,6 +550,8 @@ def build_run_manifest(
 def evidence(
     ref: str, name: str, out: Path, *, trials: int | None = None, allow_pending=False
 ) -> dict:
+    # Before any output directory or manifest. An unknown commit exits 1.
+    adapter_sha = adapter_commit()
     robot = adapter(ref)
     root = Path(robot.root)
     lock = load_lock(root)
@@ -458,7 +579,16 @@ def evidence(
     started = time.perf_counter()
     if unmet is None:
         document = build_run_manifest(
-            robot, lock, name, entry, p, count, run_id, profile_sha, robot_commit
+            robot,
+            lock,
+            name,
+            entry,
+            p,
+            count,
+            run_id,
+            profile_sha,
+            robot_commit,
+            adapter_sha,
         )
         # Before the first trial, as the run-manifest schema requires.
         (out / "run-manifest.json").write_text(json.dumps(document, indent=2) + "\n")
@@ -496,7 +626,12 @@ def evidence(
             "exit_x": p["exit_x"],
         },
         "environment": {
-            "simulator": {"id": "mujoco", "version": mujoco.__version__},
+            "simulator": {
+                "id": "mujoco",
+                "version": mujoco.__version__,
+                "adapter": "livingproof-sim-mujoco",
+                "adapter_commit": adapter_sha,
+            },
             "runner": {
                 "version": metadata.version("livingproof-sim-mujoco"),
                 "tag": lock["releases"]["runner"]["tag"],
