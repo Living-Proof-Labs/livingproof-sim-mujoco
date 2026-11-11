@@ -218,12 +218,9 @@ def test_evidence_runs_identical_trials_and_ignores_seeds(tmp_path, monkeypatch)
     monkeypatch.syspath_prepend(str(Path(__file__).parent))
     one = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "one")
     assert one["trials"]["count"] == 1  # plan trials: 20 and seeds are not the count
-    assert one["plan"] == {
-        "command_speed": 0.5,
-        "required_passes": 2,
-        "trials": {"count": 1},
-    }
-    assert "seeds" not in one["plan"]
+    assert evidence.FORMAT == "livingproof-hallway-evidence/2.0.0"
+    assert one["plan"] == {"command_speed": 0.5, "trials": {"count": 1}}
+    assert "seeds" not in one["plan"] and "required_passes" not in one["plan"]
     assert one["trials"]["reproducibility"]["compared"] is False
     m = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", trials=2)
     assert m["format"] == evidence.FORMAT and m["robot"]["id"] == "toy-robot"

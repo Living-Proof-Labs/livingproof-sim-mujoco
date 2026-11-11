@@ -64,7 +64,9 @@ capability evidence. No substantive merge or release has occurred.
 ## Evidence command
 
 `python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> [--trials N]`
-records observations and does not grade the robot.
+records observations and does not grade the robot. The manifest format is
+`livingproof-hallway-evidence/2.0.0`. Its `plan` records `trials.count` and does not
+copy `seeds` or `required_passes` from the lock.
 
 - Exit 0: the observations were recorded. An unmet precondition is also exit 0: no trial runs, and the manifest says so.
 - Exit 1: the lock, plan, or manifest is unusable. Those are `SystemExit` messages.

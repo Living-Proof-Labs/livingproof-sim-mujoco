@@ -6,7 +6,7 @@ module does the rest. It reads the robot repository's committed ``verification.l
 (release refs and the command speed) and, for one configuration, runs ``trials.count``
 identical trials in sequence through ``observations.observe``. The default count is 1.
 It writes one observation per trial (``trials/trial-01.json``, ...) and a
-``livingproof-hallway-evidence/1.0.0`` manifest. Before the first trial it writes
+``livingproof-hallway-evidence/2.0.0`` manifest. Before the first trial it writes
 ``run-manifest.json`` in the ``livingproof-run-manifest/0.1`` shape.
 
     python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> [--trials N]
@@ -33,7 +33,7 @@ from livingproof_sim_mujoco import scenario as sc
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
 
-FORMAT = "livingproof-hallway-evidence/1.0.0"
+FORMAT = "livingproof-hallway-evidence/2.0.0"
 RUN_MANIFEST_FORMAT = "livingproof-run-manifest/0.1"
 PENDING = "PENDING_RELEASE"
 # Evidence exits: 0 recorded (an unmet precondition is still recorded, with no trials);
@@ -289,8 +289,12 @@ def recording(robot: Robot, lock: dict, name: str) -> tuple[dict, dict]:
 
 
 def executed_plan(plan: dict, count: int) -> dict:
-    """The plan this run used: ``trials.count``, no seeds."""
-    used = {k: v for k, v in plan.items() if k not in {"seeds", "trials", "start_offset"}}
+    """The plan this run used: ``trials.count``. Seeds and ``required_passes`` are omitted."""
+    used = {
+        k: v
+        for k, v in plan.items()
+        if k not in {"seeds", "trials", "start_offset", "required_passes"}
+    }
     used["trials"] = {"count": count}
     return used
 
