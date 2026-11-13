@@ -371,3 +371,153 @@ def test_scenario_names_stay_in_the_compatibility_modules():
                 if name in text:
                     bad.append(f"{relative}: {name}")
     assert bad == []
+
+
+# --- Verification checks for #40 step 3 (Vera). Each was a hand check first. ---
+
+HALLWAY_ROUTE = [[-3.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
+HALLWAY_EXIT = {
+    "points": [[3.0, -0.75, 0.0], [3.0, 0.75, 0.0]],
+    "reference": [3.0, 0.0, 0.0],
+}
+
+
+@pytest.mark.parametrize(
+    ("p0", "p1", "crosses"),
+    [
+        # Lateral test is at p1, not where the step meets the line.
+        ((2.9, 0.7, 0.0), (3.5, 0.95, 0.0), False),
+        ((2.8, 0.9, 0.0), (3.2, 0.7, 0.0), True),
+        ((2.996, 0.7525, 0.0), (3.006, 0.7495, 0.0), True),
+        ((2.996, 0.7475, 0.0), (3.006, 0.7505, 0.0), False),
+        # Landing on the line counts; a start on the line does not cross again.
+        ((2.9, 0.0, 0.0), (3.0, 0.0, 0.0), True),
+        ((3.0, 0.0, 0.0), (3.1, 0.0, 0.0), False),
+        # The segment endpoints are inside (|offset| <= half, inclusive).
+        ((2.9, 0.75, 0.0), (3.0, 0.75, 0.0), True),
+        ((2.9, -0.75, 0.0), (3.0, -0.75, 0.0), True),
+    ],
+)
+def test_exit_rule_counter_examples_match_the_reference(p0, p1, crosses):
+    from livingproof_scenario_parameters import crosses_exit
+
+    got = route_step(HALLWAY_ROUTE, HALLWAY_EXIT, p0, p1)
+    assert got["crosses"] is crosses
+    assert crosses_exit(p0, p1, HALLWAY_ROUTE, HALLWAY_EXIT) is crosses
+    # Any crossing also reaches the line; reaching the line alone is not a crossing.
+    assert got["reached_line"] or not got["crosses"]
+
+
+def test_first_sample_past_the_line_is_not_a_step():
+    got = route_step(HALLWAY_ROUTE, HALLWAY_EXIT, None, [3.5, 0.0, 0.0])
+    assert got["crosses"] is False and got["reached_line"] is False
+
+
+def test_sub_picometre_clamp_only_removes_float_residue():
+    from livingproof_scenario_parameters import distance_to_route
+
+    on_route = [0.123, 0.0, 0.0]
+    # The reference returns a few ulps here, not 0. The clamp records 0.
+    assert 0.0 <= distance_to_route(HALLWAY_ROUTE, on_route) < 1e-12
+    assert route_step(HALLWAY_ROUTE, HALLWAY_EXIT, None, on_route)["distance"] == 0.0
+    # A real offset far below the recorded 1e-4 m resolution is kept as is.
+    off = [0.123, 1e-9, 0.0]
+    assert route_step(HALLWAY_ROUTE, HALLWAY_EXIT, None, off)["distance"] == pytest.approx(
+        1e-9, rel=1e-6
+    )
+    # The clamp never touches the crossing decision.
+    assert route_step(HALLWAY_ROUTE, HALLWAY_EXIT, [2.9, 0.0, 0.0], [3.0, 0.0, 0.0])["crosses"]
+
+
+def test_vendored_parameter_file_is_checked_byte_for_byte(tmp_path, monkeypatch):
+    import inspect
+
+    spec = CATALOG / "parameters.json"
+    assert _sha(ROOT / "src/livingproof_sim_mujoco/compat/parameters.json") == _sha(spec)
+    tampered = tmp_path / "parameters.json"
+    tampered.write_bytes(spec.read_bytes() + b" ")
+    monkeypatch.setattr(frozen, "_PATH", tampered)
+    with pytest.raises(RuntimeError, match="ERROR: vendored parameter file sha256"):
+        frozen.parameters_document()
+    with pytest.raises(RuntimeError, match="ERROR"):
+        sources.parameters_document_for(tmp_path, None)
+    # The fallback is temporary and must say so where it is used.
+    assert "TODO(#40 step 7)" in inspect.getsource(sources.parameters_document_for)
+
+
+def _toy_repo(tmp_path, monkeypatch):
+    toy = _toy()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    toy._repo(repo)
+    monkeypatch.setattr(toy.Toy, "root", repo)
+    return toy, repo
+
+
+def _edit_lock(repo: Path, **changes) -> None:
+    path = repo / "verification.lock.json"
+    lock = json.loads(path.read_text())
+    lock.update(changes)
+    path.write_text(json.dumps(lock))
+
+
+def _pin_parameters(repo: Path, document: dict) -> None:
+    relative = "specs/scenarios/walk-hallway/parameters.json"
+    digest = _write(repo, f".cache/{relative}", document)
+    _pins(repo, "specs", relative, digest)
+
+
+def test_lock_parameter_mismatch_is_an_error_and_writes_nothing(tmp_path, monkeypatch):
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    document = _catalog()["parameters.json"]
+    _pin_parameters(repo, document)
+    _write(repo, "locked/parameters.json", document)
+    _edit_lock(repo, sources={"parameters": {"path": "locked/parameters.json", "sha256": "0" * 64}})
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="ERROR: lock sources.parameters sha256 mismatch"):
+        evidence.evidence("test_evidence:TOY", "stock", out)
+    assert not out.exists()
+
+
+def test_pinned_parameters_are_used_without_a_lock_entry(tmp_path, monkeypatch):
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    document = json.loads(json.dumps(_catalog()["parameters.json"]))
+    document["parameters"]["wall_clearance"]["values"]["humanoid"] = 0.0625
+    _pin_parameters(repo, document)
+    out = tmp_path / "out"
+    evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
+    run = json.loads((out / "run-manifest.json").read_text())
+    assert run["parameters"]["wall_clearance"] == 0.0625
+    # And the lock entry wins over that pin when present.
+    locked = _catalog()["parameters.json"]
+    digest = _write(repo, "locked/parameters.json", locked)
+    _edit_lock(repo, sources={"parameters": {"path": "locked/parameters.json", "sha256": digest}})
+    evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out2", trials=1)
+    run = json.loads((tmp_path / "out2" / "run-manifest.json").read_text())
+    assert run["parameters"]["wall_clearance"] == 0.05
+
+
+def test_locked_0_2_world_is_an_error_and_writes_nothing(tmp_path, monkeypatch):
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    world = json.loads((ROOT / "tests/fixtures/l-shaped-0.2.json").read_text())
+    digest = _write(repo, "locked/world.json", world)
+    _edit_lock(repo, sources={"world": {"path": "locked/world.json", "sha256": digest}})
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="ERROR: world format livingproof-world/0.2"):
+        evidence.evidence("test_evidence:TOY", "stock", out)
+    assert not out.exists()
+
+
+def test_scenario_names_appear_only_in_compat_hallway():
+    """Stricter than the module check above: package source only, one file allowed."""
+    allowed = "src/livingproof_sim_mujoco/compat/hallway.py"
+    bad = []
+    for path in (ROOT / "src").rglob("*.py"):
+        relative = path.relative_to(ROOT).as_posix()
+        if relative == allowed:
+            continue
+        text = path.read_text()
+        for name in ("walk-hallway", "hallway-open", "walk-corner"):
+            if name in text:
+                bad.append(f"{relative}: {name}")
+    assert bad == []
