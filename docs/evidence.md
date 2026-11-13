@@ -79,6 +79,15 @@ by sha256. The velocity command is that file's `command`. Only mode `constant`
 is accepted; any other mode is an ERROR. On the straight open hallway the
 command is `[0.5, 0, 0]`.
 
+The `world` in `run-manifest.json` and `manifest.json` names the world file
+that was loaded. When the file came from `sources.world` or `pins.json`, its
+`sha256` is the digest of those bytes, and its `id` and `version` come from the
+lock `world` entry or, when the lock has none, from the file's `id` and
+`content_version`. A lock `world.id`, `world.version` or `world.sha256` that
+disagrees with the loaded file is an ERROR before anything is written. Only a
+world supplied by the robot adapter, with no file read by the runner, still
+takes its `sha256` from lock `world.sha256` or the robot's `pins.json`.
+
 A world whose format is `livingproof-world/0.2` is an ERROR. This release does
 not yet write a neutral observation for that format, and it does not write the
 frozen hallway observation for it. Limits in the frozen hallway record stay as

@@ -13,6 +13,7 @@ entry, the robot's ``pins.json`` is used.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import re
@@ -69,7 +70,9 @@ def _read_locked(root: Path, entry: dict, kind: str) -> bytes:
             f'Example: "sources": {{"{kind}": {{"path": "{entry["path"]}", '
             f'"sha256": "{entry["sha256"]}"}}}}'
         )
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    # One read: the bytes that are checked are the bytes that are loaded.
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
     if digest != entry["sha256"]:
         raise SystemExit(
             f"ERROR: lock sources.{kind} sha256 mismatch for {entry['path']}: "
@@ -77,7 +80,7 @@ def _read_locked(root: Path, entry: dict, kind: str) -> bytes:
             "The lock entry wins over pins.json, so the pins file was not used. "
             "Replace the file or update the lock sha256."
         )
-    return path.read_bytes()
+    return data
 
 
 def _pinned(root: Path, relative: str) -> Path | None:
@@ -119,16 +122,40 @@ def _parameters_relative(lock: dict | None) -> str | None:
     return f"specs/scenarios/{scenario.split('@', 1)[0]}/parameters.json"
 
 
-def world_document(root: Path, lock: dict | None) -> dict | None:
-    """The lock file, else the pins file, else None so the adapter can supply it."""
+@dataclass(frozen=True)
+class WorldSource:
+    """The world file one run loads, and the sha256 of the bytes that were read.
+
+    ``origin`` is ``lock`` (a ``sources.world`` entry), ``pins`` or ``adapter``.
+    For ``adapter`` the robot package supplies the document, so no bytes were
+    read here and ``sha256`` is None.
+    """
+
+    document: dict | None
+    origin: str
+    sha256: str | None
+    path: str | None
+
+
+def world_source(root: Path, lock: dict | None) -> WorldSource:
+    """The lock file, else the pins file, else an ``adapter`` source with no document."""
     entry = _entry(lock, "world")
     if entry is not None:
-        return json.loads(_read_locked(root, entry, "world"))
+        raw = _read_locked(root, entry, "world")
+        digest = hashlib.sha256(raw).hexdigest()
+        return WorldSource(json.loads(raw), "lock", digest, entry["path"])
     # TODO(#40 step 7): remove this pins.json fallback. See the module docstring.
     pinned = _pinned(root, _world_relative(lock))
     if pinned is None:
-        return None
-    return json.loads(pinned.read_text())
+        return WorldSource(None, "adapter", None, None)
+    raw = pinned.read_bytes()
+    relative = pinned.relative_to(Path(root)).as_posix()
+    return WorldSource(json.loads(raw), "pins", hashlib.sha256(raw).hexdigest(), relative)
+
+
+def world_document(root: Path, lock: dict | None) -> dict | None:
+    """The lock file, else the pins file, else None so the adapter can supply it."""
+    return world_source(root, lock).document
 
 
 def parameters_document_for(root: Path, lock: dict | None) -> tuple[dict, str]:
