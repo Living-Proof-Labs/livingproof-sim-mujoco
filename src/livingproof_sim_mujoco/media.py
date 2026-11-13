@@ -27,7 +27,6 @@ import mujoco
 import numpy as np
 
 from livingproof_sim_mujoco import evidence as ev
-from livingproof_sim_mujoco import sources
 from livingproof_sim_mujoco.pins import fetch, sha256
 
 FORMAT = "livingproof-hallway-media/2.0.0"
@@ -220,9 +219,7 @@ def media(ref: str, name: str, evidence_dir: Path, verification: Path, out: Path
         raise SystemExit(f"evidence was recorded with a different {ev.LOCK}")
     plan, prepared = ev.recording(robot, lock, name)
     p = prepared.recorded
-    world = sources.world_document(Path(robot.root), lock)
-    if world is None:
-        world = robot.world()
+    world = prepared.world
     geometry = ev.sc.route_geometry(world, prepared.document)
     route, exit_place = geometry if geometry else (None, None)
     picked = pick(json.loads(Path(verification).read_text()))

@@ -59,6 +59,10 @@ class Prepared:
         self.command = command
         self.resolved = resolved
         self.document = document
+        # Set by evidence.prepare_run: the world document that was loaded and
+        # checked, and its sources.WorldSource. The manifests name that world.
+        self.world: dict | None = None
+        self.world_source = None
 
 
 def millimetres(metres: float) -> int:

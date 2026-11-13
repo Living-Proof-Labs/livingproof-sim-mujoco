@@ -127,17 +127,22 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
     root = Path(robot.root)
     lock = load_lock(root) if lock is None else lock
     document, _source = sources.parameters_document_for(root, lock)
-    world = sources.world_document(root, lock)
-    if world is None:
-        world = robot.world()
+    selected = sources.world_source(root, lock)
+    if selected.document is None:
+        selected = sources.WorldSource(robot.world(), "adapter", None, None)
+    world = selected.document
     refusal = frozen.unsupported_world(world)
     if refusal:
         raise SystemExit(refusal)
     try:
-        return sc.prepare(robot.robot(), robot.configuration(name), world, document)
+        prepared = sc.prepare(robot.robot(), robot.configuration(name), world, document)
     except ScenarioParameterError as exc:
         text = str(exc)
         raise SystemExit(text if text.startswith("ERROR") else f"ERROR: {text}") from exc
+    # The world that was loaded and checked. The manifests name this one (#39).
+    prepared.world = world
+    prepared.world_source = selected
+    return prepared
 
 
 def trial_count(plan: dict, override: int | None) -> int:
@@ -372,6 +377,56 @@ def world_sha256(root: Path, lock: dict) -> str:
     )
 
 
+def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dict:
+    """``{"id", "version", "sha256"}`` of the world this run loaded.
+
+    A file read from ``sources.world`` or pins.json is named by the sha256 of
+    its bytes. Lock ``world`` fields and the file's own ``id`` and
+    ``content_version`` must agree with it; any disagreement is an ERROR. Only
+    a world supplied by the adapter, with no file read here, takes its sha256
+    from lock ``world.sha256`` or the robot's pins.json, as before.
+    """
+    legacy = lock.get("world", {})
+    if not isinstance(legacy, dict):
+        raise SystemExit(
+            f"ERROR: {LOCK} world must be an object, got {legacy!r}. "
+            'Example: "world": {"id": "<world>", "version": "0.1.0"}'
+        )
+    where = {
+        "lock": f"lock sources.world {selected.path}",
+        "pins": f"pinned world {selected.path}",
+        "adapter": "the adapter's world",
+    }[selected.origin]
+    document = selected.document if isinstance(selected.document, dict) else {}
+    ident = {}
+    for key, field in (("id", "id"), ("version", "content_version")):
+        declared, named = legacy.get(key), document.get(field)
+        if declared is not None and named is not None and declared != named:
+            raise SystemExit(
+                f"ERROR: {LOCK} world.{key} is {declared!r} but {where} has "
+                f"{field} {named!r}. The run manifest would name a different world "
+                f"from the one loaded. Make world.{key} match the file or remove it."
+            )
+        ident[key] = declared if declared is not None else named
+        if not isinstance(ident[key], str) or not ident[key]:
+            raise SystemExit(
+                f"ERROR: world {key} is missing from {LOCK} world and from {where}. "
+                'Example: "world": {"id": "<world>", "version": "0.1.0"}'
+            )
+    if selected.sha256 is None:
+        ident["sha256"] = world_sha256(root, {**lock, "world": {**legacy, **ident}})
+        return ident
+    declared = legacy.get("sha256")
+    if declared is not None and declared != selected.sha256:
+        raise SystemExit(
+            f"ERROR: {LOCK} world.sha256 is {declared} but {where} is "
+            f"{selected.sha256}. The run manifest would name a different world from "
+            "the one loaded. Remove world.sha256 or set it to the loaded file's sha256."
+        )
+    ident["sha256"] = selected.sha256
+    return ident
+
+
 def robot_repo(root: Path, lock: dict) -> str:
     declared = lock.get("robot", {}).get("repo") if isinstance(lock.get("robot"), dict) else None
     if isinstance(declared, str) and declared:
@@ -534,8 +589,15 @@ def build_run_manifest(
     profile_sha256: str,
     robot_commit: str,
     adapter_sha: str,
+    world: dict | None = None,
 ) -> dict:
-    """``livingproof-run-manifest/0.1``, written before the first trial."""
+    """``livingproof-run-manifest/0.1``, written before the first trial.
+
+    ``world`` is ``world_identity`` of the loaded world. Without it the world
+    is resolved again from the lock, the same way ``prepare_run`` does.
+    """
+    if world is None:
+        world = world_identity(robot.root, lock, prepare_run(robot, name, lock).world_source)
     specs = lock.get("releases", {}).get("specs")
     if not isinstance(specs, dict):
         raise SystemExit(
@@ -561,9 +623,9 @@ def build_run_manifest(
         },
         "scenario": _require("scenario", scenario, _SCENARIO),
         "world": {
-            "id": lock["world"]["id"],
-            "version": lock["world"]["version"],
-            "sha256": world_sha256(robot.root, lock),
+            "id": world["id"],
+            "version": world["version"],
+            "sha256": _require("world.sha256", world["sha256"], _SHA256),
         },
         "simulator": {
             "engine": "mujoco",
@@ -602,9 +664,9 @@ def evidence(
     fetch(root)
     plan, prepared = recording(robot, lock, name)
     p = prepared.recorded
-    world = sources.world_document(root, lock)
-    if world is None:
-        world = robot.world()
+    world = prepared.world
+    # Before any output: a conflicting or unknown world identity writes nothing.
+    world_id = world_identity(root, lock, prepared.world_source)
     count = trial_count(plan, trials)
     offset = declared_offset(plan)
     out = Path(out)
@@ -637,6 +699,7 @@ def evidence(
             profile_sha,
             robot_commit,
             adapter_sha,
+            world_id,
         )
         # Before the first trial, as the run-manifest schema requires.
         (out / "run-manifest.json").write_text(json.dumps(document, indent=2) + "\n")
@@ -678,8 +741,8 @@ def evidence(
             "profile": json.loads((root / entry["path"]).read_text()),
         },
         "world": {
-            "id": lock["world"]["id"],
-            "version": lock["world"]["version"],
+            "id": world_id["id"],
+            "version": world_id["version"],
             "clear_width": world["dimensions"]["clear_width"],
             "route_length": p["route_length"],
             "exit_x": p["exit_x"],
