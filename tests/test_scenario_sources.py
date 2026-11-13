@@ -673,3 +673,92 @@ def test_no_override_run_manifest_world_is_unchanged(tmp_path, monkeypatch):
     assert (out / "trials" / "trial-01.json").read_bytes() == (
         GOLDEN / "trial-01.json"
     ).read_bytes()
+
+
+# Verification of #39 (Vera): hand checks on PR 40, kept as tests.
+LEGACY_WORLD = {"id": "hallway-open", "version": "0.1.0"}
+
+
+@pytest.mark.parametrize("origin", ["lock", "pins"])
+def test_lock_world_sha256_equal_to_the_loaded_file_is_accepted(tmp_path, monkeypatch, origin):
+    """A lock world.sha256 that names the loaded file is not a conflict, for either source."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    _edit_lock(repo, world=LEGACY_WORLD)
+    if origin == "lock":
+        _pin_world(repo, _named_world(clear=3.0))
+        loaded = _lock_world(repo, _named_world())
+    else:
+        loaded = _pin_world(repo, _named_world())
+    _edit_lock(repo, world={**LEGACY_WORLD, "sha256": loaded})
+    out = tmp_path / "out"
+    evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
+    run = json.loads((out / "run-manifest.json").read_text())
+    assert run["world"] == {**LEGACY_WORLD, "sha256": loaded}
+    assert evidence.prepare_run(
+        _toy.TOY, "stock", evidence.load_lock(repo)
+    ).world_source.origin == (origin)
+
+
+def test_locked_world_is_read_once_and_named_by_those_bytes(tmp_path, monkeypatch):
+    """The bytes checked against sources.world are the bytes parsed and attested."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    _edit_lock(repo, world=LEGACY_WORLD)
+    digest = _lock_world(repo, _named_world())
+    locked = (repo / "locked/world.json").resolve()
+    reads = []
+    real = Path.read_bytes
+
+    def counting(self):
+        data = real(self)
+        if self.resolve() == locked:
+            reads.append(hashlib.sha256(data).hexdigest())
+            if len(reads) > 1:  # a second read would see different bytes
+                return data.replace(b"1.6", b"9.9")
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", counting)
+    selected = sources.world_source(repo, evidence.load_lock(repo))
+    assert reads == [digest]
+    assert selected.origin == "lock" and selected.sha256 == digest
+    assert selected.document["dimensions"]["clear_width"] == 1.6
+
+
+def test_world_with_no_identity_anywhere_is_an_error_before_output(tmp_path, monkeypatch):
+    """No lock world entry and a source file without id: ERROR, and no output folder."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    lock_path = repo / "verification.lock.json"
+    lock = json.loads(lock_path.read_text())
+    del lock["world"]
+    lock_path.write_text(json.dumps(lock))
+    world = _named_world()
+    del world["id"]
+    _lock_world(repo, world)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="ERROR: world id is missing"):
+        evidence.evidence("test_evidence:TOY", "stock", out)
+    assert not out.exists()
+
+
+def test_media_uses_the_prepared_source_world_and_refuses_changed_bytes(tmp_path, monkeypatch):
+    """#39 item 6: media loads the world once, through the same checked source as evidence."""
+    pytest.importorskip("mcap")
+    pytest.importorskip("imageio_ffmpeg")
+    from livingproof_sim_mujoco import media
+
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    _edit_lock(repo, world=LEGACY_WORLD)
+    _pin_world(repo, _named_world(clear=3.0))
+    _lock_world(repo, _named_world())
+    evidence.evidence("test_evidence:TOY", "stock", tmp_path / "ev", trials=1)
+    verification = tmp_path / "verification.json"
+    verification.write_text(json.dumps({"trials": []}))
+    calls = []
+    real = sources.world_source
+    monkeypatch.setattr(sources, "world_source", lambda *a: calls.append(a) or real(*a))
+    doc = media.media("test_evidence:TOY", "stock", tmp_path / "ev", verification, tmp_path / "m")
+    assert len(calls) == 1 and len(doc["trials"]) == 1
+    # Same lock, different bytes at the source path: refused before any media folder.
+    (repo / "locked/world.json").write_text(json.dumps(_named_world(), indent=1))
+    with pytest.raises(SystemExit, match="ERROR: lock sources.world sha256 mismatch"):
+        media.media("test_evidence:TOY", "stock", tmp_path / "ev", verification, tmp_path / "m2")
+    assert not (tmp_path / "m2").exists()
