@@ -338,6 +338,27 @@ def test_verifier_traces_reproduce_exit_and_lateral():
         assert exit_time == obs["exit_time"]
 
 
+def test_packaging_keeps_the_git_subdirectory(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("package_tool", ROOT / "tools/package.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(
+        "mujoco==3.17.0 \\\n"
+        "    --hash=sha256:" + "ab" * 32 + "\n"
+        "livingproof-scenario-parameters @ git+https://example.test/specs@v2.2.0#subdirectory=python\n"
+        "    # via livingproof-sim-mujoco\n"
+    )
+    urls = module.separate_vcs(requirements)
+    assert urls == ["git+https://example.test/specs@v2.2.0#subdirectory=python"]
+    text = requirements.read_text()
+    assert "git+" not in text
+    assert "mujoco==3.17.0" in text
+    assert "# via livingproof-sim-mujoco" in text
+
+
 def test_scenario_names_stay_in_the_compatibility_modules():
     bad = []
     for base in ("src", "tools"):
