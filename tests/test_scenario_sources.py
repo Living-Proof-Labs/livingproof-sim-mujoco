@@ -521,3 +521,23 @@ def test_scenario_names_appear_only_in_compat_hallway():
             if name in text:
                 bad.append(f"{relative}: {name}")
     assert bad == []
+
+
+@pytest.mark.parametrize(
+    ("edit", "shown"),
+    [
+        (lambda d: d["parameters"]["command_speed"].__setitem__("value", 0.6), "0.6"),
+        (lambda d: d["command"].__setitem__("sideways", 0.1), "0.1"),
+        (lambda d: d["command"].__setitem__("turn_rate", 0.2), "0.2"),
+    ],
+)
+def test_only_the_constant_half_metre_forward_command_is_accepted(edit, shown):
+    """#40 step 3 item 5: constant [0.5, 0, 0] only; any other vector is an ERROR."""
+    document = json.loads(json.dumps(_catalog()["parameters.json"]))
+    toy = _toy()
+    assert scenario.prepare(toy.ROBOT, toy.CONF, toy.WORLD, document).command == [0.5, 0.0, 0.0]
+    edit(document)
+    with pytest.raises(ScenarioParameterError) as caught:
+        scenario.prepare(toy.ROBOT, toy.CONF, toy.WORLD, document)
+    assert caught.value.status == "ERROR"
+    assert "ERROR" in str(caught.value) and shown in str(caught.value)
