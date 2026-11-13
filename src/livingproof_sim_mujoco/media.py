@@ -1,4 +1,4 @@
-"""MCAP recordings of every walk-hallway trial and screencasts of two representative ones,
+"""MCAP recordings of every evidence trial and screencasts of two representative ones,
 for linking from the capability report. Never grades.
 
 Generic over robots (the same ``module:NAME`` adapter as ``livingproof_sim_mujoco.evidence``).
@@ -27,6 +27,7 @@ import mujoco
 import numpy as np
 
 from livingproof_sim_mujoco import evidence as ev
+from livingproof_sim_mujoco import sources
 from livingproof_sim_mujoco.pins import fetch, sha256
 
 FORMAT = "livingproof-hallway-media/2.0.0"
@@ -169,7 +170,9 @@ def _file(path: Path, out: Path) -> dict:
 
 
 def _record(args):
-    ref, name, index, status, plan, p, out, expected, start_offset = args
+    ref, name, index, status, plan, p, out, expected, start_offset, command, route, exit_place = (
+        args
+    )
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"trial-{index:02d}.mcap"
     video = out / "video" / f"trial-{index:02d}-{status.lower()}.mp4" if status else None
@@ -178,7 +181,17 @@ def _record(args):
     def hook(model, base_body):
         return Recorder(model, base_body, mcap_path=mcap, video_path=video, camera=camera)
 
-    obs = ev.run_trial(ref, name, plan, p, on_step=hook, start_offset=start_offset)
+    obs = ev.run_trial(
+        ref,
+        name,
+        plan,
+        p,
+        on_step=hook,
+        start_offset=start_offset,
+        command=command,
+        route=route,
+        exit_place=exit_place,
+    )
     got = hashlib.sha256(ev.observation_bytes(obs)).hexdigest()
     if got != expected:
         for path in (mcap, video):
@@ -205,7 +218,13 @@ def media(ref: str, name: str, evidence_dir: Path, verification: Path, out: Path
     lock = ev.load_lock(robot.root)
     if manifest["lock"]["content"] != lock:
         raise SystemExit(f"evidence was recorded with a different {ev.LOCK}")
-    plan, p = ev.recording(robot, lock, name)
+    plan, prepared = ev.recording(robot, lock, name)
+    p = prepared.recorded
+    world = sources.world_document(Path(robot.root), lock)
+    if world is None:
+        world = robot.world()
+    geometry = ev.sc.route_geometry(world, prepared.document)
+    route, exit_place = geometry if geometry else (None, None)
     picked = pick(json.loads(Path(verification).read_text()))
     offset = ev.declared_offset(plan)
     out = Path(out)
@@ -217,7 +236,20 @@ def media(ref: str, name: str, evidence_dir: Path, verification: Path, out: Path
     (stage / "mcap").mkdir(parents=True)
     (stage / "video").mkdir()
     work = [
-        (ref, name, t["index"], picked.get(t["index"]), plan, p, stage, t["sha256"], offset)
+        (
+            ref,
+            name,
+            t["index"],
+            picked.get(t["index"]),
+            plan,
+            p,
+            stage,
+            t["sha256"],
+            offset,
+            prepared.command,
+            route,
+            exit_place,
+        )
         for t in manifest["trials"]["results"]
     ]
     try:  # one process, in order: the same nominal trial as the evidence run

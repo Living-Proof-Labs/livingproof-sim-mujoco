@@ -1,0 +1,68 @@
+{
+  "$comment": "Machine-readable acceptance for walk-hallway 0.1.0 on hallway-open 0.1.0 (specs #40). The README Acceptance table states the same rules; the catalog tests keep them equal and reproduce the values capability-verifier v1.18.1 grades against (parameter-cases.json).",
+  "format": "livingproof-scenario-parameters/0.1",
+  "scenario": {"id": "walk-hallway", "revision": "0.1.0"},
+  "world": {"id": "hallway-open", "content_version": "0.1.0"},
+  "places": {
+    "start": "spawn-entrance",
+    "exit": "exit",
+    "route": "passage-centreline",
+    "through": []
+  },
+  "command": {
+    "mode": "constant",
+    "forward": {"parameter": "command_speed"},
+    "sideways": 0,
+    "turn_rate": 0
+  },
+  "parameters": {
+    "command_speed": {"value": 0.5, "unit": "m/s"},
+    "wall_clearance": {"by": "robot_class", "unit": "m", "values": {"humanoid": 0.05, "quadruped": 0.1}},
+    "trials": {"count": 1, "identical": true, "retries": false, "trial_policy": "all-required-v1", "run_rule": "every-trial-passes"}
+  },
+  "inputs": {
+    "route_length": {"kind": "quantity", "unit": "m", "source": "world", "rule": "route-length-from-start-to-exit", "text": "Distance along the route polyline from the point on it nearest the start pose to the route's last point, the exit reference point."},
+    "clear_width": {"kind": "quantity", "unit": "m", "source": "world", "path": "dimensions.clear_width", "text": "Distance between the inner faces of the walls."},
+    "robot_width": {"kind": "quantity", "unit": "m", "source": "robot-profile", "path": "dimensions.width", "text": "The robot's declared width."},
+    "robot_class": {"kind": "category", "source": "robot-profile", "path": "class", "text": "The robot's class, which selects its wall clearance."},
+    "fall_base_height": {"kind": "quantity", "unit": "m", "source": "configuration-profile", "path": "locomotion.fall_base_height", "text": "The lowest base height the selected configuration counts as upright."}
+  },
+  "limits": {
+    "time_limit": {
+      "unit": "s",
+      "expression": {"op": "add", "args": [{"op": "div", "args": [{"op": "mul", "args": [2, {"input": "route_length"}]}, {"parameter": "command_speed"}]}, 5]},
+      "formula": "2 × route_length ÷ command_speed + 5 s",
+      "round": {"decimals": 4, "mode": "half-even-binary"}
+    },
+    "lateral_limit": {
+      "unit": "m",
+      "expression": {"op": "sub", "args": [{"op": "div", "args": [{"input": "clear_width"}, 2]}, {"op": "div", "args": [{"input": "robot_width"}, 2]}]},
+      "formula": "clear_width ÷ 2 − robot_width ÷ 2",
+      "round": {"decimals": 4, "mode": "half-even-binary"}
+    },
+    "exit_segment": {
+      "unit": "m",
+      "expression": {"op": "div", "args": [{"input": "clear_width"}, 2]},
+      "formula": "clear_width ÷ 2, half the exit segment's length",
+      "round": {"decimals": 4, "mode": "half-even-binary"}
+    },
+    "fall_height": {
+      "unit": "m",
+      "expression": {"input": "fall_base_height"},
+      "formula": "locomotion.fall_base_height"
+    }
+  },
+  "preconditions": {
+    "fits_width": {
+      "condition": {"op": "le", "args": [{"op": "add", "args": [{"input": "robot_width"}, {"op": "mul", "args": [2, {"parameter": "wall_clearance"}]}]}, {"input": "clear_width"}]},
+      "formula": "robot_width + 2 × wall_clearance ≤ clear_width",
+      "quantize": {"decimals": 3, "mode": "half-up-decimal-text"}
+    }
+  },
+  "checks": [
+    {"evaluator": "hallway-exit-reached", "measure": "exit-crossing-time", "fail_when": "absent-or-greater-than-limit", "limit": "time_limit"},
+    {"evaluator": "hallway-lateral-limit", "measure": "max-distance-from-route", "fail_when": "greater-than-limit", "limit": "lateral_limit"},
+    {"evaluator": "hallway-wall-contact", "measure": "wall-contacts", "fail_when": "not-empty"},
+    {"evaluator": "hallway-fall", "measure": "min-base-height", "fail_when": "less-than-limit", "limit": "fall_height"}
+  ]
+}

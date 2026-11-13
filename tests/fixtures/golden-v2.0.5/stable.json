@@ -1,0 +1,54 @@
+{
+  "observation_sha256": "2ed9d9e2618130d76e2f737a306d4165e4cf1df76256e84d8d2c7dc451724d87",
+  "outcome": "crossed_exit",
+  "parameters": {
+    "command_speed": 0.5,
+    "exit_x": 0.5,
+    "fall_height": 0.1,
+    "lateral_limit": 0.6,
+    "route_length": 1.0,
+    "spawn": "spawn-entrance",
+    "time_limit": 9.0,
+    "wall_clearance": 0.05
+  },
+  "plan": {
+    "command_speed": 0.5,
+    "trials": {
+      "count": 1
+    }
+  },
+  "preconditions": [
+    {
+      "detail": "0.4 + 2 x clearance = 0.50 m vs 1.6 m",
+      "met": true,
+      "name": "fits_width"
+    },
+    {
+      "detail": "stock",
+      "met": true,
+      "name": "configuration_offered"
+    },
+    {
+      "detail": "interface velocity_command",
+      "met": true,
+      "name": "velocity_interface"
+    },
+    {
+      "detail": "simulators ['mujoco']",
+      "met": true,
+      "name": "simulator_declared"
+    }
+  ],
+  "start": {
+    "offset": null,
+    "pose": "nominal",
+    "spawn": "spawn-entrance"
+  },
+  "world": {
+    "clear_width": 1.6,
+    "exit_x": 0.5,
+    "id": "hallway-open",
+    "route_length": 1.0,
+    "version": "0.1.0"
+  }
+}

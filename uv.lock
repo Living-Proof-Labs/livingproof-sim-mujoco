@@ -292,11 +292,17 @@ wheels = [
 ]
 
 [[package]]
+name = "livingproof-scenario-parameters"
+version = "2.2.0"
+source = { git = "https://github.com/Living-Proof-Labs/robot-capability-specs?subdirectory=python&rev=v2.2.0#23bec516bda29be7b26555286cbf2e8217ac5c81" }
+
+[[package]]
 name = "livingproof-sim-mujoco"
 source = { editable = "." }
 default-groups = ["dev", "torch"]
 dependencies = [
     { name = "livingproof-common" },
+    { name = "livingproof-scenario-parameters" },
     { name = "mujoco" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -339,6 +345,7 @@ requires-dist = [
     { name = "imageio", marker = "extra == 'media'", specifier = ">=2.34" },
     { name = "imageio-ffmpeg", marker = "extra == 'media'", specifier = ">=0.5" },
     { name = "livingproof-common", url = "https://github.com/Living-Proof-Labs/livingproof-common/releases/download/v1.0.0/livingproof_common-1.0.0-py3-none-any.whl" },
+    { name = "livingproof-scenario-parameters", git = "https://github.com/Living-Proof-Labs/robot-capability-specs?subdirectory=python&rev=v2.2.0" },
     { name = "mcap", marker = "extra == 'media'", specifier = ">=1.2" },
     { name = "mujoco", specifier = "==3.17.0" },
     { name = "numpy", specifier = ">=1.26" },

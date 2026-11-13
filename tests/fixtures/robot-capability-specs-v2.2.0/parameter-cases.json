@@ -1,0 +1,493 @@
+{
+  "$comment": "Conformance cases for walk-hallway parameters.json (specs #40). Each case gives the input values as read from their sources and the limits and preconditions every implementation must resolve, or ERROR. Expected values were produced by running capability-verifier v1.18.1 hallway.thresholds() and hallway.fits_width() on the same inputs (half_width there is exit_segment here). tooling/scenario-parameters.mjs passes every case. The ERROR cases follow the schema's input rules; v1.18.1 reads .value without checking the unit.",
+  "format": "livingproof-scenario-parameter-cases/0.1",
+  "parameters": "parameters.json",
+  "cases": [
+    {
+      "name": "G1 width from livingproof-unitree-g1 robot.json",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.52,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.49,
+          "exit_segment": 0.75,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Go1 width from livingproof-unitree-go1 robot.json",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.282,
+          "unit": "m"
+        },
+        "robot_class": "quadruped",
+        "fall_base_height": {
+          "value": 0.18,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.609,
+          "exit_segment": 0.75,
+          "fall_height": 0.18
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "T1 width from livingproof-booster-t1 robot.json",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.541,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.45,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.4795,
+          "exit_segment": 0.75,
+          "fall_height": 0.45
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Lateral limit tie 0.40625 rounds to even, down",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.6875,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.4062,
+          "exit_segment": 0.75,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Lateral limit tie 0.21875 rounds to even, up",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 1.0625,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.2188,
+          "exit_segment": 0.75,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Lateral limit 0.40645 in decimal text is just below the tie in binary, so 0.4064",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.6871,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.4064,
+          "exit_segment": 0.75,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Time limit with a route of 5.53125 m",
+      "inputs": {
+        "route_length": 5.53125,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.52,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.125,
+          "lateral_limit": 0.49,
+          "exit_segment": 0.75,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Exact fit in millimetres: 1.03 + 2 × 0.05 = 1.13, false with raw floats",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.13,
+        "robot_width": {
+          "value": 1.03,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.05,
+          "exit_segment": 0.565,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Exact fit in millimetres: 1.3 + 2 × 0.05 = 1.4, false with raw floats",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.4,
+        "robot_width": {
+          "value": 1.3,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.05,
+          "exit_segment": 0.7,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Exact fit for a quadruped: 0.93 + 2 × 0.1 = 1.13",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.13,
+        "robot_width": {
+          "value": 0.93,
+          "unit": "m"
+        },
+        "robot_class": "quadruped",
+        "fall_base_height": {
+          "value": 0.3,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.1,
+          "exit_segment": 0.565,
+          "fall_height": 0.3
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "One millimetre too wide",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.13,
+        "robot_width": {
+          "value": 1.031,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.0495,
+          "exit_segment": 0.565,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": false
+        }
+      }
+    },
+    {
+      "name": "One millimetre too wide for a quadruped",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.13,
+        "robot_width": {
+          "value": 0.931,
+          "unit": "m"
+        },
+        "robot_class": "quadruped",
+        "fall_base_height": {
+          "value": 0.3,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.0995,
+          "exit_segment": 0.565,
+          "fall_height": 0.3
+        },
+        "preconditions": {
+          "fits_width": false
+        }
+      }
+    },
+    {
+      "name": "Half a millimetre rounds up: 1.0295 m is 1030 mm, fits",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.13,
+        "robot_width": {
+          "value": 1.0295,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.0502,
+          "exit_segment": 0.565,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": true
+        }
+      }
+    },
+    {
+      "name": "Half a millimetre rounds up: 1.0305 m is 1031 mm, does not fit",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.13,
+        "robot_width": {
+          "value": 1.0305,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "limits": {
+          "time_limit": 27.0,
+          "lateral_limit": 0.0497,
+          "exit_segment": 0.565,
+          "fall_height": 0.5
+        },
+        "preconditions": {
+          "fits_width": false
+        }
+      }
+    },
+    {
+      "name": "Robot width in centimetres is an ERROR",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 52,
+          "unit": "cm"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "error": "ERROR"
+      }
+    },
+    {
+      "name": "Fall height without a unit is an ERROR",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.52,
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5
+        }
+      },
+      "expect": {
+        "error": "ERROR"
+      }
+    },
+    {
+      "name": "A robot class with no wall clearance is an ERROR",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.52,
+          "unit": "m"
+        },
+        "robot_class": "wheeled",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "error": "ERROR"
+      }
+    },
+    {
+      "name": "A missing robot width is an ERROR",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "error": "ERROR"
+      }
+    },
+    {
+      "name": "A robot width that is not a number is an ERROR",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": "0.52",
+          "unit": "m"
+        },
+        "robot_class": "humanoid",
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "error": "ERROR"
+      }
+    },
+    {
+      "name": "A missing robot class is an ERROR",
+      "inputs": {
+        "route_length": 5.5,
+        "clear_width": 1.5,
+        "robot_width": {
+          "value": 0.52,
+          "unit": "m"
+        },
+        "fall_base_height": {
+          "value": 0.5,
+          "unit": "m"
+        }
+      },
+      "expect": {
+        "error": "ERROR"
+      }
+    }
+  ]
+}

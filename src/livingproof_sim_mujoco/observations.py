@@ -24,21 +24,102 @@ into and through them. Each wall's inner and outer faces come from its box geom.
   above zero; its ``depth`` is the largest intrusion while it lasts.
 - The trial ends ``left_hallway`` as soon as any robot part reaches past a wall's outer
   face (any part, not only the base: by then the robot is through the wall), or when the
-  base reaches the exit line outside the exit segment (|y| above the half-width). Only a
-  crossing within the segment ends ``crossed_exit``.
+  base reaches the exit line outside the exit segment. Only a step that
+  ``crosses_exit`` (previous sample strictly before the line, this sample on or
+  past it, and this sample within half the segment, endpoints included) ends
+  ``crossed_exit``. A consumer stops at the first such step.
 """
 
 from __future__ import annotations
 
+import math
 import warnings
 from collections.abc import Callable
 
 import mujoco
 import numpy as np
+from livingproof_scenario_parameters import crosses_exit, distance_to_route
 
 FORMAT = "livingproof-hallway-observation/2.0.0"
 DISTMAX = 0.25
 COLUMNS = ["t", "x", "y", "z", "wall_distance", "wall_intrusion"]
+
+
+def straight_crossing(exit_x: float, centreline_y: float, half_width: float) -> tuple[list, dict]:
+    """One straight leg ending on ``exit_x``, and the exit segment across it.
+
+    Used when the caller does not pass a route. ``half_width`` is half the
+    segment, so the lateral test matches the frozen ``|y - centreline|`` check.
+    """
+    half = half_width if math.isfinite(half_width) and half_width > 0 else 1.0e6
+    route = [[exit_x - 1.0, centreline_y, 0.0], [exit_x, centreline_y, 0.0]]
+    exit_place = {
+        "points": [
+            [exit_x, centreline_y - half, 0.0],
+            [exit_x, centreline_y + half, 0.0],
+        ],
+        "reference": [exit_x, centreline_y, 0.0],
+    }
+    return route, exit_place
+
+
+def _wide_exit(exit_place: dict) -> dict:
+    """Same exit line with the segment extended, so only the line test remains."""
+    reference = exit_place.get("reference")
+    start, end = exit_place["points"]
+    if reference is None:
+        reference = [(start[i] + end[i]) / 2 for i in range(len(start))]
+
+    def scale(point: list) -> list:
+        out = []
+        for index, coord in enumerate(point):
+            origin = reference[index] if index < len(reference) else 0.0
+            out.append(origin + (coord - origin) * 1.0e6)
+        return out
+
+    return {"points": [scale(start), scale(end)], "reference": list(reference)}
+
+
+def route_step(route: list, exit_place: dict, p0, p1) -> dict:
+    """Distance of ``p1`` from the route, and whether the step crosses the exit.
+
+    ``crosses`` is ``crosses_exit``. ``reached_line`` is the same step against a
+    wide segment, so the sample is on or past the exit line even when it is
+    outside the segment. A first sample (``p0`` is None) is not a step. Callers
+    stop at the first true ``crosses``.
+    """
+    distance = float(distance_to_route(route, p1))
+    # A point on the route can come back a couple of ulps above zero. That must
+    # not move the recorded lateral time, which stores four decimal places.
+    if distance < 1e-12:
+        distance = 0.0
+    if p0 is None:
+        return {"distance": distance, "crosses": False, "reached_line": False}
+    return {
+        "distance": distance,
+        "crosses": bool(crosses_exit(p0, p1, route, exit_place)),
+        "reached_line": bool(crosses_exit(p0, p1, route, _wide_exit(exit_place))),
+    }
+
+
+def consume_route(samples: list, route: list, exit_place: dict) -> dict:
+    """Walk samples and stop at the first exit crossing, or the first step past the line."""
+    previous = None
+    best = None
+    crossing = None
+    reached = None
+    for index, point in enumerate(samples):
+        step = route_step(route, exit_place, previous, point)
+        if best is None or step["distance"] > best:
+            best = step["distance"]
+        previous = point
+        if step["crosses"]:
+            crossing = index
+            break
+        if step["reached_line"] and reached is None:
+            reached = index
+            break
+    return {"max_distance": best, "crossing_index": crossing, "reached_index": reached}
 
 
 def wall_faces(model: mujoco.MjModel, walls: list[str]) -> dict[str, dict]:
@@ -234,17 +315,23 @@ def observe(
     sample_hz: float = 50.0,
     centreline_y: float = 0.0,
     on_step: Callable[[int, mujoco.MjData], None] | None = None,
+    route: list | None = None,
+    exit_place: dict | None = None,
 ) -> dict:
     """Run one trial from the current state and return its observations.
 
     ``step(data)`` advances one physics timestep (for example a policy step).
-    The trial ends when the base crosses ``exit_x``, after ``seconds``, or when the
-    state becomes non-finite. ``exit_x`` ends the recording; it is not a judgement.
+    The trial ends when the base crosses the exit segment, after ``seconds``, or
+    when the state becomes non-finite. Crossing the exit ends the recording; it
+    is not a judgement. Pass ``route`` and ``exit_place`` from the world. Without
+    them the exit is the straight line ``x = exit_x``.
     """
     distance = WallDistance(model, walls)
     faces = wall_faces(model, walls)
     reach = Reach(model)
     half_width = min((f["inner"] for f in faces.values()), default=float("inf"))
+    if route is None or exit_place is None:
+        route, exit_place = straight_crossing(exit_x, centreline_y, half_width)
     left = None
     base = model.body(base_body).id
     every = max(1, int(round(1 / (sample_hz * model.opt.timestep))))
@@ -252,6 +339,7 @@ def observe(
     end, exit_time = "time_limit", None
     lateral = {"value": -1.0, "time": None}
     height = {"value": float("inf"), "time": None}
+    previous = None
     for i in range(int(round(seconds / model.opt.timestep)) + 1):
         if on_step is not None:
             on_step(i, data)
@@ -270,8 +358,11 @@ def observe(
                 [t, round(x, 4), round(y, 4), round(z, 4), round(d, 4)]
                 + [None if deepest is None else round(deepest, 4)]
             )
-            if abs(y - centreline_y) > lateral["value"]:
-                lateral = {"value": round(abs(y - centreline_y), 4), "time": t}
+            point = [x, y, z]
+            along = route_step(route, exit_place, previous, point)
+            previous = point
+            if along["distance"] > lateral["value"]:
+                lateral = {"value": round(along["distance"], 4), "time": t}
             if z < height["value"]:
                 height = {"value": round(z, 4), "time": t}
             if deepest is not None and deepest >= 0.0:
@@ -287,17 +378,17 @@ def observe(
                 left = {"time": t, "via": through[0], "x": round(x, 4), "y": round(y, 4)}
                 end = "left_hallway"
                 break
-            if x >= exit_x:
-                if abs(y - centreline_y) <= half_width:
-                    exit_time, end = t, "crossed_exit"
-                else:
-                    left = {
-                        "time": t,
-                        "via": "exit-outside-segment",
-                        "x": round(x, 4),
-                        "y": round(y, 4),
-                    }
-                    end = "left_hallway"
+            if along["crosses"]:
+                exit_time, end = t, "crossed_exit"
+                break
+            if along["reached_line"]:
+                left = {
+                    "time": t,
+                    "via": "exit-outside-segment",
+                    "x": round(x, 4),
+                    "y": round(y, 4),
+                }
+                end = "left_hallway"
                 break
         step(data)
     return {

@@ -1,0 +1,41 @@
+{
+  "run_id": 43402628666,
+  "repository": "Living-Proof-Labs/livingproof-verification",
+  "url": "https://github.com/Living-Proof-Labs/livingproof-verification/actions/runs/43402628666",
+  "head_sha": "2bcdb51415a9394dec322b1e531cb8780b9d72e4",
+  "note": "artifact_digest is the zip digest in MANIFEST.json. file_sha256 is the copied trial observation.",
+  "files": [
+    {
+      "file": "g1-playground-trial-01.json",
+      "source": "unitree-g1-playground-mujoco-hallway-evidence-playground/trials/trial-01.json",
+      "artifact": "unitree-g1-playground-mujoco-hallway-evidence-playground",
+      "artifact_id": 14025806999,
+      "artifact_digest": "sha256:c76ca969829748fe66ac603a244dec1f429f05e223959d2b736206ffbbd86a8f",
+      "file_sha256": "48b6078f3deb763cd1595d727bff52baac95b335de96e57db1402ee6ece9840b"
+    },
+    {
+      "file": "g1-stock-trial-01.json",
+      "source": "unitree-g1-stock-mujoco-hallway-evidence-stock/trials/trial-01.json",
+      "artifact": "unitree-g1-stock-mujoco-hallway-evidence-stock",
+      "artifact_id": 14026261052,
+      "artifact_digest": "sha256:a227ea3dd0dfe5bef4c2a9dfebabe085a5e0bbbe90df937ea1c8fdc6623fefd8",
+      "file_sha256": "16223272b2ddd3e13b4053e2b756a61b251c1c2ff2d858a6936efbefa4120a46"
+    },
+    {
+      "file": "go1-playground-trial-01.json",
+      "source": "unitree-go1-playground-mujoco-hallway-evidence-playground/trials/trial-01.json",
+      "artifact": "unitree-go1-playground-mujoco-hallway-evidence-playground",
+      "artifact_id": 14026011352,
+      "artifact_digest": "sha256:f28113338bc2d5bd13fa17b3c32aebf91885bb22d704736c92b14a8009dc0def",
+      "file_sha256": "b4bb652ea8e3e177160edbca3b8872c21c9b97421558f288d6d660adb4662628"
+    },
+    {
+      "file": "t1-stock-trial-01.json",
+      "source": "booster-t1-stock-mujoco-hallway-evidence-stock/trials/trial-01.json",
+      "artifact": "booster-t1-stock-mujoco-hallway-evidence-stock",
+      "artifact_id": 14024954414,
+      "artifact_digest": "sha256:0a5dab2180caf67f0fad667268295a83a60356d559edc2d717a6c621bce19e0a",
+      "file_sha256": "885bffa4f214a5afe5b1e8822158723536ead5fb5dac6a1ce7659f401e8f0daa"
+    }
+  ]
+}

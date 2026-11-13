@@ -251,8 +251,13 @@ def test_installed_wheel_records_the_build_commit(tmp_path):
         outside_python = outside_venv / "bin" / "python"
         _install(outside_python, wheel)
         site = _site(outside_python)
-        directs = _direct_urls(site)
-        assert directs, "a wheel install writes PEP 610 direct_url.json"
+        # Dependencies installed from git (livingproof-scenario-parameters
+        # from the specs tag) carry their own commit_id, so read only this
+        # package's record. Glob order is filesystem order, not sorted.
+        directs = [
+            d for d in _direct_urls(site) if d.parent.name.startswith("livingproof_sim_mujoco-")
+        ]
+        assert len(directs) == 1, "a wheel install writes PEP 610 direct_url.json"
         recorded = json.loads(directs[0].read_text(encoding="utf-8"))
         assert not (recorded.get("vcs_info") or {}).get("commit_id")
 

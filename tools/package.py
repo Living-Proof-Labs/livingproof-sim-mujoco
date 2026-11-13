@@ -18,6 +18,33 @@ def run(*args, **kwargs):
     subprocess.run(args, check=True, **kwargs)
 
 
+def separate_vcs(requirements: Path) -> list[str]:
+    """Git URLs from a lock export, removed so hashed downloads can proceed.
+
+    ``pip download --require-hashes`` cannot hash a version-control requirement.
+    The project dependency stays a git tag. Packaging builds that tag into a
+    wheel and downloads every other requirement by its lock hash.
+    """
+    urls = []
+    kept = []
+    for line in requirements.read_text().splitlines(keepends=True):
+        if line.lstrip().startswith("#"):
+            kept.append(line)
+            continue
+        body = line
+        for index, char in enumerate(line):
+            if char == "#" and (index == 0 or line[index - 1].isspace()):
+                body = line[:index]
+                break
+        body = body.strip().rstrip("\\").strip()
+        if " @ git+" in body:
+            urls.append(body.split(" @ ", 1)[1])
+            continue
+        kept.append(line)
+    requirements.write_text("".join(kept))
+    return urls
+
+
 def main():
     if sys.version_info[:2] != (3, 11) or platform.machine() != "x86_64":
         raise SystemExit(
@@ -44,6 +71,18 @@ def main():
     )
     wheelhouse = out / "wheelhouse"
     wheelhouse.mkdir()
+    for url in separate_vcs(out / "requirements.txt"):
+        run(
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "-w",
+            str(wheelhouse),
+            url,
+            env={**os.environ, "SOURCE_DATE_EPOCH": "315532800"},
+        )
     run(
         sys.executable,
         "-m",

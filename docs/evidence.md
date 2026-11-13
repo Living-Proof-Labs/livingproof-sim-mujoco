@@ -68,6 +68,24 @@ records observations and does not grade the robot. The manifest format is
 `livingproof-hallway-evidence/2.0.0`. Its `plan` records `trials.count` and does not
 copy `seeds` or `required_passes` from the lock.
 
+The world file and the scenario parameter file come from the robot's
+`verification.lock.json` when `sources.world` or `sources.parameters` names a
+path and a sha256. A mismatch is an ERROR and the pins file is not used. With
+no lock entry, the file is taken from the robot's `pins.json`. That fallback
+remains until robot repositories stop pinning those files (robot-capability-specs
+issue 40, step 7). If the pins do not list the parameter file either, the
+runner uses its copy of robot-capability-specs v2.2.0 `parameters.json`, checked
+by sha256. The velocity command is that file's `command`. Only mode `constant`
+is accepted; any other mode is an ERROR. On the straight open hallway the
+command is `[0.5, 0, 0]`.
+
+A world whose format is `livingproof-world/0.2` is an ERROR. This release does
+not yet write a neutral observation for that format, and it does not write the
+frozen hallway observation for it. Limits in the frozen hallway record stay as
+they were recorded before: `lateral_limit` to 6 decimal places and `time_limit`
+unrounded. The parameter file's own rounding is what `resolve` returns and what
+a later neutral record will store.
+
 - Exit 0: the observations were recorded. An unmet precondition is also exit 0: no trial runs, and the manifest says so.
 - Exit 1: the lock, plan, or manifest is unusable. Those are `SystemExit` messages. One case is an unknown adapter commit: no manifest is written.
 - Exit 2: the command line is unusable (argparse).

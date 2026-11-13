@@ -1,7 +1,7 @@
 {
   "repository": "Living-Proof-Labs/robot-capability-specs",
-  "tag": "v2.0.2",
-  "commit": "16524cbfeef18ff0454ebf125668b010d38a3993",
+  "tag": "v2.2.0",
+  "commit": "23bec516bda29be7b26555286cbf2e8217ac5c81",
   "path": "specs/worlds",
   "files": {
     "hallway-result.schema.json": "4cd821bd4ffdb1c2b353f2799f664be13e618dfa3c391fa4c9731f28656236e2",

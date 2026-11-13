@@ -1,0 +1,80 @@
+{
+  "$comment": "Conformance cases for distance to a route polyline and for a step crossing the exit segment. The definitions are the place terms in scenario-parameters.schema.json (checks) and specs/scenarios/walk-hallway/README.md (Places, not axes). Distances are in the floor plane. The first leg extends backward past the route start and the last leg extends forward past the route end, so a point past an end is measured sideways. A single leg is that line in both directions. The interior end of a leg is not extended, so the legs do not extend through a corner. Cutting an inside corner uses the nearer leg. Outside a corner, overshoot is measured from the vertex, so at a right-angle corner the distance is stricter than the walls by up to √2; for a turn of φ the factor is 1 / cos(φ/2). A step crosses when the first sample is strictly before the exit line and the second sample is on or past it, on the side the route's last leg points toward, and that second sample is within half the segment's length of the exit reference along the segment, endpoints included. The point where the step meets the line is not tested. A step that starts already on or past the line does not cross again. On the straight hallway-open route, lateral distance is |y| and a forward step crosses at x >= 3 with |y| <= 0.75 at the second sample. On this L-shaped route the last leg points +y, so a forward step crosses at y >= 3 with |x| <= 0.75 at the second sample. The numbers below are those closed forms, checked by hand. tooling/world-layout.mjs and the Python package both have to match them.",
+  "format": "livingproof-route-geometry-cases/0.1",
+  "cases": [
+    {
+      "name": "hallway-open passage-centreline",
+      "route": [[-3, 0, 0], [3, 0, 0]],
+      "exit": {
+        "points": [[3, -0.75, 0], [3, 0.75, 0]],
+        "reference": [3, 0, 0]
+      },
+      "distances": [
+        {"name": "on the route", "point": [0, 0, 0], "distance": 0},
+        {"name": "lateral equals |y|", "point": [0, 0.5, 0], "distance": 0.5},
+        {"name": "lateral equals |y| on the other side", "point": [1.5, -0.75, 0], "distance": 0.75},
+        {"name": "past the exit, measured sideways", "point": [4, 0.25, 0], "distance": 0.25},
+        {"name": "before the entrance, measured sideways", "point": [-4, 0.5, 0], "distance": 0.5},
+        {"name": "route start endpoint", "point": [-3, 0, 0], "distance": 0},
+        {"name": "route end endpoint", "point": [3, 0, 0], "distance": 0},
+        {"name": "exit endpoint is still lateral |y|", "point": [3, 0.75, 0], "distance": 0.75}
+      ],
+      "crossings": [
+        {"name": "crosses inside the segment", "p0": [2, 0, 0], "p1": [4, 0, 0], "crosses": true},
+        {"name": "lands on the line", "p0": [2, 0, 0], "p1": [3, 0, 0], "crosses": true},
+        {"name": "inclusive endpoint y = 0.75", "p0": [2, 0.75, 0], "p1": [4, 0.75, 0], "crosses": true},
+        {"name": "inclusive endpoint y = -0.75", "p0": [2, -0.75, 0], "p1": [4, -0.75, 0], "crosses": true},
+        {"name": "meeting point on the endpoint, second sample is outside", "p0": [2.5, 0, 0], "p1": [3.5, 1.5, 0], "crosses": false, "because": "meets (3, 0.75); second sample is at y = 1.5"},
+        {"name": "diagonal just outside the endpoint", "p0": [2.5, 0, 0], "p1": [3.5, 2, 0], "crosses": false, "because": "second sample is at y = 2"},
+        {"name": "meeting point outside the segment, second sample is inside", "p0": [2, 2, 0], "p1": [4, 0, 0], "crosses": true, "because": "meets (3, 1); second sample is at y = 0"},
+        {"name": "one centimetre step, second sample is inside", "p0": [2.996, 0.7525, 0], "p1": [3.006, 0.7495, 0], "crosses": true, "because": "meeting y is past 0.75; second sample y = 0.7495"},
+        {"name": "one centimetre step, second sample is outside", "p0": [2.996, 0.7475, 0], "p1": [3.006, 0.7505, 0], "crosses": false, "because": "meeting y is within 0.75; second sample y = 0.7505"},
+        {"name": "outside at |y| = 1", "p0": [2, 1, 0], "p1": [4, 1, 0], "crosses": false},
+        {"name": "already on the line", "p0": [3, 0, 0], "p1": [4, 0, 0], "crosses": false},
+        {"name": "already past", "p0": [3.5, 0, 0], "p1": [4, 0, 0], "crosses": false},
+        {"name": "against the last leg", "p0": [4, 0, 0], "p1": [2, 0, 0], "crosses": false},
+        {"name": "stays before the line", "p0": [0, 0, 0], "p1": [2.5, 0, 0], "crosses": false},
+        {"name": "crosses through the reference", "p0": [2, -0.5, 0], "p1": [4, 0.5, 0], "crosses": true, "because": "second sample y = 0.5"},
+        {"name": "meeting point inside the segment, second sample is outside", "p0": [2, -1, 0], "p1": [4, 1, 0], "crosses": false, "because": "meets (3, 0); second sample is at y = 1"}
+      ]
+    },
+    {
+      "name": "L-shaped route",
+      "route": [[-3, 0, 0], [0, 0, 0], [0, 3, 0]],
+      "exit": {
+        "points": [[-0.75, 3, 0], [0.75, 3, 0]],
+        "reference": [0, 3, 0]
+      },
+      "distances": [
+        {"name": "on the first leg", "point": [-2, 0, 0], "distance": 0},
+        {"name": "on the last leg", "point": [0, 2, 0], "distance": 0},
+        {"name": "corner endpoint", "point": [0, 0, 0], "distance": 0},
+        {"name": "route start endpoint", "point": [-3, 0, 0], "distance": 0},
+        {"name": "route end endpoint", "point": [0, 3, 0], "distance": 0},
+        {"name": "past the exit, measured sideways", "point": [0.25, 4, 0], "distance": 0.25},
+        {"name": "before the start, measured sideways", "point": [-4, 0.5, 0], "distance": 0.5},
+        {"name": "outside the corner, nearer the last leg", "point": [0.5, 0.5, 0], "distance": 0.5},
+        {"name": "beyond the corner, first leg is not extended forward", "point": [1, 0, 0], "distance": 1},
+        {"name": "below the corner, last leg is not extended backward", "point": [0, -1, 0], "distance": 1},
+        {"name": "tie at the corner from both legs", "point": [0.5, 0, 0], "distance": 0.5},
+        {"name": "beside the first leg", "point": [-1, 0.25, 0], "distance": 0.25}
+      ],
+      "crossings": [
+        {"name": "crosses inside the segment", "p0": [0, 2, 0], "p1": [0, 4, 0], "crosses": true},
+        {"name": "lands on the line", "p0": [0, 2, 0], "p1": [0, 3, 0], "crosses": true},
+        {"name": "inclusive endpoint x = 0.75", "p0": [0.75, 2, 0], "p1": [0.75, 4, 0], "crosses": true},
+        {"name": "inclusive endpoint x = -0.75", "p0": [-0.75, 2, 0], "p1": [-0.75, 4, 0], "crosses": true},
+        {"name": "diagonal through the reference", "p0": [0.5, 2, 0], "p1": [-0.5, 4, 0], "crosses": true, "because": "meets (0, 3)"},
+        {"name": "outside at |x| = 1", "p0": [1, 2, 0], "p1": [1, 4, 0], "crosses": false},
+        {"name": "already on the line", "p0": [0, 3, 0], "p1": [0, 4, 0], "crosses": false},
+        {"name": "already past", "p0": [0, 3.5, 0], "p1": [0, 4, 0], "crosses": false},
+        {"name": "against the last leg", "p0": [0, 4, 0], "p1": [0, 2, 0], "crosses": false},
+        {"name": "stays before the line", "p0": [0, 1, 0], "p1": [0, 2.5, 0], "crosses": false},
+        {"name": "lands on the endpoint", "p0": [0.75, 1, 0], "p1": [0.75, 3, 0], "crosses": true},
+        {"name": "meeting point on the endpoint, second sample is outside", "p0": [0, 2.5, 0], "p1": [1.5, 3.5, 0], "crosses": false, "because": "meets (0.75, 3); second sample is at x = 1.5"},
+        {"name": "diagonal just outside the endpoint", "p0": [0, 2.5, 0], "p1": [2, 3.5, 0], "crosses": false, "because": "second sample is at x = 2"},
+        {"name": "meeting point outside the segment, second sample is inside", "p0": [2, 2, 0], "p1": [0, 4, 0], "crosses": true, "because": "meets (1, 3); second sample is at x = 0"}
+      ]
+    }
+  ]
+}
