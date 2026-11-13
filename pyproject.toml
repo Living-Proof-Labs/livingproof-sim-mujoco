@@ -9,7 +9,7 @@ description = "Bounded native MuJoCo model loading and headless physics stepping
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["mujoco==3.17.0", "onnxruntime==1.31.1", "numpy>=1.26", "livingproof-common @ https://github.com/Living-Proof-Labs/livingproof-common/releases/download/v1.0.0/livingproof_common-1.0.0-py3-none-any.whl"]
+dependencies = ["mujoco==3.17.0", "onnxruntime==1.31.1", "numpy>=1.26", "livingproof-common @ https://github.com/Living-Proof-Labs/livingproof-common/releases/download/v1.0.0/livingproof_common-1.0.0-py3-none-any.whl", "livingproof-scenario-parameters @ git+https://github.com/Living-Proof-Labs/robot-capability-specs@v2.2.0#subdirectory=python"]
 
 [project.optional-dependencies]
 # TorchScript policies (for example unitree_rl_gym motion.pt), CPU wheels

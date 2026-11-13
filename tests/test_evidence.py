@@ -11,19 +11,30 @@ import pytest
 from livingproof_sim_mujoco import evidence, observations, pins, scenario
 
 WORLD = {
+    "format": "livingproof-world/0.1",
     "dimensions": {"clear_width": 1.6},
     "places": [
-        {"name": "spawn-entrance", "position": [-0.5, 0.0, 0.0]},
-        {"name": "exit", "reference": [0.5, 0.0, 0.0]},
+        {"name": "spawn-entrance", "type": "pose", "position": [-0.5, 0.0, 0.0], "yaw_deg": 0.0},
+        {
+            "name": "exit",
+            "type": "segment",
+            "points": [[0.5, -0.8, 0.0], [0.5, 0.8, 0.0]],
+            "reference": [0.5, 0.0, 0.0],
+        },
+        {
+            "name": "passage-centreline",
+            "type": "polyline",
+            "points": [[-0.5, 0.0, 0.0], [0.5, 0.0, 0.0]],
+        },
     ],
 }
 ROBOT = {
     "class": "humanoid",
-    "dimensions": {"width": {"value": 0.4}},
+    "dimensions": {"width": {"value": 0.4, "unit": "m"}},
     "simulators": ["mujoco"],
 }
 CONF = {
-    "locomotion": {"fall_base_height": {"value": 0.1}},
+    "locomotion": {"fall_base_height": {"value": 0.1, "unit": "m"}},
     "controller": {"interface": "velocity_command"},
 }
 XML = """<mujoco><option timestep="0.002"/><worldbody>

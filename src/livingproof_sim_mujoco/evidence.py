@@ -1,4 +1,4 @@
-"""walk-hallway sim evidence for the capability verifier. Records observations; never grades.
+"""Sim evidence for the capability verifier. Records observations; never grades.
 
 Generic over robots: a robot package supplies a ``Robot`` adapter (robot-specific data and
 code: scene/model build, controller and policy, nominal initial state, profiles) and this
@@ -29,7 +29,11 @@ from typing import Any, Protocol
 
 import mujoco
 
+from livingproof_scenario_parameters import ScenarioParameterError
+
 from livingproof_sim_mujoco import scenario as sc
+from livingproof_sim_mujoco import sources
+from livingproof_sim_mujoco.compat import hallway as frozen
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
 
@@ -111,7 +115,29 @@ def locked_configuration(lock: dict, name: str, root: Path) -> dict:
 
 
 def parameters(robot: Robot, name: str) -> dict:
-    return sc.parameters(robot.robot(), robot.configuration(name), robot.world())
+    return prepare_run(robot, name).recorded
+
+
+def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepared:
+    """Parameters, command and world for one configuration.
+
+    The verification lock's ``sources`` entry wins. With no entry, the robot
+    pins are used, then the vendored parameter file. See ``sources``.
+    """
+    root = Path(robot.root)
+    lock = load_lock(root) if lock is None else lock
+    document, _source = sources.parameters_document_for(root, lock)
+    world = sources.world_document(root, lock)
+    if world is None:
+        world = robot.world()
+    refusal = frozen.unsupported_world(world)
+    if refusal:
+        raise SystemExit(refusal)
+    try:
+        return sc.prepare(robot.robot(), robot.configuration(name), world, document)
+    except ScenarioParameterError as exc:
+        text = str(exc)
+        raise SystemExit(text if text.startswith("ERROR") else f"ERROR: {text}") from exc
 
 
 def trial_count(plan: dict, override: int | None) -> int:
@@ -177,7 +203,18 @@ def nominal_start(robot, model, data, ctrl, spawn: str, start_offset: dict | Non
         robot.initial_state(model, data, ctrl, spawn, start_offset=start_offset)
 
 
-def run_trial(ref: str, name: str, plan: dict, p: dict, on_step=None, *, start_offset=None) -> dict:
+def run_trial(
+    ref: str,
+    name: str,
+    plan: dict,
+    p: dict,
+    on_step=None,
+    *,
+    start_offset=None,
+    command: list[float] | None = None,
+    route: list | None = None,
+    exit_place: dict | None = None,
+) -> dict:
     """One trial at the nominal pose through ``observations.observe``.
 
     ``on_step`` (for example ``livingproof_sim_mujoco.media.Recorder``) only reads
@@ -195,7 +232,8 @@ def run_trial(ref: str, name: str, plan: dict, p: dict, on_step=None, *, start_o
     policy = robot.policy(model, ctrl)
     data = mujoco.MjData(model)
     nominal_start(robot, model, data, ctrl, p["spawn"], start_offset)
-    command = [plan["command_speed"], 0.0, 0.0]
+    if command is None:
+        command = [p["command_speed"], 0.0, 0.0]
     hook = on_step(model, robot.base_body(name)) if on_step is not None else None
     obs = observe(
         model,
@@ -207,6 +245,8 @@ def run_trial(ref: str, name: str, plan: dict, p: dict, on_step=None, *, start_o
         seconds=p["time_limit"],
         sample_hz=rs["sample_hz"],
         on_step=hook,
+        route=route,
+        exit_place=exit_place,
     )
     if hook is not None:
         hook.close()
@@ -280,13 +320,13 @@ def unmet_required(preconditions: list) -> dict | None:
     return None
 
 
-def recording(robot: Robot, lock: dict, name: str) -> tuple[dict, dict]:
-    """(plan, scenario parameters) exactly as every evidence trial is recorded."""
-    plan = lock["plan"]
-    p = parameters(robot, name)
-    # Recording length only; the verifier applies the scenario's time limit.
-    p["time_limit"] = 2 * p["route_length"] / plan["command_speed"] + 5
-    return plan, p
+def recording(robot: Robot, lock: dict, name: str) -> tuple[dict, sc.Prepared]:
+    """(plan, prepared scenario) exactly as every evidence trial is recorded.
+
+    ``time_limit`` is the parameter file's expression. The frozen scenario
+    records it unrounded; the spec-rounded value is what ``resolve`` returns.
+    """
+    return lock["plan"], prepare_run(robot, name, lock)
 
 
 def executed_plan(plan: dict, count: int) -> dict:
@@ -328,7 +368,7 @@ def world_sha256(root: Path, lock: dict) -> str:
     raise SystemExit(
         f"world {ident} has no sha256 in {LOCK} or pins.json. "
         "Add world.sha256 or pin the world file. "
-        'Example: "world": {"id": "hallway-open", "version": "0.1.0", "sha256": "<64 hex>"}'
+        'Example: "world": {"id": "<world>", "version": "0.1.0", "sha256": "<64 hex>"}'
     )
 
 
@@ -500,9 +540,9 @@ def build_run_manifest(
     if not isinstance(specs, dict):
         raise SystemExit(
             f"{LOCK} releases.specs needs a tag and commit. "
-            'Example: "specs": {"tag": "v2.0.2", "commit": "<40 hex>"}'
+            'Example: "specs": {"tag": "v2.2.0", "commit": "<40 hex>"}'
         )
-    scenario = lock.get("scenario", sc.SCENARIO)
+    scenario = lock.get("scenario", frozen.SCENARIO)
     parameters_out = {}
     for key, value in p.items():
         if isinstance(value, bool) or isinstance(value, (int, float, str)):
@@ -560,17 +600,25 @@ def evidence(
         raise SystemExit(f"{LOCK} has PENDING_RELEASE refs ({', '.join(waiting)}); run task repin")
     entry = locked_configuration(lock, name, root)
     fetch(root)
-    world = robot.world()
-    plan, p = recording(robot, lock, name)
+    plan, prepared = recording(robot, lock, name)
+    p = prepared.recorded
+    world = sources.world_document(root, lock)
+    if world is None:
+        world = robot.world()
     count = trial_count(plan, trials)
     offset = declared_offset(plan)
     out = Path(out)
     (out / "trials").mkdir(parents=True, exist_ok=False)
     created = dt.datetime.now(dt.timezone.utc)
-    run_id = f"walk-hallway-{robot.id}-{name}-{created:%Y%m%dT%H%M%SZ}"
+    run_id = frozen.evidence_run_id(lock.get("scenario", frozen.SCENARIO), robot.id, name, created)
     profile = robot.robot()
     checked = sc.preconditions(
-        profile, world, name, robot.configuration, width_decimals=robot.width_decimals
+        profile,
+        world,
+        name,
+        robot.configuration,
+        prepared.document,
+        width_decimals=robot.width_decimals,
     )
     unmet = unmet_required(checked)
     profile_sha = sha256(root / "robot.json")
@@ -594,7 +642,18 @@ def evidence(
         (out / "run-manifest.json").write_text(json.dumps(document, indent=2) + "\n")
         for index in range(1, count + 1):
             t0 = time.perf_counter()
-            obs = run_trial(ref, name, plan, p, start_offset=offset)
+            geometry = sc.route_geometry(world, prepared.document)
+            route, exit_place = geometry if geometry else (None, None)
+            obs = run_trial(
+                ref,
+                name,
+                plan,
+                p,
+                start_offset=offset,
+                command=prepared.command,
+                route=route,
+                exit_place=exit_place,
+            )
             results.append(_write_trial(out, index, obs, time.perf_counter() - t0))
     wall_clock_s = round(time.perf_counter() - started, 3)
     report = reproducibility(results)

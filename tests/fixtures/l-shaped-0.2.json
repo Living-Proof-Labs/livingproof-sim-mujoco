@@ -1,0 +1,59 @@
+{
+  "format": "livingproof-world/0.2",
+  "id": "test-l-shaped",
+  "content_version": "0.0.1",
+  "title": "Synthetic L-shaped test world",
+  "description": "Test fixture only, not a released world: two 1.50 m hallways meeting at a right angle. It shows that the schema and validator accept a layout that is not a straight hallway. The specification fields are placeholders.",
+  "specification": {
+    "repository": "Living-Proof-Labs/robot-capability-specs",
+    "path": "specs/worlds/README.md",
+    "tag": "v0.0.0",
+    "commit": "0000000000000000000000000000000000000000",
+    "document_revision": "0.3.0",
+    "world_contract_revision": "0.3.0"
+  },
+  "units": "m",
+  "frame": {
+    "handedness": "right",
+    "origin": "centre of the corner square, on the floor top surface",
+    "axes": {
+      "x": "along the first hallway, towards the corner",
+      "y": "along the second hallway, from the corner to the exit",
+      "z": "up"
+    },
+    "pose": "position (x, y, z) plus yaw in degrees, positive about +z"
+  },
+  "dimensions": {
+    "clear_width": 1.5,
+    "wall_height": 2.5,
+    "wall_thickness": 0.15,
+    "floor_thickness": 0.1
+  },
+  "tolerances": {
+    "distance_m": 0.01,
+    "angle_deg": 0.5
+  },
+  "provenance": {
+    "authors": [
+      "Living Proof Labs contributors"
+    ],
+    "method": "Written by hand as a test fixture; no third-party assets.",
+    "assets": []
+  },
+  "license": "Apache-2.0",
+  "geometry": [
+    {"name": "floor-first", "type": "box", "role": "floor", "centre": [-1.05, 0.0, -0.05], "size": [3.9, 1.8, 0.1]},
+    {"name": "floor-second", "type": "box", "role": "floor", "centre": [0.0, 1.95, -0.05], "size": [1.8, 2.1, 0.1]},
+    {"name": "wall-outer-first", "type": "box", "role": "wall", "centre": [-1.05, -0.825, 1.25], "size": [3.9, 0.15, 2.5]},
+    {"name": "wall-outer-second", "type": "box", "role": "wall", "centre": [0.825, 1.125, 1.25], "size": [0.15, 3.75, 2.5]},
+    {"name": "wall-inner-first", "type": "box", "role": "wall", "centre": [-1.875, 0.825, 1.25], "size": [2.25, 0.15, 2.5]},
+    {"name": "wall-inner-second", "type": "box", "role": "wall", "centre": [-0.825, 1.95, 1.25], "size": [0.15, 2.1, 2.5]}
+  ],
+  "places": [
+    {"name": "entrance", "type": "segment", "points": [[-3.0, -0.75, 0.0], [-3.0, 0.75, 0.0]], "reference": [-3.0, 0.0, 0.0]},
+    {"name": "exit", "type": "segment", "points": [[-0.75, 3.0, 0.0], [0.75, 3.0, 0.0]], "reference": [0.0, 3.0, 0.0]},
+    {"name": "corner", "type": "region", "x": [-0.75, 0.75], "y": [-0.75, 0.75]},
+    {"name": "route-centreline", "type": "polyline", "points": [[-3.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 3.0, 0.0]]},
+    {"name": "spawn-entrance", "type": "pose", "position": [-2.5, 0.0, 0.0], "yaw_deg": 0.0}
+  ]
+}

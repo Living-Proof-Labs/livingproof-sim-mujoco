@@ -17,14 +17,43 @@ import mujoco
 import numpy as np
 
 from livingproof_sim_mujoco import pins
+from livingproof_sim_mujoco import sources
+from livingproof_sim_mujoco.compat.hallway import FROZEN_WORLD_PATH as WORLD
 
-WORLD = "worlds/hallway-open/0.1.0/world.json"
 PLACE = "place:"
 
+__all__ = [
+    "PLACE",
+    "WORLD",
+    "add_world",
+    "actuator_table",
+    "load_world",
+    "place_pose",
+    "to_pd_torque",
+]
 
-def load_world(root: Path, path: str = WORLD) -> dict:
-    """The pinned world document from the robot repository's ``worlds`` pin group."""
-    return json.loads(pins.local("worlds", path, root).read_text())
+
+def load_world(root: Path, path: str | None = None) -> dict:
+    """World document for ``root``.
+
+    An explicit ``path`` is that file in the robot's ``worlds`` pin group.
+    With no path, a verification-lock ``sources.world`` entry wins and its
+    sha256 is checked. When the lock has no entry, the robot's pins.json is
+    used. ``WORLD`` remains the historical pins path robot packages import.
+    """
+    root = Path(root)
+    if path is not None:
+        return json.loads(pins.local("worlds", path, root).read_text())
+    lock_path = root / "verification.lock.json"
+    lock = json.loads(lock_path.read_text()) if lock_path.is_file() else None
+    found = sources.world_document(root, lock)
+    if found is None:
+        raise SystemExit(
+            "ERROR: no world file in the verification lock or pins.json. "
+            "Add sources.world with a sha256, or pin the world file. "
+            'Example: "sources": {"world": {"path": "world.json", "sha256": "<64 hex>"}}'
+        )
+    return found
 
 
 def add_world(spec: mujoco.MjSpec, world: dict) -> list[str]:

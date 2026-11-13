@@ -36,8 +36,8 @@ def by_name(result):
 def test_pin_names_tag_and_full_commit(loaded):
     pin = loaded["pin"]
     assert pin["repository"] == "Living-Proof-Labs/livingproof-worlds"
-    assert pin["tag"] == "v1.1.0"
-    assert pin["commit"] == "9b3e7119aa93a3370383227fb30bd39a9dd72b4b"
+    assert pin["tag"] == "v1.2.0"
+    assert pin["commit"] == "ace98f1a7251f1f61fdf999d090b1e91c3dc258a"
     assert loaded["world"]["specification"]["tag"] == "v1.3.0"
 
 
@@ -54,7 +54,7 @@ def test_tampered_release_manifest_fails(copy_root):
     path = copy_root / FIXTURE / VERSION / "release.json"
     path.write_text(path.read_text() + " ")
     with pytest.raises(
-        hallway.FixtureError, match=r"release.json checksum mismatch.*v1.1.0 9b3e7119"
+        hallway.FixtureError, match=r"release.json checksum mismatch.*v1.2.0 ace98f1a"
     ):
         hallway.load_fixture(FIXTURE, VERSION, copy_root)
 

@@ -1,0 +1,6 @@
+{
+  "tag": "v2.0.5",
+  "commit": "a9de2435f0628047a8509b68b499dbbd7a08cda3",
+  "observation_sha256": "2ed9d9e2618130d76e2f737a306d4165e4cf1df76256e84d8d2c7dc451724d87",
+  "method": "livingproof-sim-mujoco 2.0.5 evidence on the reference toy trial in tests/test_evidence.py. Two runs wrote identical observation bytes. The full manifest also contains the clock, the host, and this package's commit, so the byte-identity check is the observation file plus the deterministic manifest fields in stable.json."
+}

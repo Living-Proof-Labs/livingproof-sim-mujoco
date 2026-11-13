@@ -1,8 +1,8 @@
 # Hallway fixture adapter
 
 `livingproof_sim_mujoco.hallway` loads `hallway-open` 0.1.0 from
-[livingproof-worlds v1.1.0](https://github.com/Living-Proof-Labs/livingproof-worlds/tree/v1.1.0/worlds/hallway-open/0.1.0)
-(commit `9b3e7119aa93a3370383227fb30bd39a9dd72b4b`) and checks it against
+[livingproof-worlds v1.2.0](https://github.com/Living-Proof-Labs/livingproof-worlds/tree/v1.2.0/worlds/hallway-open/0.1.0)
+(commit `ace98f1a7251f1f61fdf999d090b1e91c3dc258a`; the open-hallway files are unchanged from v1.1.0) and checks it against
 [hallways.md](https://github.com/Living-Proof-Labs/robot-capability-specs/blob/v1.3.0/specs/worlds/hallways.md)
 from robot-capability-specs v1.3.0. No robot is involved.
 
@@ -87,7 +87,7 @@ are vendored from it, unchanged, into `src/livingproof_sim_mujoco/contract/`:
 
 `contract/pins.json` is the single place that holds the specs release tag, its commit and each file's
 SHA-256. Every load checks them. To move to a newer specs commit, run
-`python tools/pin_contract.py <specs checkout> <tag>`; `--check` confirms the vendored files match the tag. Currently pinned to v2.0.2 (16524cbf). The three hallway contract files are unchanged from v1.4.0.
+`python tools/pin_contract.py <specs checkout> <tag>`; `--check` confirms the vendored files match the tag. Currently pinned to v2.2.0 (23bec516). The three hallway contract files are unchanged from v1.4.0.
 
 Each quantity uses its shared name, `kind`, `unit` and `comparison`, and records
 `canonical`, `measured`, `deviation` and `tolerance`. The comparison decides `pass`:
