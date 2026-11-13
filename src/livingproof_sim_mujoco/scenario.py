@@ -95,10 +95,15 @@ def resolve_limits(document: dict, raw: dict) -> dict:
     return resolve(document, raw)
 
 
+# The only command the frozen hallway scenario accepts (#40 step 3).
+HALLWAY_COMMAND = (0.5, 0.0, 0.0)
+
+
 def command_vector(document: dict, inputs: dict) -> list[float]:
     """``[forward, sideways, turn_rate]`` from the parameter file's command.
 
-    Only ``mode`` ``constant`` is accepted. Any other mode is an ERROR.
+    Only ``mode`` ``constant`` with the vector ``[0.5, 0, 0]`` is accepted.
+    Any other mode or vector is an ERROR.
     """
     command = document.get("command") if isinstance(document, dict) else None
     mode = command.get("mode") if isinstance(command, dict) else None
@@ -108,11 +113,19 @@ def command_vector(document: dict, inputs: dict) -> list[float]:
             'Example: "command": {"mode": "constant", '
             '"forward": {"parameter": "command_speed"}, "sideways": 0, "turn_rate": 0}'
         )
-    return [
+    vector = [
         float(evaluate(command["forward"], document, inputs)),
         float(evaluate(command["sideways"], document, inputs)),
         float(evaluate(command["turn_rate"], document, inputs)),
     ]
+    if vector != list(HALLWAY_COMMAND):
+        raise ScenarioParameterError(
+            f"ERROR: command {vector} is not supported. The frozen hallway runs only the "
+            f"constant command {list(HALLWAY_COMMAND)} (forward m/s, sideways m/s, turn rate rad/s), "
+            "so evidence from any other command could not be told apart from hallway evidence. "
+            'Example: "command_speed": {"value": 0.5}, "sideways": 0, "turn_rate": 0'
+        )
+    return vector
 
 
 def place(world: dict, name: str) -> dict:
