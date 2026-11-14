@@ -169,9 +169,21 @@ def _file(path: Path, out: Path) -> dict:
 
 
 def _record(args):
-    ref, name, index, status, plan, p, out, expected, start_offset, command, route, exit_place = (
-        args
-    )
+    (
+        ref,
+        name,
+        index,
+        status,
+        plan,
+        p,
+        out,
+        expected,
+        start_offset,
+        command,
+        route,
+        exit_place,
+        world,
+    ) = args
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"trial-{index:02d}.mcap"
     video = out / "video" / f"trial-{index:02d}-{status.lower()}.mp4" if status else None
@@ -185,6 +197,7 @@ def _record(args):
         name,
         plan,
         p,
+        world,
         on_step=hook,
         start_offset=start_offset,
         command=command,
@@ -206,7 +219,15 @@ def _record(args):
     return trial
 
 
-def media(ref: str, name: str, evidence_dir: Path, verification: Path, out: Path) -> dict:
+def media(
+    ref: str,
+    name: str,
+    evidence_dir: Path,
+    verification: Path,
+    out: Path,
+    *,
+    lock: Path | None = None,
+) -> dict:
     robot = ev.adapter(ref)
     # Pinned upstream files first: adapters load their profile and model from them, so a
     # fresh checkout (no pins fetched yet) would otherwise fail with FileNotFoundError.
@@ -214,10 +235,20 @@ def media(ref: str, name: str, evidence_dir: Path, verification: Path, out: Path
     manifest = json.loads((Path(evidence_dir) / "manifest.json").read_text())
     if manifest["configuration"]["name"] != name:
         raise SystemExit(f"evidence is for {manifest['configuration']['name']}, not {name}")
-    lock = ev.load_lock(robot.root)
-    if manifest["lock"]["content"] != lock:
-        raise SystemExit(f"evidence was recorded with a different {ev.LOCK}")
-    plan, prepared = ev.recording(robot, lock, name)
+    recorded = manifest.get("lock", {}).get("content")
+    if not isinstance(recorded, dict):
+        raise SystemExit(
+            "INCOMPATIBLE: the evidence manifest has no lock content to replay. "
+            "Record evidence with --lock, then point media at that directory."
+        )
+    if lock is not None:
+        supplied = ev.read_lock(lock)
+        if supplied != recorded:
+            raise SystemExit(
+                "INCOMPATIBLE: --lock does not match the lock recorded in the evidence "
+                "manifest. Media replays that recorded lock. Pass the same file, or omit --lock."
+            )
+    plan, prepared = ev.recording(robot, recorded, name)
     p = prepared.recorded
     world = prepared.world
     geometry = ev.sc.route_geometry(world, prepared.document)
@@ -246,6 +277,7 @@ def media(ref: str, name: str, evidence_dir: Path, verification: Path, out: Path
             prepared.command,
             route,
             exit_place,
+            prepared.world,
         )
         for t in manifest["trials"]["results"]
     ]
@@ -275,8 +307,14 @@ def main(argv=None) -> int:
     ap.add_argument("evidence", type=Path, help="evidence directory (manifest.json)")
     ap.add_argument("verification", type=Path, help="the verifier's verification.json")
     ap.add_argument("out", type=Path)
+    ap.add_argument(
+        "--lock",
+        type=Path,
+        default=None,
+        help="optional check that this file matches the lock recorded in the evidence manifest",
+    )
     a = ap.parse_args(argv)
-    doc = media(a.adapter, a.configuration, a.evidence, a.verification, a.out)
+    doc = media(a.adapter, a.configuration, a.evidence, a.verification, a.out, lock=a.lock)
     mcap = sum(t["mcap"]["bytes"] for t in doc["trials"])
     print(f"{len(doc['trials'])} MCAP recordings ({mcap} B), all matching their evidence")
     for t in doc["trials"]:

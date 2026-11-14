@@ -1,15 +1,17 @@
 """Sim evidence for the capability verifier. Records observations; never grades.
 
-Generic over robots: a robot package supplies a ``Robot`` adapter (robot-specific data and
-code: scene/model build, controller and policy, nominal initial state, profiles) and this
-module does the rest. It reads the robot repository's committed ``verification.lock.json``
-(release refs and the command speed) and, for one configuration, runs ``trials.count``
-identical trials in sequence through ``observations.observe``. The default count is 1.
-It writes one observation per trial (``trials/trial-01.json``, ...) and a
-``livingproof-hallway-evidence/2.0.0`` manifest. Before the first trial it writes
+Generic over robots: a robot package supplies a ``Robot`` adapter (the robot model,
+controller and policy, nominal initial pose, profiles) and this module does the rest.
+The caller passes the verification lock (``--lock``). That lock selects the scenario
+and the world. Wall geometry and the named start place come from the world's release
+vendored in this package, not from the robot package. For one configuration it runs
+``trials.count`` identical trials in sequence through ``observations.observe``. The
+default count is 1. It writes one observation per trial (``trials/trial-01.json``, ...)
+and a ``livingproof-hallway-evidence/2.0.0`` manifest. Before the first trial it writes
 ``run-manifest.json`` in the ``livingproof-run-manifest/0.1`` shape.
 
-    python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> [--trials N]
+    python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> \\
+        --lock <verification-lock.json> [--trials N]
 """
 
 from __future__ import annotations
@@ -31,8 +33,7 @@ import mujoco
 
 from livingproof_scenario_parameters import ScenarioParameterError
 
-from livingproof_sim_mujoco import scenario as sc
-from livingproof_sim_mujoco import sources
+from livingproof_sim_mujoco import compose, scenario as sc, sources
 from livingproof_sim_mujoco.compat import hallway as frozen
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
@@ -46,7 +47,6 @@ PENDING = "PENDING_RELEASE"
 # result, 2 for a fixture error, and 3 for UNSUPPORTED.
 # 4 is only a test-system reproducibility finding, not a robot grade and not those codes.
 EXIT_REPRODUCIBILITY = 4
-LOCK = "verification.lock.json"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -61,14 +61,13 @@ class Robot(Protocol):
     width_decimals: int  # fits_width detail formatting, kept per robot for stable manifests
 
     def base_body(self, name: str) -> str: ...
-    def scene(self, name: str) -> Any: ...  # .model (MjModel), .walls (list[str])
+    def scene(self, name: str) -> Any: ...  # robot model only; the sim adds the world
     def controller(self, name: str, scene: Any) -> Any: ...
     def policy(self, model: mujoco.MjModel, ctrl: Any) -> Any: ...  # .step(data, command)
     def initial_state(self, model, data, ctrl, spawn: str, *, start_offset=None) -> None: ...
     def runner_settings(self) -> dict: ...
     def robot(self) -> dict: ...
     def configuration(self, name: str) -> dict: ...  # raises Unsupported(precondition, detail)
-    def world(self) -> dict: ...
     def environment(self, name: str) -> dict: ...  # extra manifest environment fields
 
     # Optional: ``camera = (distance, elevation, azimuth)`` for the tracking camera of the
@@ -92,8 +91,25 @@ def adapter(ref: str) -> Robot:
     return getattr(import_module(module), attr or "ROBOT")
 
 
-def load_lock(root: Path) -> dict:
-    return json.loads((Path(root) / LOCK).read_text())
+def read_lock(path: Path) -> dict:
+    """The caller's verification lock. The path is whatever the caller passed."""
+    path = Path(path)
+    if not path.is_file():
+        raise SystemExit(
+            f"INCOMPATIBLE: verification lock {path} is not a file. "
+            "Pass it with --lock. Example: python -m livingproof_sim_mujoco.evidence "
+            "<adapter> <configuration> <out> --lock path/to/lock.json"
+        )
+    try:
+        document = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"INCOMPATIBLE: {path} is not JSON ({exc}).") from exc
+    if not isinstance(document, dict):
+        raise SystemExit(
+            f"INCOMPATIBLE: {path} must be a JSON object. "
+            'Example: {"scenario": "<scenario>@<version>", "world": {"id": "<world>", "version": "0.1.0"}}'
+        )
+    return document
 
 
 def pending(lock: dict) -> list[str]:
@@ -108,29 +124,34 @@ def pending(lock: dict) -> list[str]:
 def locked_configuration(lock: dict, name: str, root: Path) -> dict:
     entry = next((c for c in lock["configurations"] if c["name"] == name), None)
     if entry is None:
-        raise SystemExit(f"{name} is not in {LOCK}")
+        raise SystemExit(f"{name} is not in the verification lock")
     if sha256(Path(root) / entry["path"]) != entry["sha256"]:
-        raise SystemExit(f"{entry['path']} differs from {LOCK}; update the lock in the same commit")
+        raise SystemExit(
+            f"{entry['path']} differs from the verification lock; update the lock in the same commit"
+        )
     return entry
 
 
-def parameters(robot: Robot, name: str) -> dict:
-    return prepare_run(robot, name).recorded
+def parameters(robot: Robot, name: str, lock: dict) -> dict:
+    return prepare_run(robot, name, lock).recorded
 
 
 def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepared:
     """Parameters, command and world for one configuration.
 
-    The verification lock's ``sources`` entry wins. With no entry, the robot
-    pins are used, then the vendored parameter file. See ``sources``.
+    The world is the vendored release named by ``lock["world"]``. Scenario
+    parameter bytes still follow ``sources``: a lock entry, else the robot
+    pins, else the vendored parameter file.
     """
+    if lock is None:
+        raise SystemExit(
+            "INCOMPATIBLE: prepare_run needs the caller's verification lock. "
+            "Example: prepare_run(robot, 'playground', lock)"
+        )
     root = Path(robot.root)
-    lock = load_lock(root) if lock is None else lock
     document, _source = sources.parameters_document_for(root, lock)
-    selected = sources.world_source(root, lock)
-    if selected.document is None:
-        selected = sources.WorldSource(robot.world(), "adapter", None, None)
-    world = selected.document
+    world, digest, relative = compose.vendored_world(lock)
+    selected = sources.WorldSource(world, "vendored", digest, relative)
     refusal = frozen.unsupported_world(world)
     if refusal:
         raise SystemExit(refusal)
@@ -213,6 +234,7 @@ def run_trial(
     name: str,
     plan: dict,
     p: dict,
+    world: dict,
     on_step=None,
     *,
     start_offset=None,
@@ -231,12 +253,8 @@ def run_trial(
 
     robot = adapter(ref)
     rs = robot.runner_settings()
-    scene = robot.scene(name)
-    model = scene.model
-    ctrl = robot.controller(name, scene)
+    model, data, ctrl, walls = compose.place(robot, name, world, p["spawn"], start_offset)
     policy = robot.policy(model, ctrl)
-    data = mujoco.MjData(model)
-    nominal_start(robot, model, data, ctrl, p["spawn"], start_offset)
     if command is None:
         command = [p["command_speed"], 0.0, 0.0]
     hook = on_step(model, robot.base_body(name)) if on_step is not None else None
@@ -245,7 +263,7 @@ def run_trial(
         data,
         lambda d: policy.step(d, command),
         base_body=robot.base_body(name),
-        walls=scene.walls,
+        walls=walls,
         exit_x=p["exit_x"],
         seconds=p["time_limit"],
         sample_hz=rs["sample_hz"],
@@ -371,7 +389,7 @@ def world_sha256(root: Path, lock: dict) -> str:
                 if ident in path and path.endswith("world.json") and isinstance(digest, str):
                     return _require(f"world {ident} sha256", digest, _SHA256)
     raise SystemExit(
-        f"world {ident} has no sha256 in {LOCK} or pins.json. "
+        f"world {ident} has no sha256 in the verification lock or pins.json. "
         "Add world.sha256 or pin the world file. "
         'Example: "world": {"id": "<world>", "version": "0.1.0", "sha256": "<64 hex>"}'
     )
@@ -389,13 +407,14 @@ def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dic
     legacy = lock.get("world", {})
     if not isinstance(legacy, dict):
         raise SystemExit(
-            f"ERROR: {LOCK} world must be an object, got {legacy!r}. "
+            f"ERROR: the verification lock world must be an object, got {legacy!r}. "
             'Example: "world": {"id": "<world>", "version": "0.1.0"}'
         )
     where = {
-        "lock": f"lock sources.world {selected.path}",
-        "pins": f"pinned world {selected.path}",
+        "lock": "lock sources.world",
+        "pins": "pinned world",
         "adapter": "the adapter's world",
+        "vendored": "the vendored world",
     }[selected.origin]
     document = selected.document if isinstance(selected.document, dict) else {}
     ident = {}
@@ -403,14 +422,14 @@ def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dic
         declared, named = legacy.get(key), document.get(field)
         if declared is not None and named is not None and declared != named:
             raise SystemExit(
-                f"ERROR: {LOCK} world.{key} is {declared!r} but {where} has "
+                f"ERROR: the verification lock world.{key} is {declared!r} but {where} has "
                 f"{field} {named!r}. The run manifest would name a different world "
                 f"from the one loaded. Make world.{key} match the file or remove it."
             )
         ident[key] = declared if declared is not None else named
         if not isinstance(ident[key], str) or not ident[key]:
             raise SystemExit(
-                f"ERROR: world {key} is missing from {LOCK} world and from {where}. "
+                f"ERROR: world {key} is missing from the verification lock world and from {where}. "
                 'Example: "world": {"id": "<world>", "version": "0.1.0"}'
             )
     if selected.sha256 is None:
@@ -419,7 +438,7 @@ def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dic
     declared = legacy.get("sha256")
     if declared is not None and declared != selected.sha256:
         raise SystemExit(
-            f"ERROR: {LOCK} world.sha256 is {declared} but {where} is "
+            f"ERROR: the verification lock world.sha256 is {declared} but {where} is "
             f"{selected.sha256}. The run manifest would name a different world from "
             "the one loaded. Remove world.sha256 or set it to the loaded file's sha256."
         )
@@ -601,7 +620,7 @@ def build_run_manifest(
     specs = lock.get("releases", {}).get("specs")
     if not isinstance(specs, dict):
         raise SystemExit(
-            f"{LOCK} releases.specs needs a tag and commit. "
+            "the verification lock releases.specs needs a tag and commit. "
             'Example: "specs": {"tag": "v2.2.0", "commit": "<40 hex>"}'
         )
     scenario = lock.get("scenario", frozen.SCENARIO)
@@ -650,16 +669,25 @@ def build_run_manifest(
 
 
 def evidence(
-    ref: str, name: str, out: Path, *, trials: int | None = None, allow_pending=False
+    ref: str,
+    name: str,
+    out: Path,
+    *,
+    lock: Path,
+    trials: int | None = None,
+    allow_pending=False,
 ) -> dict:
     # Before any output directory or manifest. An unknown commit exits 1.
     adapter_sha = adapter_commit()
     robot = adapter(ref)
     root = Path(robot.root)
-    lock = load_lock(root)
+    lock_path = Path(lock)
+    lock = read_lock(lock_path)
     waiting = pending(lock)
     if waiting and not allow_pending:
-        raise SystemExit(f"{LOCK} has PENDING_RELEASE refs ({', '.join(waiting)}); run task repin")
+        raise SystemExit(
+            f"the verification lock has PENDING_RELEASE refs ({', '.join(waiting)}); run task repin"
+        )
     entry = locked_configuration(lock, name, root)
     fetch(root)
     plan, prepared = recording(robot, lock, name)
@@ -669,10 +697,6 @@ def evidence(
     world_id = world_identity(root, lock, prepared.world_source)
     count = trial_count(plan, trials)
     offset = declared_offset(plan)
-    out = Path(out)
-    (out / "trials").mkdir(parents=True, exist_ok=False)
-    created = dt.datetime.now(dt.timezone.utc)
-    run_id = frozen.evidence_run_id(lock.get("scenario", frozen.SCENARIO), robot.id, name, created)
     profile = robot.robot()
     checked = sc.preconditions(
         profile,
@@ -683,6 +707,14 @@ def evidence(
         width_decimals=robot.width_decimals,
     )
     unmet = unmet_required(checked)
+    # A missing wall or an origin start writes nothing. An unmet precondition
+    # does not build a model: the robot cannot attempt the scenario.
+    if unmet is None:
+        compose.place(robot, name, world, p["spawn"], offset)
+    out = Path(out)
+    (out / "trials").mkdir(parents=True, exist_ok=False)
+    created = dt.datetime.now(dt.timezone.utc)
+    run_id = frozen.evidence_run_id(lock.get("scenario", frozen.SCENARIO), robot.id, name, created)
     profile_sha = sha256(root / "robot.json")
     robot_commit = sc.git_head(root)[0]
     results = []
@@ -712,6 +744,7 @@ def evidence(
                 name,
                 plan,
                 p,
+                world,
                 start_offset=offset,
                 command=prepared.command,
                 route=route,
@@ -724,7 +757,7 @@ def evidence(
         "format": FORMAT,
         "run_id": run_id,
         "created": created.isoformat(timespec="seconds"),
-        "lock": {"path": LOCK, "sha256": sha256(root / LOCK), "content": lock},
+        "lock": {"path": lock_path.name, "sha256": sha256(lock_path), "content": lock},
         "pending_release": waiting,
         "plan": executed_plan(plan, count),
         "start": {"spawn": p["spawn"], "pose": "nominal", "offset": offset},
@@ -764,7 +797,7 @@ def evidence(
                 if unmet is not None
                 else {
                     "base_body": robot.base_body(name),
-                    "walls": robot.scene(name).walls,
+                    "walls": compose.wall_names(world),
                     **robot.environment(name),
                 }
             ),
@@ -783,6 +816,13 @@ def main(argv=None) -> int:
     ap.add_argument("configuration")
     ap.add_argument("out", type=Path)
     ap.add_argument(
+        "--lock",
+        type=Path,
+        required=True,
+        help="caller verification lock (scenario, world id and version, plan, configurations). "
+        "Example: --lock verifications/unitree-g1-playground.lock.json",
+    )
+    ap.add_argument(
         "--trials",
         type=int,
         default=None,
@@ -795,11 +835,19 @@ def main(argv=None) -> int:
         "Exit 2: the command line is unusable. "
         f"Exit {EXIT_REPRODUCIBILITY}: trials.count > 1 and the trials disagree. "
         "That exit is a test-system reproducibility finding recorded in the manifest, "
-        "not a robot grade. Example: python -m livingproof_sim_mujoco.evidence "
-        "lpl_g1.adapter:ROBOT stock out --trials 3"
+        "not a robot grade. An INCOMPATIBLE or UNSUPPORTED world also exits 1. "
+        "Example: python -m livingproof_sim_mujoco.evidence "
+        "lpl_g1.adapter:ROBOT playground out --lock path/to/lock.json --trials 3"
     )
     a = ap.parse_args(argv)
-    m = evidence(a.adapter, a.configuration, a.out, trials=a.trials, allow_pending=a.allow_pending)
+    m = evidence(
+        a.adapter,
+        a.configuration,
+        a.out,
+        lock=a.lock,
+        trials=a.trials,
+        allow_pending=a.allow_pending,
+    )
     unmet = unmet_required(m["preconditions"])
     if unmet is not None:
         print(f"UNSUPPORTED: precondition {unmet['name']} unmet: {unmet['detail']}; no trials run")

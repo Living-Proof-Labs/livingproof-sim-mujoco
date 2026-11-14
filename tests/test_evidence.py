@@ -56,9 +56,12 @@ class Scene:
 
 
 class Push:
+    def __init__(self, model):
+        self.model = model
+
     def step(self, data, command):
-        data.qvel[0] = command[0] * 4  # glide forward; toy "controller"
-        mujoco.mj_step(Scene.model_cache, data)
+        data.qvel[0] = command[0] * 4  # glide forward; toy controller
+        mujoco.mj_step(self.model, data)
 
 
 class Toy:
@@ -70,15 +73,13 @@ class Toy:
         return "base"
 
     def scene(self, name):
-        s = Scene()
-        Scene.model_cache = s.model
-        return s
+        return Scene()
 
     def controller(self, name, scene):
         return None
 
     def policy(self, model, ctrl):
-        return Push()
+        return Push(model)
 
     def initial_state(self, model, data, ctrl, spawn, *, start_offset=None):
         mujoco.mj_resetData(model, data)
@@ -104,7 +105,18 @@ class Toy:
         return {"model": "toy"}
 
 
+CALLER_LOCK = "caller.lock.json"
 TOY = Toy()
+
+
+def _vendored_world_sha() -> str:
+    from livingproof_sim_mujoco import hallway
+
+    return pins.sha256(hallway.WORLDS / "hallway-open" / "0.1.0" / "world.json")
+
+
+def _lock(repo: Path) -> Path:
+    return repo / CALLER_LOCK
 
 
 def test_scenario_parameters_and_preconditions():
@@ -170,7 +182,7 @@ def _repo(tmp_path):
         "world": {
             "id": "hallway-open",
             "version": "0.1.0",
-            "sha256": "ab" * 32,
+            "sha256": _vendored_world_sha(),
         },
         "configurations": [
             {
@@ -188,7 +200,7 @@ def _repo(tmp_path):
             },
         },
     }
-    (tmp_path / "verification.lock.json").write_text(json.dumps(lock))
+    (tmp_path / CALLER_LOCK).write_text(json.dumps(lock))
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(
         [
@@ -228,13 +240,15 @@ def test_evidence_runs_identical_trials_and_ignores_seeds(tmp_path, monkeypatch)
     _repo(repo)
     monkeypatch.setattr(Toy, "root", repo)
     monkeypatch.syspath_prepend(str(Path(__file__).parent))
-    one = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "one")
+    one = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "one", lock=_lock(repo))
     assert one["trials"]["count"] == 1  # plan trials: 20 and seeds are not the count
     assert evidence.FORMAT == "livingproof-hallway-evidence/2.0.0"
     assert one["plan"] == {"command_speed": 0.5, "trials": {"count": 1}}
     assert "seeds" not in one["plan"] and "required_passes" not in one["plan"]
     assert one["trials"]["reproducibility"]["compared"] is False
-    m = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", trials=2)
+    m = evidence.evidence(
+        "test_evidence:TOY", "stock", tmp_path / "out", trials=2, lock=_lock(repo)
+    )
     assert m["format"] == evidence.FORMAT and m["robot"]["id"] == "toy-robot"
     assert [t["index"] for t in m["trials"]["results"]] == [1, 2]
     assert m["trials"]["count"] == 2
@@ -249,7 +263,10 @@ def test_evidence_runs_identical_trials_and_ignores_seeds(tmp_path, monkeypatch)
         m["trials"]["results"][0]["trajectory_sha256"]
         == m["trials"]["results"][1]["trajectory_sha256"]
     )
-    assert m["environment"]["walls"] == ["left"] and m["environment"]["model"] == "toy"
+    assert (
+        m["environment"]["walls"] == ["wall-left", "wall-right"]
+        and m["environment"]["model"] == "toy"
+    )
     assert m["start"] == {"spawn": "spawn-entrance", "pose": "nominal", "offset": None}
     obs = json.loads((tmp_path / "out" / "trials" / "trial-01.json").read_text())
     assert obs["end"] == "crossed_exit"
@@ -271,9 +288,20 @@ def test_evidence_runs_identical_trials_and_ignores_seeds(tmp_path, monkeypatch)
         "trials",
     }
     with pytest.raises(SystemExit, match="is not in"):
-        evidence.evidence("test_evidence:TOY", "other", tmp_path / "out2")
+        evidence.evidence("test_evidence:TOY", "other", tmp_path / "out2", lock=_lock(repo))
     assert (
-        evidence.main(["test_evidence:TOY", "stock", str(tmp_path / "agree"), "--trials", "2"]) == 0
+        evidence.main(
+            [
+                "test_evidence:TOY",
+                "stock",
+                str(tmp_path / "agree"),
+                "--lock",
+                str(_lock(repo)),
+                "--trials",
+                "2",
+            ]
+        )
+        == 0
     )
 
 
@@ -301,7 +329,9 @@ def test_unmet_precondition_never_starts_the_simulator_or_a_worker(tmp_path, mon
         "preconditions",
         lambda *a, **k: [unmet, {"name": "simulator_declared", "met": True, "detail": "x"}],
     )
-    m = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", trials=2)
+    m = evidence.evidence(
+        "test_evidence:TOY", "stock", tmp_path / "out", trials=2, lock=_lock(repo)
+    )
     assert calls == []
     assert m["trials"]["results"] == [] and m["trials"]["count"] == 2
     assert m["preconditions"][0] == unmet
@@ -321,7 +351,9 @@ def test_optional_unmet_precondition_still_runs_the_trials(tmp_path, monkeypatch
     real = evidence.sc.preconditions
     optional = {"name": "nice_to_have", "met": False, "detail": "x", "required": False}
     monkeypatch.setattr(evidence.sc, "preconditions", lambda *a, **k: real(*a, **k) + [optional])
-    m = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", trials=2)
+    m = evidence.evidence(
+        "test_evidence:TOY", "stock", tmp_path / "out", trials=2, lock=_lock(repo)
+    )
     assert [t["index"] for t in m["trials"]["results"]] == [1, 2]
 
 
@@ -330,11 +362,11 @@ def test_evidence_refuses_pending_refs(tmp_path, monkeypatch):
     repo.mkdir()
     lock = _repo(repo)
     lock["releases"]["runner"]["tag"] = evidence.PENDING
-    (repo / "verification.lock.json").write_text(json.dumps(lock))
+    (repo / CALLER_LOCK).write_text(json.dumps(lock))
     monkeypatch.setattr(Toy, "root", repo)
     monkeypatch.syspath_prepend(str(Path(__file__).parent))
     with pytest.raises(SystemExit, match="PENDING_RELEASE refs \\(runner\\)"):
-        evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out")
+        evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", lock=_lock(repo))
     assert not (tmp_path / "out").exists()
 
 
@@ -348,7 +380,7 @@ def test_stand_runs_the_zero_command_check_through_the_adapter(tmp_path, monkeyp
     monkeypatch.setattr(
         Toy, "runner_settings", lambda self: {"sample_hz": 50.0, "stand_seconds": 0.2}
     )
-    result = walk.stand(TOY, "stock", tmp_path / "out")
+    result = walk.stand(TOY, "stock", tmp_path / "out", lock=_lock(repo))
     assert result["check"] == "zero-command-stand" and "seed" not in result
     assert result["configuration_sha256"] == lock["configurations"][0]["sha256"]
     assert result["seconds"] == 0.2 and result["clip"] == "stand-zero-command.mp4"
@@ -370,9 +402,9 @@ def test_stand_and_media_use_the_optional_adapter_camera(tmp_path, monkeypatch):
     monkeypatch.setattr(
         Toy, "runner_settings", lambda self: {"sample_hz": 50.0, "stand_seconds": 0.2}
     )
-    walk.stand(TOY, "stock")
+    walk.stand(TOY, "stock", lock=_lock(repo))
     monkeypatch.setattr(Toy, "camera", (2.2, -35, 200), raising=False)
-    walk.stand(TOY, "stock")
+    walk.stand(TOY, "stock", lock=_lock(repo))
     assert seen == [walk.CAMERA, (2.2, -35.0, 200.0)]
     monkeypatch.setattr(Toy, "camera", (0, 1), raising=False)
     with pytest.raises(ValueError, match="camera must be"):
@@ -381,7 +413,8 @@ def test_stand_and_media_use_the_optional_adapter_camera(tmp_path, monkeypatch):
 
 def test_robot_protocol_lists_every_adapter_method():
     members = {n for n in vars(evidence.Robot) if not n.startswith("_")}
-    assert {"configuration", "world", "environment", "robot"} <= members
+    assert {"configuration", "environment", "robot"} <= members
+    assert "world" not in members  # the simulator supplies the world
     assert "camera" not in members  # optional attribute, read through evidence.camera()
 
 
@@ -402,14 +435,26 @@ def test_disagreeing_trials_are_a_test_system_finding(tmp_path, monkeypatch):
         return obs
 
     monkeypatch.setattr(evidence, "run_trial", vary)
-    m = evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", trials=2)
+    m = evidence.evidence(
+        "test_evidence:TOY", "stock", tmp_path / "out", trials=2, lock=_lock(repo)
+    )
     finding = m["trials"]["reproducibility"]["finding"]
     assert m["trials"]["reproducibility"]["identical"] is False
     assert finding["kind"] == "test-system" and finding["name"] == "reproducibility"
     assert "not a robot FAIL" in finding["detail"]
     assert finding["outcomes"] == ["crossed_exit", "fell"]
     assert all("status" not in t for t in m["trials"]["results"])
-    code = evidence.main(["test_evidence:TOY", "stock", str(tmp_path / "cli"), "--trials", "2"])
+    code = evidence.main(
+        [
+            "test_evidence:TOY",
+            "stock",
+            str(tmp_path / "cli"),
+            "--lock",
+            str(_lock(repo)),
+            "--trials",
+            "2",
+        ]
+    )
     assert code == evidence.EXIT_REPRODUCIBILITY == 4
     assert code not in {0, 1, 2}
     written = json.loads((tmp_path / "cli" / "manifest.json").read_text())

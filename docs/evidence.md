@@ -63,41 +63,37 @@ capability evidence. No substantive merge or release has occurred.
 
 ## Evidence command
 
-`python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> [--trials N]`
-records observations and does not grade the robot. The manifest format is
-`livingproof-hallway-evidence/2.0.0`. Its `plan` records `trials.count` and does not
-copy `seeds` or `required_passes` from the lock.
+`python -m livingproof_sim_mujoco.evidence <module:adapter> <configuration> <out> --lock <lock.json> [--trials N]`
+records observations and does not grade the robot. `--lock` is the caller's verification
+lock (a `livingproof-verification-lock/0.2.0` or the `1.0.0` projection of one). It selects
+the scenario and the world. Wall geometry and the named start place come from the world's
+release vendored in this package: `release.json` is checked, the world is translated with
+the same mapping as the hallway fixture, and those wall boxes and place sites are compiled
+onto the robot model. The robot package supplies the robot model, the controller, the
+nominal pose and the profiles. It does not supply the world. A world this package does not
+vendor is UNSUPPORTED. If the world has walls and the composed model is missing any of
+them, or the robot base is at the origin when the start place is not, the command exits 1
+with `INCOMPATIBLE` and writes nothing.
 
-The world file and the scenario parameter file come from the robot's
-`verification.lock.json` when `sources.world` or `sources.parameters` names a
-path and a sha256. A mismatch is an ERROR and the pins file is not used. With
-no lock entry, the file is taken from the robot's `pins.json`. That fallback
-remains until robot repositories stop pinning those files (robot-capability-specs
-issue 40, step 7). If the pins do not list the parameter file either, the
-runner uses its copy of robot-capability-specs v2.2.0 `parameters.json`, checked
-by sha256. The velocity command is that file's `command`. Only mode `constant`
-is accepted; any other mode is an ERROR. On the straight open hallway the
-command is `[0.5, 0, 0]`.
+The scenario parameter file still comes from the lock when `sources.parameters` names a
+path and a sha256. A mismatch is an ERROR and the pins file is not used. With no lock
+entry, the file is taken from the robot's `pins.json`. If the pins do not list it either,
+the runner uses its copy of robot-capability-specs v2.2.0 `parameters.json`, checked by
+sha256. The velocity command is that file's `command`. Only mode `constant` is accepted;
+any other mode is an ERROR. On the straight open hallway the command is `[0.5, 0, 0]`.
 
-The `world` in `run-manifest.json` and `manifest.json` names the world file
-that was loaded. When the file came from `sources.world` or `pins.json`, its
-`sha256` is the digest of those bytes, and its `id` and `version` come from the
-lock `world` entry or, when the lock has none, from the file's `id` and
-`content_version`. A lock `world.id`, `world.version` or `world.sha256` that
-disagrees with the loaded file is an ERROR before anything is written. Only a
-world supplied by the robot adapter, with no file read by the runner, still
-takes its `sha256` from lock `world.sha256` or the robot's `pins.json`.
+The `world` in `run-manifest.json` names the vendored `world.json` that was loaded: its
+`id` and `version` come from the lock, and its `sha256` is the digest of those bytes. A
+lock `world.sha256` that disagrees is an ERROR before anything is written.
 
-A world whose format is `livingproof-world/0.2` is an ERROR. This release does
-not yet write a neutral observation for that format, and it does not write the
-frozen hallway observation for it. Limits in the frozen hallway record stay as
-they were recorded before: `lateral_limit` to 6 decimal places and `time_limit`
-unrounded. The parameter file's own rounding is what `resolve` returns and what
-a later neutral record will store.
+A world whose format is `livingproof-world/0.2` is an ERROR when that is the loaded
+document. This release does not yet write a neutral observation for that format. Limits
+in the frozen hallway record stay as they were recorded before: `lateral_limit` to 6
+decimal places and `time_limit` unrounded.
 
 - Exit 0: the observations were recorded. An unmet precondition is also exit 0: no trial runs, and the manifest says so.
-- Exit 1: the lock, plan, or manifest is unusable. Those are `SystemExit` messages. One case is an unknown adapter commit: no manifest is written.
-- Exit 2: the command line is unusable (argparse).
+- Exit 1: the lock, plan, manifest, or composed world is unusable (`INCOMPATIBLE` or `UNSUPPORTED` are this exit). An unknown adapter commit is one case: no manifest is written.
+- Exit 2: the command line is unusable (argparse), including a missing `--lock`.
 - Exit 4: `trials.count` is greater than 1 and the trials disagree. The manifest records that as a test-system reproducibility finding (`trials.reproducibility.finding`). It is not a robot grade. The physics command's exits (2, 124, 130, 143) and the hallway fixture tool's exit 1 (a non-PASS world result) are different programs and are not this code.
 
 `simulator.adapter_commit` in `run-manifest.json` is the 40-character commit of this

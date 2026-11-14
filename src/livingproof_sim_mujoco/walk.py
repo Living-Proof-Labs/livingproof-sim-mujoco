@@ -182,26 +182,25 @@ CAMERA = (
 )  # tracking distance, elevation, azimuth; optional adapter.camera overrides
 
 
-def stand(ref, name: str, out: Path | None = None) -> dict:
-    """Zero-command standing check at the nominal pose through a robot adapter
+def stand(ref, name: str, out: Path | None = None, *, lock: Path) -> dict:
+    """Zero-command standing check at the world's start place through a robot adapter
     (``module:NAME`` or the adapter object, as ``livingproof_sim_mujoco.evidence`` uses);
-    not part of any grade."""
+    not part of any grade. ``lock`` is the caller's verification lock."""
+    from livingproof_sim_mujoco import compose
     from livingproof_sim_mujoco import evidence as ev
     from livingproof_sim_mujoco.pins import fetch
 
     robot = ev.adapter(ref) if isinstance(ref, str) else ref
     root = Path(robot.root)
     fetch(root)
-    entry = ev.locked_configuration(ev.load_lock(root), name, root)
-    p = ev.parameters(robot, name)
+    document = ev.read_lock(lock)
+    entry = ev.locked_configuration(document, name, root)
+    prepared = ev.prepare_run(robot, name, document)
+    p = prepared.recorded
     rs = robot.runner_settings()
     seconds = rs["stand_seconds"]
-    scene = robot.scene(name)
-    model = scene.model
-    ctrl = robot.controller(name, scene)
+    model, data, ctrl, _walls = compose.place(robot, name, prepared.world, p["spawn"], None)
     policy = robot.policy(model, ctrl)
-    data = mujoco.MjData(model)
-    ev.nominal_start(robot, model, data, ctrl, p["spawn"], None)
     command = [0.0, 0.0, 0.0]
     samples, end, clip = simulate(
         model,
@@ -228,13 +227,19 @@ def main(argv=None) -> int:
     s = sub.add_parser("stand", help="zero-command standing check at the nominal pose")
     s.add_argument("adapter", help="robot adapter, module:NAME (e.g. lpl_g1.adapter:ROBOT)")
     s.add_argument("--configuration", required=True)
+    s.add_argument(
+        "--lock",
+        type=Path,
+        required=True,
+        help="caller verification lock. Example: --lock path/to/lock.json",
+    )
     s.add_argument("--out", type=Path, default=None, help="default <robot root>/artifacts/<name>")
     a = ap.parse_args(argv)
     from livingproof_sim_mujoco import evidence as ev
 
     robot = ev.adapter(a.adapter)
     out = a.out or Path(robot.root) / "artifacts" / a.configuration
-    print(json.dumps(stand(robot, a.configuration, out), indent=2))
+    print(json.dumps(stand(robot, a.configuration, out, lock=a.lock), indent=2))
     return 0
 
 
