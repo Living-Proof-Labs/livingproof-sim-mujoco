@@ -55,7 +55,7 @@ class _Body:
 class _Response:
     """A finished HTTP 200 whose body may be shorter than Content-Length."""
 
-    def __init__(self, data: bytes, content_length: int | None = None):
+    def __init__(self, data: bytes, content_length: int | str | None = None):
         self.data = data
         self.status = 200
         self.headers = EmailMessage()
@@ -422,3 +422,146 @@ def test_fetch_retries_refused_connections_and_timeouts(tmp_path, clock, failure
     assert pins.fetch(tmp_path, opener) == [tmp_path / ".cache/g/a.txt"]
     assert len(calls) == 2
     assert sleeps == [10.0]
+
+
+def test_fetch_retries_truncated_body_with_no_content_length_using_pin_bytes(
+    tmp_path, clock, caplog
+):
+    """A short body with no Content-Length is still retried when the pin has bytes."""
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    sleeps, spans = clock
+    calls = []
+    dest = tmp_path / ".cache/g/a.txt"
+    short = PAYLOAD[:3]
+
+    def opener(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return _Response(short, content_length=None)
+        return _Response(PAYLOAD, content_length=None)
+
+    caplog.set_level(logging.WARNING, logger="livingproof_sim_mujoco.pins")
+    assert pins.fetch(tmp_path, opener) == [dest]
+    assert dest.read_bytes() == PAYLOAD
+    assert calls == [URL, URL]
+    assert sleeps == [10.0]
+    assert spans == [(-2.0, 2.0)]
+    warning = caplog.records[0].getMessage()
+    assert f"{len(PAYLOAD)} bytes (pin)" in warning
+    assert f"downloaded {len(short)} bytes" in warning
+    assert "Content-Length" not in warning
+
+
+def test_fetch_leaves_cached_file_in_place_on_size_mismatch(tmp_path, clock):
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    stale = b"stale-cache"
+    dest = tmp_path / ".cache/g/a.txt"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(stale)
+    sleeps, _spans = clock
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        return _Response(b"no", content_length=len(PAYLOAD))
+
+    with pytest.raises(pins.DownloadError, match="failed after 5 attempts") as raised:
+        pins.fetch(tmp_path, opener)
+    assert isinstance(raised.value.__cause__, pins.SizeMismatch)
+    assert dest.read_bytes() == stale
+    assert len(calls) == pins.MAX_ATTEMPTS
+    assert sleeps == [10.0, 20.0, 40.0, 80.0]
+    assert ".part" not in " ".join(_files(tmp_path))
+
+
+def test_fetch_does_not_redownload_a_matching_cache(tmp_path, clock):
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    dest = tmp_path / ".cache/g/a.txt"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(PAYLOAD)
+    sleeps, spans = clock
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        raise AssertionError("opener should not run for a cache hit")
+
+    assert pins.fetch(tmp_path, opener) == [dest]
+    assert dest.read_bytes() == PAYLOAD
+    assert calls == []
+    assert sleeps == []
+    assert spans == []
+
+
+def test_fetch_ignores_unusable_content_length_and_uses_pin_bytes(tmp_path, clock, caplog):
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    sleeps, _spans = clock
+    calls = []
+    dest = tmp_path / ".cache/g/a.txt"
+
+    def opener(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return _Response(PAYLOAD[:3], content_length="not-a-number")
+        return _Response(PAYLOAD, content_length=len(PAYLOAD))
+
+    caplog.set_level(logging.WARNING, logger="livingproof_sim_mujoco.pins")
+    assert pins.fetch(tmp_path, opener) == [dest]
+    assert dest.read_bytes() == PAYLOAD
+    assert calls == [URL, URL]
+    assert sleeps == [10.0]
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("ignoring unusable Content-Length" in message for message in messages)
+    assert any(f"{len(PAYLOAD)} bytes (pin)" in message for message in messages)
+
+
+def test_fetch_retries_when_content_length_does_not_match_a_full_pin_body(tmp_path, clock):
+    """A body of the pin size is still retried when Content-Length disagrees.
+
+    The sha256 is not consulted. After five attempts this is DownloadError, not
+    ChecksumError.
+    """
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    sleeps, _spans = clock
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        return _Response(PAYLOAD, content_length=len(PAYLOAD) + 1)
+
+    with pytest.raises(pins.DownloadError, match="failed after 5 attempts") as raised:
+        pins.fetch(tmp_path, opener)
+    message = str(raised.value)
+    assert isinstance(raised.value.__cause__, pins.SizeMismatch)
+    assert f"{len(PAYLOAD) + 1} bytes (Content-Length)" in message
+    assert f"downloaded {len(PAYLOAD)} bytes" in message
+    assert "pin" not in message.split("downloaded")[0]
+    assert len(calls) == pins.MAX_ATTEMPTS
+    assert sleeps == [10.0, 20.0, 40.0, 80.0]
+    assert _files(tmp_path) == ["pins.json"]
+
+
+def test_fetch_without_pin_bytes_or_content_length_does_not_retry_a_short_body(tmp_path, clock):
+    """A pin that omits bytes still treats a headerless short body as a checksum failure."""
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest)
+    sleeps, spans = clock
+    calls = []
+    short = PAYLOAD[:3]
+    assert hashlib.sha256(short).hexdigest() != digest
+
+    def opener(url):
+        calls.append(url)
+        return _Response(short, content_length=None)
+
+    with pytest.raises(pins.ChecksumError, match="expected " + digest):
+        pins.fetch(tmp_path, opener)
+    assert calls == [URL]
+    assert sleeps == []
+    assert spans == []
+    assert _files(tmp_path) == ["pins.json"]
