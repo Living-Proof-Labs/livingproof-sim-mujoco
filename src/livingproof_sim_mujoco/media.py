@@ -19,9 +19,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
+
+# Headless screencasts use OSMesa. Set this before MuJoCo chooses a GL platform.
+os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 import mujoco
 import numpy as np

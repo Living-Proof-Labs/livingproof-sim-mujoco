@@ -1,7 +1,11 @@
 """MCAP recordings and screencasts of walk-hallway trials (toy robot from test_evidence)."""
 
 import json
+import os
 from pathlib import Path
+
+# Before livingproof_sim_mujoco, which imports MuJoCo and locks the GL platform.
+os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 import pytest
 
