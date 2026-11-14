@@ -37,7 +37,7 @@ tasks:
       # Changed by the --lock work but not run in CI before (review of PR #42).
       # OSMesa: the dev image has no display. MuJoCo reads MUJOCO_GL before import.
       - MUJOCO_GL=osmesa uv run --no-sync pytest tests/test_media.py --junitxml=artifacts/media.xml
-      - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py --junitxml=artifacts/other.xml
+      - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py tests/test_test_results.py tests/test_test_results_review.py --junitxml=artifacts/other.xml
       - uv run --no-sync pytest tests/test_lock_cli_review.py --junitxml=artifacts/lock-cli.xml
   docs:reference:
     desc: Generate CLI reference from executable help
