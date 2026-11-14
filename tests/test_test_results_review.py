@@ -259,6 +259,7 @@ def test_publish_tests_still_runs_when_verify_fails_and_skips_forks():
     assert "head.repo.full_name == github.repository" in publish
     assert "continue-on-error" not in publish
     assert "persist-credentials: false" in publish
-    # #45 will add the attempt suffix; this PR still uses the unsuffixed name.
-    assert "name: mujoco-evidence-amd64" in publish
-    assert "github.run_attempt" not in publish
+    # #45 scopes the download to this run attempt. The publisher still creates
+    # the check already completed.
+    assert "name: mujoco-evidence-amd64-${{ github.run_attempt }}" in publish
+    assert "tools/test_results.py" in publish

@@ -16,3 +16,13 @@ def test_every_release_upload_replaces_assets_so_a_rerun_still_publishes():
     workflow = (ROOT / ".github/workflows/verify.yml").read_text()
     uploads = [line for line in workflow.splitlines() if "gh release upload" in line]
     assert uploads and all("--clobber" in line for line in uploads)
+
+
+def test_publish_tests_reads_only_this_run_attempt_evidence():
+    workflow = (ROOT / ".github/workflows/verify.yml").read_text()
+    evidence = "mujoco-evidence-amd64-${{ github.run_attempt }}"
+    assert f"name: {evidence}" in workflow
+    publish = workflow.split("publish-tests:", 1)[1].split("deploy-docs:", 1)[0]
+    assert f"name: {evidence}" in publish
+    assert "name: mujoco-evidence-amd64\n" not in publish
+    assert "tools/test_results.py" in publish

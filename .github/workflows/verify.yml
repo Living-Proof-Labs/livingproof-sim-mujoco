@@ -61,7 +61,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: mujoco-evidence-amd64
+          # The attempt is part of the name. publish-tests downloads every
+          # artifact with that name, and a failed-job rerun keeps earlier attempts.
+          name: mujoco-evidence-amd64-${{ github.run_attempt }}
           path: artifacts/
           retention-days: 14
           if-no-files-found: error
@@ -99,7 +101,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: mujoco-evidence-amd64
+          name: mujoco-evidence-amd64-${{ github.run_attempt }}
           path: reports
       # dorny's check mode creates the run in progress and then updates it.
       # That update returns 404 Not Found and leaves MuJoCo tests (amd64) stuck.

@@ -34,9 +34,10 @@ signed-in GitHub account and Codespaces access. A successful localhost response
 does not verify the forwarding authentication; keep the port private.
 
 Run `task render` to generate `artifacts/preview` and exit without a server.
-The CI `mujoco-evidence-amd64` artifact retains these files for 14 days. Inspect
-the PNGs and `trajectory.json` directly, or serve the extracted directory over
-HTTP to use `index.html` playback.
+The CI artifact `mujoco-evidence-amd64-<run attempt>` retains these files for
+14 days. The attempt number is part of the name, so each run attempt keeps its
+own files. Inspect the PNGs and `trajectory.json` directly, or serve the
+extracted directory over HTTP to use `index.html` playback.
 
 `tools/test-devcontainer.sh` exercises creation setup, bare task, setup, physics
 tests, and rendered playback tests as a non-root user with no Docker executable.
