@@ -1,8 +1,10 @@
 """Pinned upstream files: download by commit into a robot package's cache, verify sha256.
 
 A robot package keeps a ``pins.json`` (groups of files at a repository commit, each with a
-sha256 and a ``dest`` directory). ``fetch(root)`` downloads missing files and verifies every
-file, cached or not. Transient download errors are retried; a hash mismatch is not.
+sha256, an optional ``bytes`` length, and a ``dest`` directory). ``fetch(root)`` downloads
+missing files and verifies every file, cached or not. Transient download errors are retried,
+including a body that is short of or a different size from ``Content-Length`` or the pin's
+``bytes``. A sha256 mismatch on a body of the expected size is not retried.
 """
 
 from __future__ import annotations
@@ -40,6 +42,21 @@ class ChecksumError(RuntimeError):
 
 class DownloadError(RuntimeError):
     """A pinned file could not be downloaded after every transient attempt."""
+
+
+class SizeMismatch(Exception):
+    """The body length did not match Content-Length or the pin's ``bytes``.
+
+    A short or substituted response is transient and is retried. ``ChecksumError``
+    is only for a body of the expected size whose sha256 does not match.
+    """
+
+    def __init__(self, label: str, actual: int, expected: list[tuple[str, int]]):
+        self.label = label
+        self.actual = actual
+        self.expected = expected
+        counts = " and ".join(f"{count} bytes ({source})" for source, count in expected)
+        super().__init__(f"{label}: expected {counts}, downloaded {actual} bytes")
 
 
 def load_pins(root: Path) -> dict:
@@ -117,7 +134,13 @@ def _backoff_seconds(attempt: int) -> float:
 
 
 def _is_transient(exc: BaseException) -> bool:
-    """Connection resets, refusals, timeouts, status-less URLErrors, HTTP 5xx and 429."""
+    """Connection resets, refusals, timeouts, status-less URLErrors, HTTP 5xx and 429.
+
+    A body whose length does not match Content-Length or the pin is the same kind of
+    failure: the response ended early or was substituted, and another attempt may work.
+    """
+    if isinstance(exc, SizeMismatch):
+        return True
     if isinstance(exc, urllib.error.HTTPError):
         code = exc.code
         return code == 429 or (isinstance(code, int) and 500 <= code <= 599)
@@ -165,8 +188,58 @@ def _copy_body(response, handle) -> None:
         handle.write(chunk)
 
 
-def _place_verified(url: str, dest: Path, expected: str, label: str, opener) -> None:
-    """Stream ``url`` to a temp file, check ``expected``, then atomically replace ``dest``."""
+def _content_length(url: str, response) -> int | None:
+    """Declared body length, or None when the header is absent or unusable."""
+    headers = getattr(response, "headers", None)
+    getter = getattr(headers, "get", None)
+    if not callable(getter):
+        return None
+    raw = getter("Content-Length")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if text.isdigit():
+        return int(text)
+    logger.warning("ignoring unusable Content-Length %r for %s", raw, url)
+    return None
+
+
+def _pin_bytes(entry: dict, label: str) -> int | None:
+    """The pin's ``bytes`` count, when the field is present."""
+    if "bytes" not in entry:
+        return None
+    value = entry["bytes"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{label}: pin bytes must be a non-negative integer, got {value!r}")
+    return value
+
+
+def _size_expectations(
+    actual: int, content_length: int | None, pinned_bytes: int | None
+) -> list[tuple[str, int]]:
+    """Sources whose declared length is not ``actual``. Empty when the body matches."""
+    mismatched: list[tuple[str, int]] = []
+    if content_length is not None and actual != content_length:
+        mismatched.append(("Content-Length", content_length))
+    if pinned_bytes is not None and actual != pinned_bytes:
+        mismatched.append(("pin", pinned_bytes))
+    return mismatched
+
+
+def _place_verified(
+    url: str,
+    dest: Path,
+    expected: str,
+    label: str,
+    opener,
+    expected_bytes: int | None,
+) -> None:
+    """Stream ``url`` to a temp file, check size and ``expected``, then replace ``dest``.
+
+    Size is checked before the sha256. A short or wrong-sized body raises
+    ``SizeMismatch`` so the caller can retry it. A hash mismatch is raised only
+    when the body has the expected length.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".part", dir=dest.parent)
     tmp = Path(name)
@@ -175,9 +248,14 @@ def _place_verified(url: str, dest: Path, expected: str, label: str, opener) -> 
             response = opener(url)
             try:
                 _raise_for_status(url, response)
+                content_length = _content_length(url, response)
                 _copy_body(response, handle)
             finally:
                 _close_quietly(response)
+        actual = tmp.stat().st_size
+        mismatched = _size_expectations(actual, content_length, expected_bytes)
+        if mismatched:
+            raise SizeMismatch(label, actual, mismatched)
         got = sha256(tmp)
         if got != expected:
             raise ChecksumError(f"{label}: expected {expected}, downloaded {got}")
@@ -187,11 +265,18 @@ def _place_verified(url: str, dest: Path, expected: str, label: str, opener) -> 
         raise
 
 
-def _download(url: str, dest: Path, expected: str, label: str, opener) -> None:
+def _download(
+    url: str,
+    dest: Path,
+    expected: str,
+    label: str,
+    opener,
+    expected_bytes: int | None,
+) -> None:
     """Download one pinned file, retrying only transient failures."""
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            _place_verified(url, dest, expected, label, opener)
+            _place_verified(url, dest, expected, label, opener, expected_bytes)
             return
         except ChecksumError:
             raise
@@ -237,21 +322,26 @@ def _download(url: str, dest: Path, expected: str, label: str, opener) -> None:
 def fetch(root: Path, opener=urllib.request.urlopen) -> list[Path]:
     """Download missing files and verify every file, cached or not.
 
-    Transient network failures are retried. A hash mismatch raises ChecksumError
-    immediately and leaves the previous cached file in place.
+    Transient network failures are retried, as is a body that does not match
+    Content-Length or the pin's ``bytes``. A hash mismatch on a body of the
+    expected size raises ChecksumError immediately and leaves the previous
+    cached file in place.
     """
     root = Path(root)
     done = []
     for name, group in load_pins(root)["groups"].items():
         for path, entry in group["files"].items():
             dest = root / group["dest"] / path
+            label = f"{name}:{path}"
+            expected_bytes = _pin_bytes(entry, label)
             if not dest.exists() or sha256(dest) != entry["sha256"]:
                 _download(
                     url_for(group, path, entry),
                     dest,
                     entry["sha256"],
-                    f"{name}:{path}",
+                    label,
                     opener,
+                    expected_bytes,
                 )
             done.append(dest)
     return done

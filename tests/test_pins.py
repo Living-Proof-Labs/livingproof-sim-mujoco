@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Retry transient pin downloads. Hash mismatches still fail immediately."""
+"""Retry transient pin downloads. A full-size hash mismatch still fails immediately."""
 
 import hashlib
 import json
@@ -26,14 +26,17 @@ def _files(root: Path) -> list[str]:
     return sorted(found)
 
 
-def _write_pins(root: Path, digest: str) -> None:
+def _write_pins(root: Path, digest: str, fields: dict | None = None) -> None:
+    entry = {"sha256": digest}
+    if fields:
+        entry.update(fields)
     document = {
         "groups": {
             "g": {
                 "repository": "o/r",
                 "commit": "c",
                 "dest": ".cache/g",
-                "files": {"a.txt": {"sha256": digest}},
+                "files": {"a.txt": entry},
             }
         }
     }
@@ -43,6 +46,21 @@ def _write_pins(root: Path, digest: str) -> None:
 class _Body:
     def __init__(self, data: bytes):
         self.data = data
+
+    def read(self, _size=-1):
+        data, self.data = self.data, b""
+        return data
+
+
+class _Response:
+    """A finished HTTP 200 whose body may be shorter than Content-Length."""
+
+    def __init__(self, data: bytes, content_length: int | None = None):
+        self.data = data
+        self.status = 200
+        self.headers = EmailMessage()
+        if content_length is not None:
+            self.headers["Content-Length"] = str(content_length)
 
     def read(self, _size=-1):
         data, self.data = self.data, b""
@@ -245,6 +263,124 @@ def test_fetch_does_not_retry_404(tmp_path, clock, caplog):
     assert len(caplog.records) == 1
     assert URL in caplog.records[0].getMessage()
     assert "retrying" not in caplog.records[0].getMessage()
+    assert _files(tmp_path) == ["pins.json"]
+
+
+def test_fetch_retries_a_truncated_body_then_succeeds(tmp_path, clock, caplog):
+    """A short HTTP 200 is retried. The next full body is kept."""
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    sleeps, spans = clock
+    calls = []
+    dest = tmp_path / ".cache/g/a.txt"
+    short = PAYLOAD[:3]
+
+    def opener(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return _Response(short, content_length=len(PAYLOAD))
+        assert not dest.exists()
+        return _Response(PAYLOAD, content_length=len(PAYLOAD))
+
+    caplog.set_level(logging.WARNING, logger="livingproof_sim_mujoco.pins")
+    assert pins.fetch(tmp_path, opener) == [dest]
+    assert dest.read_bytes() == PAYLOAD
+    assert calls == [URL, URL]
+    assert sleeps == [10.0]
+    assert spans == [(-2.0, 2.0)]
+    warnings = [record.getMessage() for record in caplog.records]
+    assert len(warnings) == 1
+    assert "retrying in" in warnings[0]
+    assert f"{len(PAYLOAD)} bytes (Content-Length)" in warnings[0]
+    assert f"{len(PAYLOAD)} bytes (pin)" in warnings[0]
+    assert f"downloaded {len(short)} bytes" in warnings[0]
+    assert _files(tmp_path) == [".cache/g/a.txt", "pins.json"]
+
+
+def test_fetch_gives_up_when_the_body_stays_truncated(tmp_path, clock):
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    sleeps, spans = clock
+    calls = []
+    short = b"no"
+
+    def opener(url):
+        calls.append(url)
+        return _Response(short, content_length=len(PAYLOAD))
+
+    with pytest.raises(pins.DownloadError, match="failed after 5 attempts") as raised:
+        pins.fetch(tmp_path, opener)
+    message = str(raised.value)
+    assert isinstance(raised.value.__cause__, pins.SizeMismatch)
+    assert f"{len(PAYLOAD)} bytes (Content-Length)" in message
+    assert f"{len(PAYLOAD)} bytes (pin)" in message
+    assert f"downloaded {len(short)} bytes" in message
+    assert URL in message
+    assert len(calls) == pins.MAX_ATTEMPTS
+    assert sleeps == [10.0, 20.0, 40.0, 80.0]
+    assert spans == [(-2.0, 2.0), (-4.0, 4.0), (-8.0, 8.0), (-16.0, 16.0)]
+    assert _files(tmp_path) == ["pins.json"]
+
+
+def test_fetch_retries_when_the_body_does_not_match_pin_bytes(tmp_path, clock, caplog):
+    """Content-Length can describe the short body. The pin's bytes still rejects it."""
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
+    sleeps, spans = clock
+    calls = []
+    dest = tmp_path / ".cache/g/a.txt"
+    short = b"no"
+
+    def opener(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return _Response(short, content_length=len(short))
+        return _Response(PAYLOAD, content_length=len(PAYLOAD))
+
+    caplog.set_level(logging.WARNING, logger="livingproof_sim_mujoco.pins")
+    assert pins.fetch(tmp_path, opener) == [dest]
+    assert dest.read_bytes() == PAYLOAD
+    assert calls == [URL, URL]
+    assert sleeps == [10.0]
+    assert spans == [(-2.0, 2.0)]
+    warnings = [record.getMessage() for record in caplog.records]
+    assert len(warnings) == 1
+    assert f"{len(PAYLOAD)} bytes (pin)" in warnings[0]
+    assert f"downloaded {len(short)} bytes" in warnings[0]
+    assert "Content-Length" not in warnings[0]
+
+
+@pytest.mark.parametrize("value", [True, -1, "772916", 1.5])
+def test_fetch_rejects_a_pin_bytes_value_that_is_not_a_count(tmp_path, clock, value):
+    _write_pins(tmp_path, hashlib.sha256(PAYLOAD).hexdigest(), {"bytes": value})
+    sleeps, spans = clock
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        return _Response(PAYLOAD, content_length=len(PAYLOAD))
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        pins.fetch(tmp_path, opener)
+    assert calls == []
+    assert sleeps == []
+    assert spans == []
+
+
+def test_fetch_does_not_retry_a_checksum_mismatch_at_the_full_size(tmp_path, clock):
+    _write_pins(tmp_path, "0" * 64, {"bytes": len(PAYLOAD)})
+    sleeps, spans = clock
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        return _Response(PAYLOAD, content_length=len(PAYLOAD))
+
+    with pytest.raises(pins.ChecksumError, match="expected " + "0" * 64):
+        pins.fetch(tmp_path, opener)
+    assert calls == [URL]
+    assert sleeps == []
+    assert spans == []
     assert _files(tmp_path) == ["pins.json"]
 
 
