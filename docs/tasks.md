@@ -317,7 +317,7 @@ commands:
  - uv run --no-sync pytest tests/test_compose.py --junitxml=artifacts/compose.xml
  - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
  - MUJOCO_GL=osmesa uv run --no-sync pytest tests/test_media.py --junitxml=artifacts/media.xml
- - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py --junitxml=artifacts/other.xml
+ - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py tests/test_test_results.py --junitxml=artifacts/other.xml
  - uv run --no-sync pytest tests/test_lock_cli_review.py --junitxml=artifacts/lock-cli.xml
 ```
 
