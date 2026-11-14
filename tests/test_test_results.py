@@ -267,7 +267,7 @@ def test_publish_tests_job_creates_a_completed_check_without_new_permissions():
     publish = _job(workflow, "publish-tests", "deploy-docs")
     assert "dorny/test-reporter@" in verify
     assert "use-actions-summary: 'true'" in verify
-    assert "name: mujoco-evidence-amd64" in verify
+    assert "name: mujoco-evidence-amd64-${{ github.run_attempt }}" in verify
     assert "retention-days: 14" in verify
     assert "use-actions-summary: 'false'" not in workflow
     assert "dorny/test-reporter" not in publish
@@ -278,7 +278,7 @@ def test_publish_tests_job_creates_a_completed_check_without_new_permissions():
     assert "--root reports" in publish
     assert "continue-on-error" not in publish
     assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in publish
-    assert "name: mujoco-evidence-amd64" in publish
+    assert "name: mujoco-evidence-amd64-${{ github.run_attempt }}" in publish
     assert "github.event.pull_request.head.sha || github.sha" in publish
     assert "github.token" in publish
     assert "secrets." not in publish
