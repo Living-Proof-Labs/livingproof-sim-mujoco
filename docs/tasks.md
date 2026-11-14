@@ -314,6 +314,8 @@ commands:
  - uv run --no-sync pytest tests/test_evidence.py -k "not zero_command_check" --junitxml=artifacts/evidence.xml
  - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
  - uv run --no-sync pytest tests/test_scenario_sources.py --junitxml=artifacts/scenario-sources.xml
+ - uv run --no-sync pytest tests/test_compose.py --junitxml=artifacts/compose.xml
+ - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
 ```
 
 ### `task -t Taskfile.runtime.yml verify`
