@@ -2,7 +2,7 @@
 """Generic walk helpers shared by robot packages: runner settings, the nominal initial
 state, a recorded simulation and the zero-command standing check. Never grades.
 
-    python -m livingproof_sim_mujoco.walk stand <module:adapter> --configuration NAME [--out DIR]
+    python -m livingproof_sim_mujoco.walk stand <module:adapter> --configuration NAME --lock PATH [--out DIR]
 """
 
 from __future__ import annotations
@@ -194,6 +194,7 @@ def stand(ref, name: str, out: Path | None = None, *, lock: Path) -> dict:
     root = Path(robot.root)
     fetch(root)
     document = ev.read_lock(lock)
+    ev.require_lock(document)
     entry = ev.locked_configuration(document, name, root)
     prepared = ev.prepare_run(robot, name, document)
     p = prepared.recorded

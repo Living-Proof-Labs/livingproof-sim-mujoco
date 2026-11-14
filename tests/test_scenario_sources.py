@@ -543,7 +543,11 @@ def test_missing_world_identity_writes_nothing(tmp_path, monkeypatch):
 
 
 def test_source_world_bytes_are_not_the_simulated_world(tmp_path, monkeypatch):
-    """A sources.world sha256, matching or not, does not select the simulated world."""
+    """A sources.world sha256 that does not match its file is an error.
+
+    The file is not the simulated world. A mismatch exits 1 and writes nothing,
+    the same way a world.sha256 that is not the vendored file does.
+    """
     _toy, repo = _toy_repo(tmp_path, monkeypatch)
     _write(repo, "locked/world.json", _named_world())
     _edit_lock(
@@ -552,8 +556,9 @@ def test_source_world_bytes_are_not_the_simulated_world(tmp_path, monkeypatch):
         sources={"world": {"path": "locked/world.json", "sha256": "0" * 64}},
     )
     out = tmp_path / "out"
-    manifest = _evidence(repo, out, trials=1)
-    assert manifest["world"]["clear_width"] == 1.5
+    with pytest.raises(SystemExit, match="sources.world"):
+        _evidence(repo, out, trials=1)
+    assert not out.exists()
 
 
 @pytest.mark.parametrize(

@@ -112,17 +112,61 @@ def read_lock(path: Path) -> dict:
     return document
 
 
+_LOCK_EXAMPLE = {
+    "world": '"world": {"id": "<world>", "version": "0.1.0"}',
+    "releases": (
+        '"releases": {"specs": {"tag": "v2.2.0", "commit": "<40 hex>"}, '
+        '"runner": {"tag": "v2.1.1", "commit": "<40 hex>"}}'
+    ),
+    "configurations": (
+        '"configurations": [{"name": "<name>", "version": "1.0.0", '
+        '"path": "<file>", "sha256": "<64 hex>"}]'
+    ),
+    "plan": '"plan": {"trials": {"count": 1}}',
+}
+
+
+def lock_field(lock: dict, field: str, kind: type):
+    """The lock's ``field``, or an exit-1 error that names it.
+
+    A missing ``releases``, ``configurations``, ``plan`` or ``world`` is a caller
+    mistake. It is reported as that field, not as a ``KeyError``.
+    """
+    if not isinstance(lock, dict) or field not in lock or lock[field] is None:
+        raise SystemExit(
+            f"INCOMPATIBLE: the verification lock is missing {field}. "
+            f"The caller lock needs {field}. Example: {_LOCK_EXAMPLE[field]}"
+        )
+    if not isinstance(lock[field], kind):
+        expected = "a JSON object" if kind is dict else "a JSON array"
+        raise SystemExit(
+            f"INCOMPATIBLE: the verification lock {field} must be {expected}, "
+            f"got {type(lock[field]).__name__}. Example: {_LOCK_EXAMPLE[field]}"
+        )
+    return lock[field]
+
+
+def require_lock(lock: dict) -> None:
+    """Refuse a caller lock that lacks the fields evidence and stand read."""
+    lock_field(lock, "world", dict)
+    lock_field(lock, "releases", dict)
+    lock_field(lock, "configurations", list)
+    lock_field(lock, "plan", dict)
+
+
 def pending(lock: dict) -> list[str]:
     """Release entries that still say PENDING_RELEASE."""
+    releases = lock_field(lock, "releases", dict)
     return sorted(
         name
-        for name, ref in lock["releases"].items()
-        if PENDING in (ref.get("tag"), ref.get("commit"))
+        for name, ref in releases.items()
+        if isinstance(ref, dict) and PENDING in (ref.get("tag"), ref.get("commit"))
     )
 
 
 def locked_configuration(lock: dict, name: str, root: Path) -> dict:
-    entry = next((c for c in lock["configurations"] if c["name"] == name), None)
+    configurations = lock_field(lock, "configurations", list)
+    entry = next((c for c in configurations if isinstance(c, dict) and c.get("name") == name), None)
     if entry is None:
         raise SystemExit(f"{name} is not in the verification lock")
     if sha256(Path(root) / entry["path"]) != entry["sha256"]:
@@ -151,6 +195,10 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
     root = Path(robot.root)
     document, _source = sources.parameters_document_for(root, lock)
     world, digest, relative = compose.vendored_world(lock)
+    # sources.world does not select the simulated world. A sha256 that does not
+    # match the file it names is still an error, the same as world.sha256.
+    if isinstance(lock.get("sources"), dict) and "world" in lock["sources"]:
+        sources.world_source(root, lock)
     selected = sources.WorldSource(world, "vendored", digest, relative)
     refusal = frozen.unsupported_world(world)
     if refusal:
@@ -349,7 +397,7 @@ def recording(robot: Robot, lock: dict, name: str) -> tuple[dict, sc.Prepared]:
     ``time_limit`` is the parameter file's expression. The frozen scenario
     records it unrounded; the spec-rounded value is what ``resolve`` returns.
     """
-    return lock["plan"], prepare_run(robot, name, lock)
+    return lock_field(lock, "plan", dict), prepare_run(robot, name, lock)
 
 
 def executed_plan(plan: dict, count: int) -> dict:
@@ -373,36 +421,12 @@ def _require(label: str, value: str, pattern: re.Pattern[str]) -> str:
     return value
 
 
-def world_sha256(root: Path, lock: dict) -> str:
-    """sha256 of the world file: the lock, else the robot's pins.json."""
-    world = lock["world"]
-    declared = world.get("sha256")
-    if isinstance(declared, str) and _SHA256.fullmatch(declared):
-        return declared
-    ident = f"{world['id']}/{world['version']}"
-    pins_path = Path(root) / "pins.json"
-    if pins_path.is_file():
-        pins = json.loads(pins_path.read_text())
-        for group in pins.get("groups", {}).values():
-            for path, entry in group.get("files", {}).items():
-                digest = entry.get("sha256") if isinstance(entry, dict) else None
-                if ident in path and path.endswith("world.json") and isinstance(digest, str):
-                    return _require(f"world {ident} sha256", digest, _SHA256)
-    raise SystemExit(
-        f"world {ident} has no sha256 in the verification lock or pins.json. "
-        "Add world.sha256 or pin the world file. "
-        'Example: "world": {"id": "<world>", "version": "0.1.0", "sha256": "<64 hex>"}'
-    )
-
-
 def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dict:
-    """``{"id", "version", "sha256"}`` of the world this run loaded.
+    """``{"id", "version", "sha256"}`` of the vendored world this run loaded.
 
-    A file read from ``sources.world`` or pins.json is named by the sha256 of
-    its bytes. Lock ``world`` fields and the file's own ``id`` and
-    ``content_version`` must agree with it; any disagreement is an ERROR. Only
-    a world supplied by the adapter, with no file read here, takes its sha256
-    from lock ``world.sha256`` or the robot's pins.json, as before.
+    Lock ``world.id`` and ``world.version`` must agree with that file. The
+    sha256 is the digest of the vendored ``world.json``. A lock ``world.sha256``
+    that disagrees is an ERROR.
     """
     legacy = lock.get("world", {})
     if not isinstance(legacy, dict):
@@ -432,9 +456,12 @@ def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dic
                 f"ERROR: world {key} is missing from the verification lock world and from {where}. "
                 'Example: "world": {"id": "<world>", "version": "0.1.0"}'
             )
-    if selected.sha256 is None:
-        ident["sha256"] = world_sha256(root, {**lock, "world": {**legacy, **ident}})
-        return ident
+    if not isinstance(selected.sha256, str) or _SHA256.fullmatch(selected.sha256) is None:
+        raise SystemExit(
+            "INCOMPATIBLE: the loaded world has no sha256. The simulator loads the vendored "
+            "world.json named by the lock. "
+            'Example: "world": {"id": "<world>", "version": "0.1.0"}'
+        )
     declared = legacy.get("sha256")
     if declared is not None and declared != selected.sha256:
         raise SystemExit(
@@ -683,6 +710,7 @@ def evidence(
     root = Path(robot.root)
     lock_path = Path(lock)
     lock = read_lock(lock_path)
+    require_lock(lock)
     waiting = pending(lock)
     if waiting and not allow_pending:
         raise SystemExit(

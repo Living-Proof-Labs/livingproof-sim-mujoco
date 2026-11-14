@@ -14,10 +14,13 @@ sites use the ``place:`` prefix ``initial_state`` reads.
 
 from __future__ import annotations
 
+import re
 import tempfile
+import threading
 from pathlib import Path
 
 import mujoco
+import numpy as np
 
 from livingproof_sim_mujoco import hallway
 from livingproof_sim_mujoco.pins import sha256
@@ -25,15 +28,21 @@ from livingproof_sim_mujoco.scene import add_world
 
 # A base whose x and y are this close to 0 is at the world origin.
 _AT_ORIGIN = 1e-6
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+# Serializes the brief ``MjSpec.compile`` stand-in used to see which spec an
+# adapter compiled. The stand-in calls the original function and records a spec
+# only on the composing thread. It is removed before the lock is released.
+_COMPILE_LOCK = threading.Lock()
+_tls = threading.local()
 
 
 def vendored_world(lock: dict) -> tuple[dict, str, str]:
     """``(world, sha256, relative path)`` for the lock's world id and version.
 
     The bytes are the vendored ``world.json``, after ``release.json`` and the
-    world's MJCF mapping are checked. A lock ``world.sha256`` that disagrees
-    is an error. An id or version this package does not vendor is
-    UNSUPPORTED, not a substitute.
+    world's MJCF mapping are checked. A lock ``world.sha256``, ``world.tag`` or
+    ``world.commit`` that is not this file is an error. An id or version this
+    package does not vendor is UNSUPPORTED, not a substitute.
     """
     declared = lock.get("world") if isinstance(lock, dict) else None
     if not isinstance(declared, dict):
@@ -66,29 +75,99 @@ def vendored_world(lock: dict) -> tuple[dict, str, str]:
             f"world.json is {digest}. The run would name a different world from the one "
             "loaded. Remove world.sha256 or set it to the vendored file."
         )
+    _require_same_release(declared, loaded["pin"], digest, fixture, version)
     return world, digest, f"worlds/{fixture}/{version}/world.json"
 
 
+def _release_pairs(pin: dict, fixture: str, version: str) -> tuple[tuple[str, str], ...]:
+    pairs = list(hallway.same_byte_releases(fixture, version))
+    pin_pair = (pin.get("tag"), pin.get("commit"))
+    if pin_pair not in pairs and all(isinstance(part, str) and part for part in pin_pair):
+        pairs.append(pin_pair)
+    return tuple(pairs)
+
+
+def _release_error(field: str, value, pin: dict, digest: str, fixture: str, version: str) -> str:
+    return (
+        f"ERROR: lock {field} is {value!r} but the vendored {fixture}/{version} "
+        f"world.json is {pin['tag']} {pin['commit']} ({digest}). The run would name a "
+        f"different world from the one loaded. Remove {field} or set it to a release of "
+        "that file. "
+        f'Example: "world": {{"id": "{fixture}", "version": "{version}", '
+        f'"tag": "{pin["tag"]}", "commit": "{pin["commit"]}"}}'
+    )
+
+
+def _require_same_release(
+    declared: dict, pin: dict, digest: str, fixture: str, version: str
+) -> None:
+    """Refuse a tag or commit that is not a release of the vendored world file."""
+    tag, commit = declared.get("tag"), declared.get("commit")
+    if tag is None and commit is None:
+        return
+    pairs = _release_pairs(pin, fixture, version)
+    if tag is not None and (not isinstance(tag, str) or not tag):
+        raise SystemExit(_release_error("world.tag", tag, pin, digest, fixture, version))
+    if commit is not None and (not isinstance(commit, str) or _COMMIT.fullmatch(commit) is None):
+        raise SystemExit(_release_error("world.commit", commit, pin, digest, fixture, version))
+    if tag is not None and commit is not None:
+        if (tag, commit) in pairs:
+            return
+        known_tags = {item[0] for item in pairs}
+        known_commits = {item[1] for item in pairs}
+        if tag not in known_tags:
+            field = "world.tag" if commit in known_commits else "world.tag and world.commit"
+        elif commit not in known_commits:
+            field = "world.commit"
+        else:
+            field = "world.tag and world.commit"
+        shown = (tag, commit) if "and" in field else (commit if field == "world.commit" else tag)
+        raise SystemExit(_release_error(field, shown, pin, digest, fixture, version))
+    if tag is not None and tag not in {item[0] for item in pairs}:
+        raise SystemExit(_release_error("world.tag", tag, pin, digest, fixture, version))
+    if commit is not None and commit not in {item[1] for item in pairs}:
+        raise SystemExit(_release_error("world.commit", commit, pin, digest, fixture, version))
+
+
 def _scene_and_spec(robot, name: str):
-    """The adapter scene and the MjSpec it compiled, if it used one.
+    """``(scene, spec, directory)`` for the adapter scene.
 
     ``MjSpec.compile`` does not register an XML document, so ``mj_saveLastXML``
-    cannot export those models. The spec the adapter just compiled is the robot
-    model, and the world is added to that spec.
+    cannot export those models. The spec is recorded only for this thread, and
+    only while ``_COMPILE_LOCK`` is held. The stand-in calls the original
+    ``compile``, so another thread still receives the model it compiled. The
+    original function is put back before the lock is released. A model loaded
+    from XML is saved before the lock is released, because the last XML is
+    process-global. ``directory`` holds that XML's meshes.
     """
     captured: list = []
-    real = mujoco.MjSpec.compile
-
-    def spy(self, *args, **kwargs):
-        captured.append(self)
-        return real(self, *args, **kwargs)
-
-    mujoco.MjSpec.compile = spy
+    _tls.specs = captured
+    spec = None
+    directory = None
     try:
-        scene = robot.scene(name)
+        with _COMPILE_LOCK:
+            real = mujoco.MjSpec.compile
+
+            def spy(self, *args, **kwargs):
+                model = real(self, *args, **kwargs)
+                bucket = getattr(_tls, "specs", None)
+                if bucket is not None:
+                    bucket.append(self)
+                return model
+
+            mujoco.MjSpec.compile = spy
+            try:
+                scene = robot.scene(name)
+            finally:
+                mujoco.MjSpec.compile = real
+            # Last XML is process-global. Read it before releasing the lock.
+            if captured:
+                spec = captured[-1]
+            else:
+                spec, directory = _spec_from_xml_model(scene.model)
     finally:
-        mujoco.MjSpec.compile = real
-    return scene, captured[-1] if captured else None
+        _tls.specs = None
+    return scene, spec, directory
 
 
 def _spec_from_xml_model(model: mujoco.MjModel):
@@ -100,19 +179,13 @@ def _spec_from_xml_model(model: mujoco.MjModel):
     directory = tempfile.TemporaryDirectory()
     xml = Path(directory.name) / "robot.xml"
     try:
-        saved = mujoco.mj_saveLastXML(str(xml), model)
+        mujoco.mj_saveLastXML(str(xml), model)
     except mujoco.FatalError as exc:
         directory.cleanup()
         raise SystemExit(
             "INCOMPATIBLE: the robot model could not be saved for composition "
             f"({exc}). The world was not attached."
         ) from exc
-    if saved is not None and not saved:
-        directory.cleanup()
-        raise SystemExit(
-            "INCOMPATIBLE: the robot model could not be saved for composition "
-            "(mj_saveLastXML failed). The world was not attached."
-        )
     try:
         spec = mujoco.MjSpec.from_file(str(xml))
     except Exception:
@@ -121,16 +194,81 @@ def _spec_from_xml_model(model: mujoco.MjModel):
     return spec, directory
 
 
-def attach_world(model: mujoco.MjModel, world: dict, spec: mujoco.MjSpec | None = None):
+def _arrays_equal(left: np.ndarray, right: np.ndarray) -> bool:
+    if left.shape != right.shape or left.dtype != right.dtype:
+        return False
+    if np.issubdtype(left.dtype, np.floating):
+        return bool(np.allclose(left, right, rtol=0, atol=0, equal_nan=True))
+    return bool(np.array_equal(left, right))
+
+
+def _value_change(label: str, left, right) -> str | None:
+    """One compiled value ``label`` that a recompile would replace, or None."""
+    if isinstance(left, np.ndarray) and isinstance(right, np.ndarray):
+        if not _arrays_equal(left, right):
+            return label
+        return None
+    if callable(left) or callable(right):
+        return None
+    if isinstance(left, (bool, np.bool_)):
+        if bool(left) != bool(right):
+            return f"{label} is {bool(left)} and a recompile is {bool(right)}"
+        return None
+    if isinstance(left, (int, float, np.integer, np.floating)) and isinstance(
+        right, (int, float, np.integer, np.floating)
+    ):
+        if left != right:
+            return f"{label} is {left} and a recompile is {right}"
+    return None
+
+
+def _model_change(original: mujoco.MjModel, recompiled: mujoco.MjModel) -> str | None:
+    """A compiled value the recompile would drop, or None when the models match.
+
+    Recompiling the spec loses edits made on the MjModel after ``compile``.
+    Those edits are a different simulation from the one the adapter built.
+    """
+    for name in dir(original.opt):
+        if name.startswith("_"):
+            continue
+        change = _value_change(
+            f"opt.{name}", getattr(original.opt, name), getattr(recompiled.opt, name)
+        )
+        if change:
+            return change
+    for name in dir(original):
+        if name.startswith("_"):
+            continue
+        change = _value_change(name, getattr(original, name), getattr(recompiled, name))
+        if change:
+            return change
+    return None
+
+
+def attach_world(
+    model: mujoco.MjModel,
+    world: dict,
+    spec: mujoco.MjSpec | None = None,
+    directory: tempfile.TemporaryDirectory | None = None,
+):
     """Return ``(model, wall names)`` with the world's walls and places added.
 
-    ``spec`` is the spec the adapter compiled. Without one, the model must be a
-    loaded XML document.
+    ``spec`` is the spec the adapter compiled, or one rebuilt from its XML.
+    ``directory`` holds meshes for that XML and is removed after compile.
+    A recompile that would drop a change made on the compiled model is
+    INCOMPATIBLE.
     """
-    directory = None
     if spec is None:
         spec, directory = _spec_from_xml_model(model)
     try:
+        change = _model_change(model, spec.compile())
+        if change:
+            raise SystemExit(
+                "INCOMPATIBLE: the compiled robot model differs from a recompile of its "
+                f"spec ({change}). Composing the world would drop that change. No trial "
+                "was recorded. Set the value on the MjSpec before compile. "
+                "Example: spec.option.timestep = 0.001, then spec.compile()"
+            )
         walls = add_world(spec, world)
         compiled = spec.compile()
     finally:
@@ -197,8 +335,8 @@ def place(robot, name: str, world: dict, spawn: str, start_offset=None):
     """
     from livingproof_sim_mujoco import evidence as ev
 
-    scene, spec = _scene_and_spec(robot, name)
-    model, walls = attach_world(scene.model, world, spec)
+    scene, spec, directory = _scene_and_spec(robot, name)
+    model, walls = attach_world(scene.model, world, spec, directory)
     scene.model = model
     ctrl = robot.controller(name, scene)
     data = mujoco.MjData(model)

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,9 +31,28 @@ CACHE = Path("/tmp/livingproof-world-parity")
 VENDORED = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
 
 
+def _uv_revision(package: str) -> str:
+    text = (ROOT / "uv.lock").read_text()
+    found = re.search(rf"{re.escape(package)}\?tag=v2\.0\.0#([0-9a-f]{{40}})", text)
+    if not found:
+        raise AssertionError(f"uv.lock has no v2.0.0 source revision for {package}")
+    return found.group(1)
+
+
+def _head(dest: Path) -> str:
+    found = subprocess.run(
+        ["git", "-C", str(dest), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return found.stdout.strip() if found.returncode == 0 else ""
+
+
 def _clone(package: str, tag: str) -> Path:
     dest = CACHE / f"{package}-{tag}"
-    if not (dest / "pins.json").is_file():
+    expected = _uv_revision(package) if tag == "v2.0.0" else None
+    if not (dest / "pins.json").is_file() or (expected is not None and _head(dest) != expected):
         subprocess.run(["rm", "-rf", str(dest)], check=True)
         subprocess.run(
             [
@@ -47,6 +67,10 @@ def _clone(package: str, tag: str) -> Path:
                 str(dest),
             ],
             check=True,
+        )
+    if expected is not None and _head(dest) != expected:
+        raise AssertionError(
+            f"{package} checkout {_head(dest)} is not the uv.lock revision {expected}"
         )
     return dest
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -55,9 +56,30 @@ def _sim_v211() -> Path:
     return dest
 
 
+def _uv_revision(package: str) -> str:
+    text = (ROOT / "uv.lock").read_text()
+    found = re.search(rf"{re.escape(package)}\?tag=v2\.0\.0#([0-9a-f]{{40}})", text)
+    if not found:
+        raise AssertionError(f"uv.lock has no v2.0.0 source revision for {package}")
+    return found.group(1)
+
+
+def _head(dest: Path) -> str:
+    found = subprocess.run(
+        ["git", "-C", str(dest), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return found.stdout.strip() if found.returncode == 0 else ""
+
+
 def _robot_v1(name: str, tag: str) -> Path:
     dest = CACHE / f"{name}-{tag}"
-    if not (dest / "pyproject.toml").is_file():
+    expected = _uv_revision(name) if tag == "v2.0.0" else None
+    if not (dest / "pyproject.toml").is_file() or (
+        expected is not None and _head(dest) != expected
+    ):
         if dest.exists():
             subprocess.run(["rm", "-rf", str(dest)], check=True)
         _run(
@@ -71,6 +93,10 @@ def _robot_v1(name: str, tag: str) -> Path:
                 f"https://github.com/Living-Proof-Labs/{name}.git",
                 str(dest),
             ]
+        )
+    if expected is not None and _head(dest) != expected:
+        raise AssertionError(
+            f"{name} checkout {_head(dest)} is not the uv.lock revision {expected}"
         )
     return dest
 

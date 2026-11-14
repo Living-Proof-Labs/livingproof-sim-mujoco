@@ -70,13 +70,38 @@ def test_unknown_world_is_unsupported():
         compose.vendored_world({"world": {"id": "not-a-world", "version": "0.1.0"}})
 
 
+def _uv_revision(package: str) -> str:
+    """Commit uv.lock records for the v2.0.0 tag of a robot package."""
+    text = (ROOT / "uv.lock").read_text()
+    found = re.search(rf"{re.escape(package)}\?tag=v2\.0\.0#([0-9a-f]{{40}})", text)
+    if not found:
+        raise AssertionError(f"uv.lock has no v2.0.0 source revision for {package}")
+    return found.group(1)
+
+
 def _checkout(package: str) -> Path:
-    """Source tree of the v2.0.0 tag. The installed wheel does not ship pins or models."""
+    """Source tree of the v2.0.0 tag. The installed wheel does not ship pins or models.
+
+    The checkout commit has to be the revision ``uv.lock`` records for that tag.
+    """
     import shutil
     import subprocess
 
     dest = Path("/tmp/livingproof-world-parity") / f"{package}-v2.0.0"
-    if not (dest / "pins.json").is_file():
+    expected = _uv_revision(package)
+
+    def head() -> str:
+        if not dest.exists():
+            return ""
+        found = subprocess.run(
+            ["git", "-C", str(dest), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return found.stdout.strip() if found.returncode == 0 else ""
+
+    if not (dest / "pins.json").is_file() or head() != expected:
         if dest.exists():
             shutil.rmtree(dest)
         subprocess.run(
@@ -92,6 +117,9 @@ def _checkout(package: str) -> Path:
             ],
             check=True,
         )
+    got = head()
+    if got != expected:
+        raise AssertionError(f"{package} checkout {got} is not the uv.lock revision {expected}")
     return dest
 
 
@@ -127,3 +155,91 @@ def test_v2_robot_starts_at_the_world_place_between_the_walls(adapter, package):
         assert base[0] == pytest.approx(place["position"][0])
         assert base[1] == pytest.approx(place["position"][1])
         assert abs(float(base[0])) > 1.0  # spawn-entrance is not the origin
+
+
+def test_world_tag_or_commit_that_is_not_the_vendored_file_is_an_error():
+    """A tag or commit that is not a release of the vendored file exits like world.sha256."""
+    base = {"id": "hallway-open", "version": "0.1.0"}
+    with pytest.raises(SystemExit, match="world.tag") as caught:
+        compose.vendored_world({"world": {**base, "tag": "v9.9.9"}})
+    assert "Traceback" not in str(caught.value)
+    with pytest.raises(SystemExit, match="world.commit") as caught:
+        compose.vendored_world({"world": {**base, "commit": "ab" * 20}})
+    assert "Traceback" not in str(caught.value)
+    # The published locks name v1.1.0. That world.json is the vendored file.
+    world, digest, _path = compose.vendored_world(
+        {
+            "world": {
+                **base,
+                "tag": "v1.1.0",
+                "commit": "9b3e7119aa93a3370383227fb30bd39a9dd72b4b",
+            }
+        }
+    )
+    assert world["id"] == "hallway-open"
+    assert digest == "d60bb8aa6a72c8403fb6674cc9d803962c1484bc3e163527988e8c57ccec775c"
+
+
+def test_compose_restores_compile_and_ignores_another_thread():
+    """Composition does not leave MjSpec.compile replaced, and another thread's compile is its own."""
+    import threading
+
+    original = mujoco.MjSpec.compile
+    world = hallway.load_fixture("hallway-open", "0.1.0")["world"]
+
+    class _Scene:
+        def __init__(self, model):
+            self.model = model
+
+    class _Ctrl:
+        def __init__(self, model):
+            self.initial_qpos = model.qpos0.copy()
+            self.spec = type("Spec", (), {"actuation": "pd_torque"})()
+
+    class _Robot:
+        id = "review-plain"
+
+        def scene(self, name):
+            spec = mujoco.MjSpec.from_string(
+                '<mujoco><option timestep="0.002"/><worldbody><body name="base" pos="0 0 0.3">'
+                '<freejoint/><geom type="sphere" size="0.1"/></body></worldbody></mujoco>'
+            )
+            return _Scene(spec.compile())
+
+        def controller(self, name, scene):
+            return _Ctrl(scene.model)
+
+        def base_body(self, name):
+            return "base"
+
+        def initial_state(self, model, data, ctrl, spawn, *, start_offset=None):
+            from livingproof_sim_mujoco.walk import initial_state
+
+            initial_state(model, data, ctrl, spawn, start_offset=start_offset)
+
+    errors = []
+    stop = threading.Event()
+
+    def other():
+        spec = mujoco.MjSpec.from_string(
+            '<mujoco><option timestep="0.007"/><worldbody><body name="base" pos="0 0 0.2">'
+            '<freejoint/><geom type="sphere" size="0.05"/></body></worldbody></mujoco>'
+        )
+        while not stop.is_set():
+            model = spec.compile()
+            if float(model.opt.timestep) != pytest.approx(0.007):
+                errors.append(float(model.opt.timestep))
+                return
+
+    thread = threading.Thread(target=other)
+    thread.start()
+    try:
+        model, _data, _ctrl, walls = compose.place(_Robot(), "x", world, "spawn-entrance")
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+    assert mujoco.MjSpec.compile is original
+    assert errors == []
+    assert thread.is_alive() is False
+    assert walls == ["wall-left", "wall-right"]
+    assert float(model.opt.timestep) == pytest.approx(0.002)

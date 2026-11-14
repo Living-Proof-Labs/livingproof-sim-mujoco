@@ -84,7 +84,22 @@ any other mode is an ERROR. On the straight open hallway the command is `[0.5, 0
 
 The `world` in `run-manifest.json` names the vendored `world.json` that was loaded: its
 `id` and `version` come from the lock, and its `sha256` is the digest of those bytes. A
-lock `world.sha256` that disagrees is an ERROR before anything is written.
+lock `world.sha256` that disagrees is an ERROR before anything is written. A `world.tag`
+or `world.commit` that is not a release of that same file is the same ERROR. The
+published verification locks name livingproof-worlds v1.1.0; that release's
+`world.json` is the vendored file byte for byte, so those locks are accepted.
+`sources.world` does not select the simulated world. A sha256 that does not match the
+file it names is an ERROR, and the pins file is not used.
+
+## Standing check
+
+`python -m livingproof_sim_mujoco.walk stand <module:adapter> --configuration NAME --lock <lock.json> [--out DIR]`
+is the zero-command standing check at the world's start place. `--lock` is required. It
+is the same caller verification lock as `evidence`, and the world and the start place
+come from the vendored release that lock names. With `--out`, the check writes
+`stand.json` and `stand-zero-command.mp4` in that directory. It does not grade the robot.
+A lock missing `world`, `releases`, `configurations` or `plan` exits 1 and names the
+missing field.
 
 A world whose format is `livingproof-world/0.2` is an ERROR when that is the loaded
 document. This release does not yet write a neutral observation for that format. Limits
