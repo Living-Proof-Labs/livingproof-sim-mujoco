@@ -314,6 +314,11 @@ commands:
  - uv run --no-sync pytest tests/test_evidence.py -k "not zero_command_check" --junitxml=artifacts/evidence.xml
  - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
  - uv run --no-sync pytest tests/test_scenario_sources.py --junitxml=artifacts/scenario-sources.xml
+ - uv run --no-sync pytest tests/test_compose.py --junitxml=artifacts/compose.xml
+ - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
+ - MUJOCO_GL=osmesa uv run --no-sync pytest tests/test_media.py --junitxml=artifacts/media.xml
+ - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py --junitxml=artifacts/other.xml
+ - uv run --no-sync pytest tests/test_lock_cli_review.py --junitxml=artifacts/lock-cli.xml
 ```
 
 ### `task -t Taskfile.runtime.yml verify`

@@ -35,7 +35,6 @@ def _toy():
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "tests/fixtures/robot-capability-specs-v2.2.0"
-GOLDEN = ROOT / "tests/fixtures/golden-v2.0.5"
 PARITY = ROOT / "tests/fixtures/lpv-run-43402628666"
 # Production Python outside these paths must not name the scenario or its world.
 ALLOW = (
@@ -176,28 +175,23 @@ def test_route_walk_stops_at_the_first_crossing():
     )
 
 
-def test_golden_hallway_observation_matches_v2_0_5(tmp_path, monkeypatch):
-    provenance = json.loads((GOLDEN / "PROVENANCE.json").read_text())
-    assert provenance["tag"] == "v2.0.5"
-    assert provenance["commit"] == "a9de2435f0628047a8509b68b499dbbd7a08cda3"
-    expected = (GOLDEN / "trial-01.json").read_bytes()
-    assert _sha(GOLDEN / "trial-01.json") == provenance["observation_sha256"]
+def test_evidence_records_the_vendored_world(tmp_path, monkeypatch):
+    """The caller lock selects the world. Geometry is the vendored release, not the adapter."""
     toy = _toy()
     repo = tmp_path / "repo"
     repo.mkdir()
     toy._repo(repo)
     monkeypatch.setattr(toy.Toy, "root", repo)
     out = tmp_path / "out"
-    manifest = evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
-    assert (out / "trials" / "trial-01.json").read_bytes() == expected
-    stable = json.loads((GOLDEN / "stable.json").read_text())
-    run = json.loads((out / "run-manifest.json").read_text())
-    assert run["parameters"] == stable["parameters"]
-    assert manifest["preconditions"] == stable["preconditions"]
-    assert manifest["world"] == stable["world"]
-    assert manifest["plan"] == stable["plan"]
-    assert manifest["start"] == stable["start"]
-    assert manifest["trials"]["results"][0]["outcome"] == stable["outcome"]
+    manifest = _evidence(repo, out, trials=1)
+    world = json.loads((out / "run-manifest.json").read_text())["world"]
+    vendored = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
+    assert world["id"] == "hallway-open" and world["version"] == "0.1.0"
+    assert world["sha256"] == _sha(vendored)
+    assert manifest["world"]["clear_width"] == 1.5
+    assert manifest["world"]["exit_x"] == 3.0
+    assert manifest["trials"]["results"][0]["outcome"] == "crossed_exit"
+    assert manifest["environment"]["walls"] == ["wall-left", "wall-right"]
 
 
 def _write(root: Path, relative: str, payload: dict) -> str:
@@ -277,7 +271,7 @@ def test_lock_entry_wins_over_pins_and_a_mismatch_is_an_error(tmp_path):
     assert "from-pins" not in str(caught.value)
 
 
-def test_l_shaped_0_2_world_is_an_error_and_its_route_matches(tmp_path, monkeypatch):
+def test_l_shaped_route_matches_and_the_adapter_world_is_not_used(tmp_path, monkeypatch):
     catalog = _catalog()
     world = json.loads((ROOT / "tests/fixtures/l-shaped-0.2.json").read_text())
     assert world["format"] == "livingproof-world/0.2"
@@ -300,10 +294,10 @@ def test_l_shaped_0_2_world_is_an_error_and_its_route_matches(tmp_path, monkeypa
     monkeypatch.setattr(toy.Toy, "root", repo)
     monkeypatch.setattr(toy.Toy, "world", lambda self: world)
     out = tmp_path / "out"
-    with pytest.raises(SystemExit, match="ERROR") as caught:
-        evidence.evidence("test_evidence:TOY", "stock", out)
-    assert "livingproof-world/0.2" in str(caught.value)
-    assert not out.exists()
+    manifest = _evidence(repo, out, trials=1)
+    # The adapter's world is not the simulated one, including a 0.2 document.
+    assert manifest["world"]["clear_width"] == 1.5
+    assert "livingproof-world/0.2" in frozen.unsupported_world(world)
 
 
 def test_verifier_traces_reproduce_exit_and_lateral():
@@ -455,10 +449,16 @@ def _toy_repo(tmp_path, monkeypatch):
 
 
 def _edit_lock(repo: Path, **changes) -> None:
-    path = repo / "verification.lock.json"
+    path = repo / "caller.lock.json"
     lock = json.loads(path.read_text())
     lock.update(changes)
     path.write_text(json.dumps(lock))
+
+
+def _evidence(repo: Path, out: Path, **kwargs):
+    return evidence.evidence(
+        "test_evidence:TOY", "stock", out, lock=repo / "caller.lock.json", **kwargs
+    )
 
 
 def _pin_parameters(repo: Path, document: dict) -> None:
@@ -475,7 +475,7 @@ def test_lock_parameter_mismatch_is_an_error_and_writes_nothing(tmp_path, monkey
     _edit_lock(repo, sources={"parameters": {"path": "locked/parameters.json", "sha256": "0" * 64}})
     out = tmp_path / "out"
     with pytest.raises(SystemExit, match="ERROR: lock sources.parameters sha256 mismatch"):
-        evidence.evidence("test_evidence:TOY", "stock", out)
+        _evidence(repo, out)
     assert not out.exists()
 
 
@@ -485,27 +485,173 @@ def test_pinned_parameters_are_used_without_a_lock_entry(tmp_path, monkeypatch):
     document["parameters"]["wall_clearance"]["values"]["humanoid"] = 0.0625
     _pin_parameters(repo, document)
     out = tmp_path / "out"
-    evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
+    _evidence(repo, out, trials=1)
     run = json.loads((out / "run-manifest.json").read_text())
     assert run["parameters"]["wall_clearance"] == 0.0625
     # And the lock entry wins over that pin when present.
     locked = _catalog()["parameters.json"]
     digest = _write(repo, "locked/parameters.json", locked)
     _edit_lock(repo, sources={"parameters": {"path": "locked/parameters.json", "sha256": digest}})
-    evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out2", trials=1)
+    _evidence(repo, tmp_path / "out2", trials=1)
     run = json.loads((tmp_path / "out2" / "run-manifest.json").read_text())
     assert run["parameters"]["wall_clearance"] == 0.05
 
 
-def test_locked_0_2_world_is_an_error_and_writes_nothing(tmp_path, monkeypatch):
+def test_a_robot_world_file_is_not_the_simulated_world(tmp_path, monkeypatch):
+    """A 0.2 world file in the robot repository is not loaded. The vendored release is."""
     _toy, repo = _toy_repo(tmp_path, monkeypatch)
     world = json.loads((ROOT / "tests/fixtures/l-shaped-0.2.json").read_text())
     digest = _write(repo, "locked/world.json", world)
     _edit_lock(repo, sources={"world": {"path": "locked/world.json", "sha256": digest}})
     out = tmp_path / "out"
-    with pytest.raises(SystemExit, match="ERROR: world format livingproof-world/0.2"):
-        evidence.evidence("test_evidence:TOY", "stock", out)
+    manifest = _evidence(repo, out, trials=1)
+    assert manifest["world"]["clear_width"] == 1.5
+    assert "livingproof-world/0.2" in frozen.unsupported_world(world)
+
+
+def test_run_manifest_names_the_vendored_world_not_a_robot_file(tmp_path, monkeypatch):
+    """A sources.world file and a pins file are not the world that was loaded."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    pinned = _pin_world(repo, _named_world(clear=3.0))
+    selected = _lock_world(repo, _named_world())
+    assert selected != pinned
+    out = tmp_path / "out"
+    manifest = _evidence(repo, out, trials=1)
+    vendored = _sha(ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json")
+    run = json.loads((out / "run-manifest.json").read_text())
+    assert run["world"] == {"id": "hallway-open", "version": "0.1.0", "sha256": vendored}
+    assert manifest["world"]["clear_width"] == 1.5
+    assert manifest["trials"]["results"][0]["outcome"] == "crossed_exit"
+    lock = json.loads((repo / "caller.lock.json").read_text())
+    prepared = evidence.prepare_run(_toy.TOY, "stock", lock)
+    assert prepared.world_source.origin == "vendored"
+    assert evidence.world_identity(repo, lock, prepared.world_source)["sha256"] == vendored
+
+
+def test_missing_world_identity_writes_nothing(tmp_path, monkeypatch):
+    """No world id on the lock: INCOMPATIBLE, and no output folder. A robot file is not used."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    lock_path = repo / "caller.lock.json"
+    lock = json.loads(lock_path.read_text())
+    del lock["world"]
+    lock_path.write_text(json.dumps(lock))
+    _lock_world(repo, _named_world())
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="INCOMPATIBLE"):
+        _evidence(repo, out)
     assert not out.exists()
+
+
+def test_source_world_bytes_are_not_the_simulated_world(tmp_path, monkeypatch):
+    """A sources.world sha256 that does not match its file is an error.
+
+    The file is not the simulated world. A mismatch exits 1 and writes nothing,
+    the same way a world.sha256 that is not the vendored file does.
+    """
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    _write(repo, "locked/world.json", _named_world())
+    _edit_lock(
+        repo,
+        world={"id": "hallway-open", "version": "0.1.0"},
+        sources={"world": {"path": "locked/world.json", "sha256": "0" * 64}},
+    )
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="sources.world"):
+        _evidence(repo, out, trials=1)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    ("world", "shown"),
+    [
+        ({"id": "hallway-open", "version": "0.1.0", "sha256": "ab" * 32}, "world.sha256"),
+        ({"id": "other-world", "version": "0.1.0"}, "UNSUPPORTED"),
+        ({"id": "hallway-open", "version": "0.2.0"}, "UNSUPPORTED"),
+    ],
+)
+def test_conflicting_or_unknown_world_writes_nothing(tmp_path, monkeypatch, world, shown):
+    """A sha256 that is not the vendored file, or an id/version that is not vendored."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    _edit_lock(repo, world=world)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match=shown):
+        _evidence(repo, out)
+    assert not out.exists()
+
+
+def test_vendored_digest_is_recorded_and_a_pin_is_not(tmp_path, monkeypatch):
+    """The manifest names the vendored world.json, not a file pinned in the robot repository."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    pinned = _pin_world(repo, _named_world())
+    vendored = _sha(ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json")
+    assert pinned != vendored
+    out = tmp_path / "out"
+    _evidence(repo, out, trials=1)
+    run = json.loads((out / "run-manifest.json").read_text())
+    assert run["world"]["sha256"] == vendored
+
+
+def test_lock_world_sha256_equal_to_the_vendored_file_is_accepted(tmp_path, monkeypatch):
+    """A lock world.sha256 that names the vendored file is not a conflict."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    vendored = _sha(ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json")
+    _edit_lock(repo, world={**LEGACY_WORLD, "sha256": vendored})
+    out = tmp_path / "out"
+    _evidence(repo, out, trials=1)
+    run = json.loads((out / "run-manifest.json").read_text())
+    assert run["world"]["sha256"] == vendored
+    lock = json.loads((repo / "caller.lock.json").read_text())
+    assert evidence.prepare_run(_toy.TOY, "stock", lock).world_source.origin == "vendored"
+
+
+def test_locked_world_is_read_once_and_named_by_those_bytes(tmp_path, monkeypatch):
+    """The bytes checked against sources.world are the bytes parsed and attested."""
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    _edit_lock(repo, world=LEGACY_WORLD)
+    digest = _lock_world(repo, _named_world())
+    locked = (repo / "locked/world.json").resolve()
+    reads = []
+    real = Path.read_bytes
+
+    def counting(self):
+        data = real(self)
+        if self.resolve() == locked:
+            reads.append(hashlib.sha256(data).hexdigest())
+            if len(reads) > 1:  # a second read would see different bytes
+                return data.replace(b"1.6", b"9.9")
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", counting)
+    lock = json.loads((repo / "caller.lock.json").read_text())
+    selected = sources.world_source(repo, lock)
+    assert reads == [digest]
+    assert selected.origin == "lock" and selected.sha256 == digest
+    assert selected.document["dimensions"]["clear_width"] == 1.6
+
+
+def test_media_replays_the_recorded_lock_not_a_robot_file(tmp_path, monkeypatch):
+    """Media uses the lock stored in the evidence manifest. A robot world file is not read."""
+    pytest.importorskip("mcap")
+    pytest.importorskip("imageio_ffmpeg")
+    from livingproof_sim_mujoco import media
+
+    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+    _evidence(repo, tmp_path / "ev", trials=1)
+    verification = tmp_path / "verification.json"
+    verification.write_text(json.dumps({"trials": []}))
+    calls = []
+    monkeypatch.setattr(sources, "world_source", lambda *a: calls.append(a))
+    doc = media.media("test_evidence:TOY", "stock", tmp_path / "ev", verification, tmp_path / "m")
+    assert calls == [] and len(doc["trials"]) == 1
+    # Changing a robot-repo world file does not change the replay.
+    (repo / "locked").mkdir(exist_ok=True)
+    (repo / "locked/world.json").write_text("{}\n")
+    again = media.media(
+        "test_evidence:TOY", "stock", tmp_path / "ev", verification, tmp_path / "m2"
+    )
+    assert [t["observation_sha256"] for t in again["trials"]] == [
+        t["observation_sha256"] for t in doc["trials"]
+    ]
 
 
 def test_scenario_names_appear_only_in_compat_hallway():
@@ -566,199 +712,4 @@ def _pin_world(repo: Path, world: dict) -> str:
     return digest
 
 
-def test_run_manifest_names_the_selected_source_world_not_the_pinned_one(tmp_path, monkeypatch):
-    """#39 (a): a sources.world override and a different pinned world."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    pinned = _pin_world(repo, _named_world(clear=3.0))
-    _edit_lock(repo, world={"id": "hallway-open", "version": "0.1.0"})
-    selected = _lock_world(repo, _named_world())
-    assert selected != pinned
-    out = tmp_path / "out"
-    manifest = evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
-    run = json.loads((out / "run-manifest.json").read_text())
-    assert run["world"] == {"id": "hallway-open", "version": "0.1.0", "sha256": selected}
-    assert selected == _sha(repo / "locked/world.json")
-    # The trial ran in the selected world too, not the pinned one.
-    assert manifest["world"]["clear_width"] == 1.6
-    assert manifest["trials"]["results"][0]["outcome"] == "crossed_exit"
-    # And the helper the manifest uses agrees with the loader.
-    lock = evidence.load_lock(repo)
-    prepared = evidence.prepare_run(_toy.TOY, "stock", lock)
-    assert prepared.world_source.origin == "lock"
-    assert evidence.world_identity(repo, lock, prepared.world_source)["sha256"] == selected
-
-
-@pytest.mark.parametrize("legacy", [None, {"id": "hallway-open", "version": "0.1.0"}])
-def test_source_only_world_needs_no_lock_digest_or_pin(tmp_path, monkeypatch, legacy):
-    """#39 (b): sources.world alone is enough; no world.sha256 and no world pin."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    lock_path = repo / "verification.lock.json"
-    lock = json.loads(lock_path.read_text())
-    if legacy is None:
-        del lock["world"]
-    else:
-        lock["world"] = legacy
-    lock_path.write_text(json.dumps(lock))
-    assert json.loads((repo / "pins.json").read_text()) == {"groups": {}}
-    selected = _lock_world(repo, _named_world())
-    out = tmp_path / "out"
-    manifest = evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
-    run = json.loads((out / "run-manifest.json").read_text())
-    assert run["world"] == {"id": "hallway-open", "version": "0.1.0", "sha256": selected}
-    assert manifest["world"]["id"] == "hallway-open"
-    assert manifest["world"]["version"] == "0.1.0"
-
-
-def test_source_world_byte_mismatch_writes_nothing(tmp_path, monkeypatch):
-    """#39 (c): the file's bytes differ from sources.world sha256."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    _pin_world(repo, _named_world())
-    _write(repo, "locked/world.json", _named_world())
-    _edit_lock(
-        repo,
-        world={"id": "hallway-open", "version": "0.1.0"},
-        sources={"world": {"path": "locked/world.json", "sha256": "0" * 64}},
-    )
-    out = tmp_path / "out"
-    with pytest.raises(SystemExit, match="ERROR: lock sources.world sha256 mismatch"):
-        evidence.evidence("test_evidence:TOY", "stock", out)
-    assert not out.exists()
-
-
-@pytest.mark.parametrize(
-    ("world", "shown"),
-    [
-        ({"id": "hallway-open", "version": "0.1.0", "sha256": "ab" * 32}, "world.sha256"),
-        ({"id": "other-world", "version": "0.1.0"}, "world.id"),
-        ({"id": "hallway-open", "version": "0.2.0"}, "world.version"),
-    ],
-)
-def test_conflicting_world_identity_writes_nothing(tmp_path, monkeypatch, world, shown):
-    """#39 (c): lock world fields that name a different world from the selected file."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    _edit_lock(repo, world=world)
-    _lock_world(repo, _named_world())
-    out = tmp_path / "out"
-    with pytest.raises(SystemExit, match="ERROR") as caught:
-        evidence.evidence("test_evidence:TOY", "stock", out)
-    assert shown in str(caught.value) and "locked/world.json" in str(caught.value)
-    assert not out.exists()
-
-
-def test_pinned_world_digest_must_agree_with_the_lock(tmp_path, monkeypatch):
-    """#39 (c): with no override, the loaded pinned file and lock world.sha256 must agree."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    pinned = _pin_world(repo, _named_world())
-    out = tmp_path / "out"
-    with pytest.raises(SystemExit, match="ERROR") as caught:
-        evidence.evidence("test_evidence:TOY", "stock", out)
-    assert "world.sha256" in str(caught.value) and pinned in str(caught.value)
-    assert not out.exists()
-    # Without the contradicting lock digest the pinned file's own digest is recorded.
-    _edit_lock(repo, world={"id": "hallway-open", "version": "0.1.0"})
-    evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
-    run = json.loads((out / "run-manifest.json").read_text())
-    assert run["world"]["sha256"] == pinned
-
-
-def test_no_override_run_manifest_world_is_unchanged(tmp_path, monkeypatch):
-    """#39 (d): the adapter's world keeps lock world.sha256, alongside the golden bytes test."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    out = tmp_path / "out"
-    manifest = evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
-    run = json.loads((out / "run-manifest.json").read_text())
-    assert run["world"] == {"id": "hallway-open", "version": "0.1.0", "sha256": "ab" * 32}
-    stable = json.loads((GOLDEN / "stable.json").read_text())
-    assert manifest["world"] == stable["world"]
-    assert (out / "trials" / "trial-01.json").read_bytes() == (
-        GOLDEN / "trial-01.json"
-    ).read_bytes()
-
-
-# Verification of #39 (Vera): hand checks on PR 40, kept as tests.
 LEGACY_WORLD = {"id": "hallway-open", "version": "0.1.0"}
-
-
-@pytest.mark.parametrize("origin", ["lock", "pins"])
-def test_lock_world_sha256_equal_to_the_loaded_file_is_accepted(tmp_path, monkeypatch, origin):
-    """A lock world.sha256 that names the loaded file is not a conflict, for either source."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    _edit_lock(repo, world=LEGACY_WORLD)
-    if origin == "lock":
-        _pin_world(repo, _named_world(clear=3.0))
-        loaded = _lock_world(repo, _named_world())
-    else:
-        loaded = _pin_world(repo, _named_world())
-    _edit_lock(repo, world={**LEGACY_WORLD, "sha256": loaded})
-    out = tmp_path / "out"
-    evidence.evidence("test_evidence:TOY", "stock", out, trials=1)
-    run = json.loads((out / "run-manifest.json").read_text())
-    assert run["world"] == {**LEGACY_WORLD, "sha256": loaded}
-    assert evidence.prepare_run(
-        _toy.TOY, "stock", evidence.load_lock(repo)
-    ).world_source.origin == (origin)
-
-
-def test_locked_world_is_read_once_and_named_by_those_bytes(tmp_path, monkeypatch):
-    """The bytes checked against sources.world are the bytes parsed and attested."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    _edit_lock(repo, world=LEGACY_WORLD)
-    digest = _lock_world(repo, _named_world())
-    locked = (repo / "locked/world.json").resolve()
-    reads = []
-    real = Path.read_bytes
-
-    def counting(self):
-        data = real(self)
-        if self.resolve() == locked:
-            reads.append(hashlib.sha256(data).hexdigest())
-            if len(reads) > 1:  # a second read would see different bytes
-                return data.replace(b"1.6", b"9.9")
-        return data
-
-    monkeypatch.setattr(Path, "read_bytes", counting)
-    selected = sources.world_source(repo, evidence.load_lock(repo))
-    assert reads == [digest]
-    assert selected.origin == "lock" and selected.sha256 == digest
-    assert selected.document["dimensions"]["clear_width"] == 1.6
-
-
-def test_world_with_no_identity_anywhere_is_an_error_before_output(tmp_path, monkeypatch):
-    """No lock world entry and a source file without id: ERROR, and no output folder."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    lock_path = repo / "verification.lock.json"
-    lock = json.loads(lock_path.read_text())
-    del lock["world"]
-    lock_path.write_text(json.dumps(lock))
-    world = _named_world()
-    del world["id"]
-    _lock_world(repo, world)
-    out = tmp_path / "out"
-    with pytest.raises(SystemExit, match="ERROR: world id is missing"):
-        evidence.evidence("test_evidence:TOY", "stock", out)
-    assert not out.exists()
-
-
-def test_media_uses_the_prepared_source_world_and_refuses_changed_bytes(tmp_path, monkeypatch):
-    """#39 item 6: media loads the world once, through the same checked source as evidence."""
-    pytest.importorskip("mcap")
-    pytest.importorskip("imageio_ffmpeg")
-    from livingproof_sim_mujoco import media
-
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    _edit_lock(repo, world=LEGACY_WORLD)
-    _pin_world(repo, _named_world(clear=3.0))
-    _lock_world(repo, _named_world())
-    evidence.evidence("test_evidence:TOY", "stock", tmp_path / "ev", trials=1)
-    verification = tmp_path / "verification.json"
-    verification.write_text(json.dumps({"trials": []}))
-    calls = []
-    real = sources.world_source
-    monkeypatch.setattr(sources, "world_source", lambda *a: calls.append(a) or real(*a))
-    doc = media.media("test_evidence:TOY", "stock", tmp_path / "ev", verification, tmp_path / "m")
-    assert len(calls) == 1 and len(doc["trials"]) == 1
-    # Same lock, different bytes at the source path: refused before any media folder.
-    (repo / "locked/world.json").write_text(json.dumps(_named_world(), indent=1))
-    with pytest.raises(SystemExit, match="ERROR: lock sources.world sha256 mismatch"):
-        media.media("test_evidence:TOY", "stock", tmp_path / "ev", verification, tmp_path / "m2")
-    assert not (tmp_path / "m2").exists()

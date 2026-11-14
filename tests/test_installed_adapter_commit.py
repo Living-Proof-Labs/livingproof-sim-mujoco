@@ -197,7 +197,9 @@ def test_run_manifest_records_checkout_provenance(tmp_path, monkeypatch):
     _repo(repo)
     monkeypatch.setattr(Toy, "root", repo)
     monkeypatch.syspath_prepend(str(Path(__file__).parent))
-    evidence.evidence("test_evidence:TOY", "stock", tmp_path / "out", trials=1)
+    evidence.evidence(
+        "test_evidence:TOY", "stock", tmp_path / "out", trials=1, lock=repo / "caller.lock.json"
+    )
     run = json.loads((tmp_path / "out" / "run-manifest.json").read_text())
     manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
     assert set(run["simulator"]) == {"engine", "version", "adapter", "adapter_commit"}
@@ -312,6 +314,8 @@ def test_unknown_commit_exits_without_a_manifest(tmp_path):
                 "missing:ROBOT",
                 "stock",
                 str(destination),
+                "--lock",
+                str(outside / "lock.json"),
             ],
             cwd=outside,
             env=env,

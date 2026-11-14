@@ -1,23 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Generic hallway scene helpers shared by robot packages.
+"""Generic scene helpers.
 
-The robot's pinned MJCF is loaded unchanged by the robot package; ``add_world`` adds the
-pinned world's walls as visual-only boxes (contype 0, conaffinity 0, so no contacts; wall
-clearance is checked geometrically) and its named places as sites, read back with
-``place_pose`` from the compiled model.
+``add_world`` adds a world's walls as visual-only boxes (contype 0, conaffinity 0,
+so they create no contact solver pairs; wall clearance is measured geometrically)
+and its named places as sites, read back with ``place_pose`` from the compiled model.
 """
 
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 
 import mujoco
 import numpy as np
 
-from livingproof_sim_mujoco import pins
-from livingproof_sim_mujoco import sources
 from livingproof_sim_mujoco.compat.hallway import FROZEN_WORLD_PATH as WORLD
 
 PLACE = "place:"
@@ -34,26 +30,14 @@ __all__ = [
 
 
 def load_world(root: Path, path: str | None = None) -> dict:
-    """World document for ``root``.
-
-    An explicit ``path`` is that file in the robot's ``worlds`` pin group.
-    With no path, a verification-lock ``sources.world`` entry wins and its
-    sha256 is checked. When the lock has no entry, the robot's pins.json is
-    used. ``WORLD`` remains the historical pins path robot packages import.
-    """
-    root = Path(root)
-    if path is not None:
-        return json.loads(pins.local("worlds", path, root).read_text())
-    lock_path = root / "verification.lock.json"
-    lock = json.loads(lock_path.read_text()) if lock_path.is_file() else None
-    found = sources.world_document(root, lock)
-    if found is None:
-        raise SystemExit(
-            "ERROR: no world file in the verification lock or pins.json. "
-            "Add sources.world with a sha256, or pin the world file. "
-            'Example: "sources": {"world": {"path": "world.json", "sha256": "<64 hex>"}}'
-        )
-    return found
+    """Retired. The simulator supplies the world; the robot package does not."""
+    del root, path
+    raise SystemExit(
+        "INCOMPATIBLE: the simulator supplies the world from the vendored release named "
+        "by the caller's verification lock. The robot package does not. "
+        "Example: python -m livingproof_sim_mujoco.evidence "
+        "<adapter> <configuration> <out> --lock path/to/lock.json"
+    )
 
 
 def add_world(spec: mujoco.MjSpec, world: dict) -> list[str]:

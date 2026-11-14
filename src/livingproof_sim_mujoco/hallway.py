@@ -78,6 +78,17 @@ def pins() -> dict:
     return json.loads((WORLDS / "pins.json").read_text())
 
 
+def same_byte_releases(fixture: str, version: str) -> tuple[tuple[str, str], ...]:
+    """``(tag, commit)`` pairs whose world.json matches the vendored file.
+
+    ``worlds/same-bytes.json`` lists them. The pin in ``worlds/pins.json`` is
+    accepted as well.
+    """
+    document = json.loads((WORLDS / "same-bytes.json").read_text())
+    found = document.get(f"{fixture}/{version}", [])
+    return tuple((tag, commit) for tag, commit in found)
+
+
 def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dict:
     """Return the pinned world after verifying release.json and every file it lists."""
     key = f"{fixture}/{content_version}"

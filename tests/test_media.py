@@ -1,7 +1,11 @@
 """MCAP recordings and screencasts of walk-hallway trials (toy robot from test_evidence)."""
 
 import json
+import os
 from pathlib import Path
+
+# Before livingproof_sim_mujoco, which imports MuJoCo and locks the GL platform.
+os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 import pytest
 
@@ -10,7 +14,7 @@ from livingproof_sim_mujoco import evidence, media
 pytest.importorskip("mcap")
 pytest.importorskip("imageio_ffmpeg")
 
-from test_evidence import Toy, _repo  # noqa: E402
+from test_evidence import Toy, _lock, _repo  # noqa: E402
 
 
 def _verification(statuses):
@@ -36,7 +40,7 @@ def recorded(tmp_path, monkeypatch):
     _repo(repo)
     monkeypatch.setattr(Toy, "root", repo)
     monkeypatch.syspath_prepend(str(Path(__file__).parent))
-    evidence.evidence("test_evidence:TOY", "stock", tmp_path / "ev", trials=2)
+    evidence.evidence("test_evidence:TOY", "stock", tmp_path / "ev", trials=2, lock=_lock(repo))
     v = tmp_path / "verification.json"
     v.write_text(json.dumps(_verification({1: "PASS", 2: "FAIL"})))
     return tmp_path, v
