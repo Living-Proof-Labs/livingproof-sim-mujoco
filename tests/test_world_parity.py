@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from locked_source import locked_robot_source
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = Path("/tmp/livingproof-world-parity")
@@ -56,14 +56,6 @@ def _sim_v211() -> Path:
     return dest
 
 
-def _uv_revision(package: str) -> str:
-    text = (ROOT / "uv.lock").read_text()
-    found = re.search(rf"{re.escape(package)}\?tag=v2\.0\.0#([0-9a-f]{{40}})", text)
-    if not found:
-        raise AssertionError(f"uv.lock has no v2.0.0 source revision for {package}")
-    return found.group(1)
-
-
 def _head(dest: Path) -> str:
     found = subprocess.run(
         ["git", "-C", str(dest), "rev-parse", "HEAD"],
@@ -76,10 +68,7 @@ def _head(dest: Path) -> str:
 
 def _robot_v1(name: str, tag: str) -> Path:
     dest = CACHE / f"{name}-{tag}"
-    expected = _uv_revision(name) if tag == "v2.0.0" else None
-    if not (dest / "pyproject.toml").is_file() or (
-        expected is not None and _head(dest) != expected
-    ):
+    if not (dest / "pyproject.toml").is_file():
         if dest.exists():
             subprocess.run(["rm", "-rf", str(dest)], check=True)
         _run(
@@ -94,10 +83,31 @@ def _robot_v1(name: str, tag: str) -> Path:
                 str(dest),
             ]
         )
-    if expected is not None and _head(dest) != expected:
-        raise AssertionError(
-            f"{name} checkout {_head(dest)} is not the uv.lock revision {expected}"
+    return dest
+
+
+def _pinned_robot(name: str) -> Path:
+    """Checkout of the tag and commit ``uv.lock`` records for ``name``."""
+    tag, expected = locked_robot_source(name)
+    dest = CACHE / f"{name}-{tag}"
+    if not (dest / "pyproject.toml").is_file() or _head(dest) != expected:
+        if dest.exists():
+            subprocess.run(["rm", "-rf", str(dest)], check=True)
+        _run(
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                tag,
+                f"https://github.com/Living-Proof-Labs/{name}.git",
+                str(dest),
+            ]
         )
+    got = _head(dest)
+    if got != expected:
+        raise AssertionError(f"{name} checkout {got} is not the uv.lock revision {expected}")
     return dest
 
 
@@ -171,7 +181,7 @@ def _new_trial(adapter: str, configuration: str, checkout: Path, out: Path) -> d
     from livingproof_sim_mujoco import evidence
 
     robot = evidence.adapter(adapter)
-    # The installed wheel does not ship pins or models. The v2.0.0 tree does.
+    # The installed wheel does not ship pins or models. The locked source tree does.
     robot.root = checkout
     lock = _new_lock(robot, configuration, out.parent)
     evidence.evidence(adapter, configuration, out, lock=lock, trials=1)
@@ -196,6 +206,6 @@ def test_hallway_rollout_matches_v211_with_the_last_v1_robot(
     repo, tag, adapter, configuration, tmp_path
 ):
     old = _old_trial(_sim_v211(), _robot_v1(repo, tag), adapter, configuration, tmp_path / "old")
-    new = _new_trial(adapter, configuration, _robot_v1(repo, "v2.0.0"), tmp_path / "new")
+    new = _new_trial(adapter, configuration, _pinned_robot(repo), tmp_path / "new")
     if old != new:
         raise AssertionError(json.dumps({"old": _brief(old), "new": _brief(new)}, indent=2))

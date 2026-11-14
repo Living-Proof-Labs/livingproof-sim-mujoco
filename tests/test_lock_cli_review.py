@@ -5,7 +5,7 @@ These turn the reviewer's manual experiments into tests:
 
 * the command line refuses a missing, absent, or malformed --lock and writes nothing;
 * the real caller lock shapes (livingproof-verification-lock/0.2.0 and the
-  capability-verifier 1.0.0 projection) drive a released v2.0.0 robot end to end
+  capability-verifier 1.0.0 projection) drive the pinned v2 robot end to end
   through ``python -m livingproof_sim_mujoco.evidence`` and record the vendored world;
 * a v1 robot adapter is refused with INCOMPATIBLE (no traceback, nothing written);
 * composition keeps changes an adapter made to the compiled model, or refuses.
@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 import mujoco
 import pytest
+from locked_source import locked_robot_source
 
 from livingproof_sim_mujoco import compose, hallway
 from livingproof_sim_mujoco.pins import sha256
@@ -29,14 +29,6 @@ from livingproof_sim_mujoco.pins import sha256
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = Path("/tmp/livingproof-world-parity")
 VENDORED = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
-
-
-def _uv_revision(package: str) -> str:
-    text = (ROOT / "uv.lock").read_text()
-    found = re.search(rf"{re.escape(package)}\?tag=v2\.0\.0#([0-9a-f]{{40}})", text)
-    if not found:
-        raise AssertionError(f"uv.lock has no v2.0.0 source revision for {package}")
-    return found.group(1)
 
 
 def _head(dest: Path) -> str:
@@ -49,10 +41,9 @@ def _head(dest: Path) -> str:
     return found.stdout.strip() if found.returncode == 0 else ""
 
 
-def _clone(package: str, tag: str) -> Path:
+def _clone(package: str, tag: str, *, commit: str | None = None) -> Path:
     dest = CACHE / f"{package}-{tag}"
-    expected = _uv_revision(package) if tag == "v2.0.0" else None
-    if not (dest / "pins.json").is_file() or (expected is not None and _head(dest) != expected):
+    if not (dest / "pins.json").is_file() or (commit is not None and _head(dest) != commit):
         subprocess.run(["rm", "-rf", str(dest)], check=True)
         subprocess.run(
             [
@@ -68,9 +59,9 @@ def _clone(package: str, tag: str) -> Path:
             ],
             check=True,
         )
-    if expected is not None and _head(dest) != expected:
+    if commit is not None and _head(dest) != commit:
         raise AssertionError(
-            f"{package} checkout {_head(dest)} is not the uv.lock revision {expected}"
+            f"{package} checkout {_head(dest)} is not the uv.lock revision {commit}"
         )
     return dest
 
@@ -116,7 +107,7 @@ def _lock_v020(checkout: Path, configuration: str) -> dict:
         "scenario": "walk-hallway@0.1.0",
         "robot": {
             "repository": "Living-Proof-Labs/livingproof-unitree-g1",
-            "ref": "v2.0.0",
+            "ref": locked_robot_source("livingproof-unitree-g1")[0],
             "configurations": [configuration],
             "adapter": "lpl_g1.adapter:ROBOT",
         },
@@ -160,7 +151,8 @@ def _projection(lock: dict) -> dict:
 
 @pytest.fixture(scope="module")
 def g1_v2() -> Path:
-    return _clone("livingproof-unitree-g1", "v2.0.0")
+    tag, commit = locked_robot_source("livingproof-unitree-g1")
+    return _clone("livingproof-unitree-g1", tag, commit=commit)
 
 
 # --- command line refusals --------------------------------------------------------
