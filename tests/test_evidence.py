@@ -143,7 +143,7 @@ def test_pins_fetch_verifies_and_never_accepts_a_wrong_download(tmp_path):
                 "repository": "o/r",
                 "commit": "c",
                 "dest": ".cache/g",
-                "files": {"a.txt": {"sha256": good}},
+                "files": {"a.txt": {"sha256": good, "bytes": len(data)}},
             }
         }
     }
@@ -478,6 +478,43 @@ def test_nominal_start_accepts_a_retired_adapter_and_refuses_its_offset():
         evidence.nominal_start(
             Legacy(), None, None, None, "spawn-entrance", {"base_xy_m": [0.0, 0.05]}
         )
+
+
+@pytest.mark.parametrize("missing", ["path", "sha256"])
+def test_configuration_entry_missing_field_names_it_and_writes_nothing(
+    tmp_path, monkeypatch, missing
+):
+    """A configuration entry without path or sha256 names that field and writes nothing."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    lock = _repo(repo)
+    del lock["configurations"][0][missing]
+    (repo / CALLER_LOCK).write_text(json.dumps(lock))
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.syspath_prepend(str(Path(__file__).parent))
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match=missing) as raised:
+        evidence.evidence("test_evidence:TOY", "stock", out, lock=_lock(repo), trials=1)
+    message = str(raised.value)
+    assert "INCOMPATIBLE" in message
+    assert "KeyError" not in message
+    assert not out.exists()
+
+
+def test_empty_releases_exits_and_leaves_no_output_directory(tmp_path, monkeypatch):
+    """``releases: {}`` exits 1 and does not leave the output directory behind."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    lock = _repo(repo)
+    lock["releases"] = {}
+    (repo / CALLER_LOCK).write_text(json.dumps(lock))
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.syspath_prepend(str(Path(__file__).parent))
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="releases.specs") as raised:
+        evidence.evidence("test_evidence:TOY", "stock", out, lock=_lock(repo), trials=1)
+    assert "INCOMPATIBLE" in str(raised.value) or "releases.specs" in str(raised.value)
+    assert not out.exists()
 
 
 def test_trials_are_not_dispatched_on_a_cpu_count_pool():

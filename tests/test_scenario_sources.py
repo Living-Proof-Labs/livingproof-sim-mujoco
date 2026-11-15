@@ -211,7 +211,11 @@ def _pins(root: Path, group: str, relative: str, digest: str) -> None:
     document["groups"].setdefault(
         group, {"repository": "o/r", "commit": "c" * 40, "dest": ".cache", "files": {}}
     )
-    document["groups"][group]["files"][relative] = {"sha256": digest}
+    cached = root / document["groups"][group]["dest"] / relative
+    document["groups"][group]["files"][relative] = {
+        "sha256": digest,
+        "bytes": cached.stat().st_size,
+    }
     pins_path.write_text(json.dumps(document))
 
 

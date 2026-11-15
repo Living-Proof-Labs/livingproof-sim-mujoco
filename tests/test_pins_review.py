@@ -4,8 +4,8 @@
 Covers gaps relative to tests/test_pins.py at 0a0650e: a truncated body with no
 Content-Length, cache preservation on SizeMismatch, an unusable Content-Length
 header, a matching cache that must not be re-downloaded, and two documented
-limits (a correct body with a wrong Content-Length is retried; a pin that omits
-bytes still treats a short body as ChecksumError when Content-Length is absent).
+limits that #43 changes: a pin-sized body with a wrong Content-Length is
+checksummed, and a pin that omits bytes is refused by name before download.
 """
 
 import hashlib
@@ -170,49 +170,74 @@ def test_fetch_ignores_unusable_content_length_and_uses_pin_bytes(tmp_path, cloc
     assert any(f"{len(PAYLOAD)} bytes (pin)" in message for message in messages)
 
 
-def test_fetch_retries_when_content_length_does_not_match_a_full_pin_body(tmp_path, clock):
-    """Current behaviour: a body of the pin size is still retried if Content-Length differs.
+def test_fetch_checksums_a_pin_sized_body_when_content_length_is_wrong(tmp_path, clock, caplog):
+    """A body whose length matches the pin is hashed even when Content-Length disagrees.
 
-    The sha256 is not consulted. After five attempts this is DownloadError, not
-    ChecksumError. A tighter policy would checksum when the pin's bytes match.
+    Replaces the #45 characterization ``test_fetch_retries_when_content_length_does_not_match_a_full_pin_body``,
+    which expected five retries and then DownloadError without hashing.
     """
     digest = hashlib.sha256(PAYLOAD).hexdigest()
     _write_pins(tmp_path, digest, {"bytes": len(PAYLOAD)})
-    sleeps, _spans = clock
+    sleeps, spans = clock
+    calls = []
+    dest = tmp_path / ".cache/g/a.txt"
+
+    def opener(url):
+        calls.append(url)
+        return _Response(PAYLOAD, content_length=len(PAYLOAD) + 1)
+
+    caplog.set_level(logging.WARNING, logger="livingproof_sim_mujoco.pins")
+    assert pins.fetch(tmp_path, opener) == [dest]
+    assert dest.read_bytes() == PAYLOAD
+    assert calls == [URL]
+    assert sleeps == []
+    assert spans == []
+    warning = " ".join(record.getMessage() for record in caplog.records)
+    assert "Content-Length" in warning
+    assert str(len(PAYLOAD) + 1) in warning
+    assert f"downloaded {len(PAYLOAD)} bytes" in warning or str(len(PAYLOAD)) in warning
+    assert _files(tmp_path) == [".cache/g/a.txt", "pins.json"]
+
+
+def test_fetch_still_requires_sha256_when_content_length_mismatches_pin_bytes(tmp_path, clock):
+    """A wrong sha256 is still ChecksumError, with no retry, when only Content-Length disagrees."""
+    _write_pins(tmp_path, "0" * 64, {"bytes": len(PAYLOAD)})
+    sleeps, spans = clock
     calls = []
 
     def opener(url):
         calls.append(url)
         return _Response(PAYLOAD, content_length=len(PAYLOAD) + 1)
 
-    with pytest.raises(pins.DownloadError, match="failed after 5 attempts") as raised:
+    with pytest.raises(pins.ChecksumError, match="expected " + "0" * 64):
         pins.fetch(tmp_path, opener)
-    message = str(raised.value)
-    assert isinstance(raised.value.__cause__, pins.SizeMismatch)
-    assert f"{len(PAYLOAD) + 1} bytes (Content-Length)" in message
-    assert f"downloaded {len(PAYLOAD)} bytes" in message
-    assert "pin" not in message.split("downloaded")[0]
-    assert len(calls) == pins.MAX_ATTEMPTS
-    assert sleeps == [10.0, 20.0, 40.0, 80.0]
+    assert calls == [URL]
+    assert sleeps == []
+    assert spans == []
     assert _files(tmp_path) == ["pins.json"]
 
 
-def test_fetch_without_pin_bytes_or_content_length_does_not_retry_a_short_body(tmp_path, clock):
-    """Residual #44 path when a pin omits bytes and the response has no Content-Length."""
+def test_fetch_requires_pin_bytes_and_names_the_pin(tmp_path, clock):
+    """A pin without bytes names that pin and does not download.
+
+    Replaces the #45 characterization
+    ``test_fetch_without_pin_bytes_or_content_length_does_not_retry_a_short_body``,
+    which expected ChecksumError with no retry for a short body.
+    """
     digest = hashlib.sha256(PAYLOAD).hexdigest()
     _write_pins(tmp_path, digest)
     sleeps, spans = clock
     calls = []
-    short = PAYLOAD[:3]
-    assert hashlib.sha256(short).hexdigest() != digest
 
     def opener(url):
         calls.append(url)
-        return _Response(short, content_length=None)
+        return _Response(PAYLOAD[:3], content_length=None)
 
-    with pytest.raises(pins.ChecksumError, match="expected " + digest):
+    with pytest.raises(ValueError, match=r"g:a\.txt") as raised:
         pins.fetch(tmp_path, opener)
-    assert calls == [URL]
+    message = str(raised.value)
+    assert "bytes" in message
+    assert calls == []
     assert sleeps == []
     assert spans == []
     assert _files(tmp_path) == ["pins.json"]
