@@ -32,7 +32,7 @@ tasks:
       - uv run --no-sync pytest tests/test_evidence.py -k "not zero_command_check" --junitxml=artifacts/evidence.xml
       - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
       - uv run --no-sync pytest tests/test_scenario_sources.py --junitxml=artifacts/scenario-sources.xml
-      - uv run --no-sync pytest tests/test_compose.py --junitxml=artifacts/compose.xml
+      - uv run --no-sync pytest tests/test_compose.py tests/test_locked_source_review.py --junitxml=artifacts/compose.xml
       - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
       # Changed by the --lock work but not run in CI before (review of PR #42).
       # OSMesa: the dev image has no display. MuJoCo reads MUJOCO_GL before import.
