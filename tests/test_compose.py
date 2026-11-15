@@ -8,6 +8,7 @@ from pathlib import Path
 
 import mujoco
 import pytest
+from locked_source import lock_pinning, locked_robot_source
 
 from livingproof_sim_mujoco import compose, hallway
 
@@ -70,25 +71,16 @@ def test_unknown_world_is_unsupported():
         compose.vendored_world({"world": {"id": "not-a-world", "version": "0.1.0"}})
 
 
-def _uv_revision(package: str) -> str:
-    """Commit uv.lock records for the v2.0.0 tag of a robot package."""
-    text = (ROOT / "uv.lock").read_text()
-    found = re.search(rf"{re.escape(package)}\?tag=v2\.0\.0#([0-9a-f]{{40}})", text)
-    if not found:
-        raise AssertionError(f"uv.lock has no v2.0.0 source revision for {package}")
-    return found.group(1)
-
-
 def _checkout(package: str) -> Path:
-    """Source tree of the v2.0.0 tag. The installed wheel does not ship pins or models.
+    """Source tree of the locked robot tag. The installed wheel does not ship pins or models.
 
     The checkout commit has to be the revision ``uv.lock`` records for that tag.
     """
     import shutil
     import subprocess
 
-    dest = Path("/tmp/livingproof-world-parity") / f"{package}-v2.0.0"
-    expected = _uv_revision(package)
+    tag, expected = locked_robot_source(package)
+    dest = Path("/tmp/livingproof-world-parity") / f"{package}-{tag}"
 
     def head() -> str:
         if not dest.exists():
@@ -111,7 +103,7 @@ def _checkout(package: str) -> Path:
                 "--depth",
                 "1",
                 "--branch",
-                "v2.0.0",
+                tag,
                 f"https://github.com/Living-Proof-Labs/{package}.git",
                 str(dest),
             ],
@@ -124,6 +116,25 @@ def _checkout(package: str) -> Path:
 
 
 @pytest.mark.parametrize(
+    ("tag", "commit"),
+    [
+        ("v9.9.9", "a" * 40),
+        ("v4.5.6", "b" * 40),
+        ("release-7", "c" * 40),
+    ],
+)
+def test_locked_robot_revision_follows_the_lock(tag, commit):
+    """The revision check returns the tag and commit the lock records.
+
+    The previous check matched only ``tag=v2.0.0`` and raised ``uv.lock has no
+    v2.0.0 source revision`` for every other pin. These locks use other
+    revisions, and the checkout has to follow them.
+    """
+    package = "livingproof-unitree-g1"
+    assert locked_robot_source(package, lock_pinning(package, tag, commit)) == (tag, commit)
+
+
+@pytest.mark.parametrize(
     ("adapter", "package"),
     [
         ("lpl_g1.adapter:ROBOT", "livingproof-unitree-g1"),
@@ -132,7 +143,7 @@ def _checkout(package: str) -> Path:
     ],
 )
 def test_v2_robot_starts_at_the_world_place_between_the_walls(adapter, package):
-    """Each v2.0.0 robot: hallway walls are in the model and the base is not at the origin."""
+    """Each pinned v2 robot: hallway walls are in the model and the base is not at the origin."""
     from livingproof_sim_mujoco.evidence import adapter as load
     from livingproof_sim_mujoco.pins import fetch
 
