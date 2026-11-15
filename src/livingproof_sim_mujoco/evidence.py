@@ -122,7 +122,16 @@ _LOCK_EXAMPLE = {
         '"configurations": [{"name": "<name>", "version": "1.0.0", '
         '"path": "<file>", "sha256": "<64 hex>"}]'
     ),
+    "path": '"path": "<file>"',
+    "sha256": '"sha256": "<64 hex>"',
     "plan": '"plan": {"trials": {"count": 1}}',
+}
+
+
+_LOCK_KIND = {
+    dict: "a JSON object",
+    list: "a JSON array",
+    str: "a string",
 }
 
 
@@ -138,7 +147,7 @@ def lock_field(lock: dict, field: str, kind: type):
             f"The caller lock needs {field}. Example: {_LOCK_EXAMPLE[field]}"
         )
     if not isinstance(lock[field], kind):
-        expected = "a JSON object" if kind is dict else "a JSON array"
+        expected = _LOCK_KIND.get(kind, kind.__name__)
         raise SystemExit(
             f"INCOMPATIBLE: the verification lock {field} must be {expected}, "
             f"got {type(lock[field]).__name__}. Example: {_LOCK_EXAMPLE[field]}"
@@ -154,6 +163,21 @@ def require_lock(lock: dict) -> None:
     lock_field(lock, "plan", dict)
 
 
+def require_release_refs(lock: dict) -> None:
+    """Refuse releases that omit specs or runner before any output directory exists."""
+    releases = lock_field(lock, "releases", dict)
+    example = _LOCK_EXAMPLE["releases"]
+    for name in ("specs", "runner"):
+        ref = releases.get(name)
+        tag = ref.get("tag") if isinstance(ref, dict) else None
+        commit = ref.get("commit") if isinstance(ref, dict) else None
+        if not isinstance(tag, str) or not tag or not isinstance(commit, str) or not commit:
+            raise SystemExit(
+                f"INCOMPATIBLE: the verification lock releases.{name} needs a tag and commit. "
+                f"The caller lock needs releases.{name}. Example: {example}"
+            )
+
+
 def pending(lock: dict) -> list[str]:
     """Release entries that still say PENDING_RELEASE."""
     releases = lock_field(lock, "releases", dict)
@@ -166,6 +190,10 @@ def pending(lock: dict) -> list[str]:
 
 def locked_configuration(lock: dict, name: str, root: Path) -> dict:
     configurations = lock_field(lock, "configurations", list)
+    for item in configurations:
+        if isinstance(item, dict):
+            lock_field(item, "path", str)
+            lock_field(item, "sha256", str)
     entry = next((c for c in configurations if isinstance(c, dict) and c.get("name") == name), None)
     if entry is None:
         raise SystemExit(f"{name} is not in the verification lock")
@@ -711,6 +739,8 @@ def evidence(
     lock_path = Path(lock)
     lock = read_lock(lock_path)
     require_lock(lock)
+    # Before fetch, model setup, or the output directory. releases: {} must leave nothing.
+    require_release_refs(lock)
     waiting = pending(lock)
     if waiting and not allow_pending:
         raise SystemExit(

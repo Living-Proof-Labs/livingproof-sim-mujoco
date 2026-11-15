@@ -24,14 +24,30 @@ from pathlib import Path
 import shutil
 import sys
 
-# Headless screencasts use OSMesa. Set this before MuJoCo chooses a GL platform.
-os.environ.setdefault("MUJOCO_GL", "osmesa")
 
-import mujoco
-import numpy as np
+def default_mujoco_gl(environ: dict | None = None, platform: str | None = None) -> None:
+    """Set ``MUJOCO_GL=osmesa`` for headless Linux, without replacing a user's value.
 
-from livingproof_sim_mujoco import evidence as ev
-from livingproof_sim_mujoco.pins import fetch, sha256
+    MuJoCo reads ``MUJOCO_GL`` when it is imported. The default applies only when
+    the platform is Linux, ``DISPLAY`` is unset or empty, and ``MUJOCO_GL`` is
+    not already set. macOS, Windows, and a Linux session with ``DISPLAY`` set
+    keep MuJoCo's own choice.
+    """
+    environ = os.environ if environ is None else environ
+    platform = sys.platform if platform is None else platform
+    if platform != "linux" or environ.get("DISPLAY") or "MUJOCO_GL" in environ:
+        return
+    environ["MUJOCO_GL"] = "osmesa"
+
+
+# MuJoCo reads MUJOCO_GL at import, so this has to run first.
+default_mujoco_gl()
+
+import mujoco  # noqa: E402
+import numpy as np  # noqa: E402
+
+from livingproof_sim_mujoco import evidence as ev  # noqa: E402
+from livingproof_sim_mujoco.pins import fetch, sha256  # noqa: E402
 
 FORMAT = "livingproof-hallway-media/2.0.0"
 FPS = 25

@@ -1,10 +1,12 @@
 """Pinned upstream files: download by commit into a robot package's cache, verify sha256.
 
 A robot package keeps a ``pins.json`` (groups of files at a repository commit, each with a
-sha256, an optional ``bytes`` length, and a ``dest`` directory). ``fetch(root)`` downloads
+sha256, a required ``bytes`` length, and a ``dest`` directory). ``fetch(root)`` downloads
 missing files and verifies every file, cached or not. Transient download errors are retried,
-including a body that is short of or a different size from ``Content-Length`` or the pin's
-``bytes``. A sha256 mismatch on a body of the expected size is not retried.
+including a body whose length differs from the pin's ``bytes``. A body of that length is
+checksummed even when ``Content-Length`` disagrees; that disagreement is a warning. A sha256
+mismatch on a body of the expected size is not retried. A pin that omits ``bytes`` is an
+error that names the pin, before any download.
 """
 
 from __future__ import annotations
@@ -204,10 +206,15 @@ def _content_length(url: str, response) -> int | None:
     return None
 
 
-def _pin_bytes(entry: dict, label: str) -> int | None:
-    """The pin's ``bytes`` count, when the field is present."""
-    if "bytes" not in entry:
-        return None
+def _pin_bytes(entry: dict, label: str) -> int:
+    """The pin's required ``bytes`` count. A missing field names ``label``."""
+    if "bytes" not in entry or entry["bytes"] is None:
+        raise ValueError(
+            f"{label}: pin is missing bytes. "
+            "Each file in pins.json needs a non-negative integer byte count so a short "
+            "download is retried instead of accepted as a checksum. "
+            'Example: "go1_policy.onnx": {"sha256": "<64 hex>", "bytes": 772916}'
+        )
     value = entry["bytes"]
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{label}: pin bytes must be a non-negative integer, got {value!r}")
@@ -236,9 +243,10 @@ def _place_verified(
 ) -> None:
     """Stream ``url`` to a temp file, check size and ``expected``, then replace ``dest``.
 
-    Size is checked before the sha256. A short or wrong-sized body raises
-    ``SizeMismatch`` so the caller can retry it. A hash mismatch is raised only
-    when the body has the expected length.
+    A body whose length equals the pin's ``bytes`` is checksummed. A Content-Length
+    that disagrees with that length is a warning, not a retry. Any other length
+    raises ``SizeMismatch`` so the caller can retry it. A hash mismatch is raised
+    only when the body has the pin's length.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".part", dir=dest.parent)
@@ -253,9 +261,19 @@ def _place_verified(
             finally:
                 _close_quietly(response)
         actual = tmp.stat().st_size
-        mismatched = _size_expectations(actual, content_length, expected_bytes)
-        if mismatched:
-            raise SizeMismatch(label, actual, mismatched)
+        if expected_bytes is not None and actual == expected_bytes:
+            if content_length is not None and content_length != actual:
+                logger.warning(
+                    "%s: Content-Length says %s bytes but the download is %s bytes, "
+                    "which matches the pin; checking sha256",
+                    label,
+                    content_length,
+                    actual,
+                )
+        else:
+            mismatched = _size_expectations(actual, content_length, expected_bytes)
+            if mismatched:
+                raise SizeMismatch(label, actual, mismatched)
         got = sha256(tmp)
         if got != expected:
             raise ChecksumError(f"{label}: expected {expected}, downloaded {got}")
@@ -323,9 +341,10 @@ def fetch(root: Path, opener=urllib.request.urlopen) -> list[Path]:
     """Download missing files and verify every file, cached or not.
 
     Transient network failures are retried, as is a body that does not match
-    Content-Length or the pin's ``bytes``. A hash mismatch on a body of the
-    expected size raises ChecksumError immediately and leaves the previous
-    cached file in place.
+    the pin's ``bytes``. A body of that length is checksummed even when
+    Content-Length disagrees. A hash mismatch raises ChecksumError immediately
+    and leaves the previous cached file in place. A pin without ``bytes``
+    raises ValueError naming the pin and downloads nothing.
     """
     root = Path(root)
     done = []
