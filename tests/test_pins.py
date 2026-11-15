@@ -27,7 +27,7 @@ def _files(root: Path) -> list[str]:
 
 
 def _write_pins(root: Path, digest: str, fields: dict | None = None) -> None:
-    entry = {"sha256": digest}
+    entry = {"sha256": digest, "bytes": len(PAYLOAD)}
     if fields:
         entry.update(fields)
     document = {

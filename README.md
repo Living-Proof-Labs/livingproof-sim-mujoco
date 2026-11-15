@@ -60,6 +60,16 @@ distance that peaks and falls as a body passes through a thin wall) and added th
 `wall_intrusion` trace column, `left_hallway` and `wall_intrusion` fields. It applies no
 thresholds and decides no outcome. The capability verifier's evaluators do that.
 
+## Evidence media
+
+`python -m livingproof_sim_mujoco.media` re-runs an evidence trial and writes MCAP
+recordings and mp4 screencasts. Install the `media` extra. On Linux, importing
+`livingproof_sim_mujoco.media` sets `MUJOCO_GL` to `osmesa` when `DISPLAY` is unset
+or empty and `MUJOCO_GL` is not already set, so a headless machine can render
+without a window. A value already in the environment is left unchanged. macOS,
+Windows, and a Linux session that has `DISPLAY` set do not receive this default.
+See [Evidence media](docs/evidence.md) for the command.
+
 ## Development
 
 Docker and Task 3.54.0 are host prerequisites. `task setup`, `task verify`,

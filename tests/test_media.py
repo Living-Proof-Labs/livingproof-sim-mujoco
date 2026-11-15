@@ -2,6 +2,8 @@
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 # Before livingproof_sim_mujoco, which imports MuJoCo and locks the GL platform.
@@ -140,3 +142,55 @@ def test_a_replay_that_really_differs_is_still_refused(recorded, monkeypatch):
     with pytest.raises(RuntimeError, match="differs from the evidence"):
         media.media("test_evidence:TOY", "stock", tmp_path / "ev", v, tmp_path / "m")
     assert not (tmp_path / "m" / "mcap").exists()
+
+
+def _imported_mujoco_gl(extra: dict) -> str:
+    """Value of MUJOCO_GL after a fresh import of media.py, or empty when unset."""
+    env = os.environ.copy()
+    env.pop("MUJOCO_GL", None)
+    env.pop("DISPLAY", None)
+    env.update(extra)
+    code = (
+        "import os\n"
+        "try:\n"
+        "    import livingproof_sim_mujoco.media\n"
+        "except Exception:\n"
+        "    pass\n"
+        "print(os.environ.get('MUJOCO_GL', ''))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_media_import_defaults_osmesa_only_for_headless_linux():
+    """Linux with no DISPLAY defaults to osmesa. A set DISPLAY or MUJOCO_GL is left alone."""
+    assert _imported_mujoco_gl({}) == "osmesa"
+    assert _imported_mujoco_gl({"DISPLAY": ""}) == "osmesa"
+    assert _imported_mujoco_gl({"DISPLAY": ":99"}) == ""
+    assert _imported_mujoco_gl({"MUJOCO_GL": "egl"}) == "egl"
+
+
+def test_default_mujoco_gl_does_not_apply_off_linux():
+    from livingproof_sim_mujoco.media import default_mujoco_gl
+
+    for platform in ("darwin", "win32"):
+        env: dict[str, str] = {}
+        default_mujoco_gl(env, platform=platform)
+        assert env == {}
+
+
+def test_readme_documents_headless_mujoco_gl_default():
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text()
+    evidence_doc = (root / "docs/evidence.md").read_text()
+    for text in (readme, evidence_doc):
+        assert "MUJOCO_GL" in text
+        assert "osmesa" in text
+        assert "DISPLAY" in text

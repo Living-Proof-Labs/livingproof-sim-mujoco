@@ -131,7 +131,11 @@ The generated command reference in `docs/command.md` is the physics command `liv
 
 `python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>
 <verification.json> <out>` (install the `media` extra) re-runs every trial of an evidence
-run, in sequence, with a read-only recorder. It writes an MCAP file per trial (`/base_pose` as
+run, in sequence, with a read-only recorder. On Linux, importing this module sets
+`MUJOCO_GL` to `osmesa` when `DISPLAY` is unset or empty and `MUJOCO_GL` is not already
+set, so a headless host uses the OSMesa software renderer. An existing `MUJOCO_GL` is
+not replaced. Other platforms, and a Linux session with `DISPLAY` set, keep MuJoCo's
+own choice. It writes an MCAP file per trial (`/base_pose` as
 `foxglove.PoseInFrame` and `/joint_states`, JSON, 50 Hz, zstd) and an mp4 screencast of
 the verifier's first PASS trial and first FAIL trial only, plus `media.json` with each
 file's size and sha256. Each re-run observation must hash to that trial's evidence
