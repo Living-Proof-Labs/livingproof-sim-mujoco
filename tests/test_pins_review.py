@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+import urllib.request
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -241,3 +242,49 @@ def test_fetch_requires_pin_bytes_and_names_the_pin(tmp_path, clock):
     assert sleeps == []
     assert spans == []
     assert _files(tmp_path) == ["pins.json"]
+
+
+# Published robot pins named in #50. Every file entry with a sha256 must have
+# bytes. Skips unless LIVINGPROOF_NETWORK=1, so CI stays offline.
+PUBLISHED_ROBOT_PINS = (
+    ("livingproof-unitree-go1", "v1.0.0"),
+    ("livingproof-unitree-go1", "v1.0.3"),
+    ("livingproof-unitree-go1", "v2.0.0"),
+    ("livingproof-unitree-g1", "v1.0.0"),
+    ("livingproof-unitree-g1", "v1.0.4"),
+    ("livingproof-unitree-g1", "v2.0.0"),
+    ("livingproof-unitree-g1", "v2.0.1"),
+    ("livingproof-booster-t1", "v1.0.0"),
+    ("livingproof-booster-t1", "v1.0.3"),
+    ("livingproof-booster-t1", "v2.0.0"),
+)
+
+
+def _published_pin_file_entries(obj, prefix=""):
+    if isinstance(obj, dict):
+        if "sha256" in obj:
+            yield prefix, obj
+            return
+        for key, value in obj.items():
+            path = f"{prefix}/{key}" if prefix else str(key)
+            yield from _published_pin_file_entries(value, path)
+    elif isinstance(obj, list):
+        for index, value in enumerate(obj):
+            yield from _published_pin_file_entries(value, f"{prefix}[{index}]")
+
+
+@pytest.mark.skipif(
+    os.environ.get("LIVINGPROOF_NETWORK") != "1",
+    reason="Set LIVINGPROOF_NETWORK=1 to fetch published pins.json files.",
+)
+@pytest.mark.parametrize("repo,tag", PUBLISHED_ROBOT_PINS)
+def test_published_robot_pins_include_bytes_on_every_file(repo, tag):
+    url = f"https://raw.githubusercontent.com/Living-Proof-Labs/{repo}/{tag}/pins.json"
+    with urllib.request.urlopen(url, timeout=30) as response:
+        data = json.load(response)
+    entries = list(_published_pin_file_entries(data))
+    assert entries, f"{repo} {tag}: no sha256 file entries"
+    missing = [path for path, entry in entries if entry.get("bytes") is None]
+    assert missing == [], f"{repo} {tag} missing bytes: {missing}"
+    for path, entry in entries:
+        assert isinstance(entry["bytes"], int) and entry["bytes"] >= 0, (repo, tag, path, entry)
