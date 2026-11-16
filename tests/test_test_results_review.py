@@ -254,7 +254,8 @@ def test_github_client_does_not_follow_a_redirect():
 def test_publish_tests_still_runs_when_verify_fails_and_skips_forks():
     workflow = (ROOT / ".github/workflows/verify.yml").read_text()
     publish = workflow.split("  publish-tests:", 1)[1].split("  deploy-docs:", 1)[0]
-    assert "needs: verify" in publish
+    # #38 adds the arm64 job; publish-tests still waits on verify.
+    assert "needs: [verify, test-arm64]" in publish
     assert "!cancelled()" in publish
     assert "head.repo.full_name == github.repository" in publish
     assert "continue-on-error" not in publish
