@@ -26,3 +26,46 @@ def test_publish_tests_reads_only_this_run_attempt_evidence():
     assert f"name: {evidence}" in publish
     assert "name: mujoco-evidence-amd64\n" not in publish
     assert "tools/test_results.py" in publish
+
+
+def _workflow_jobs():
+    import yaml
+
+    return yaml.safe_load((ROOT / ".github/workflows/verify.yml").read_text())["jobs"]
+
+
+def _taskfile_evidence_command():
+    import yaml
+
+    tasks = yaml.safe_load((ROOT / "Taskfile.runtime.yml").read_text())["tasks"]
+    commands = [c for c in tasks["test"]["cmds"] if isinstance(c, str) and "test_evidence.py" in c]
+    assert len(commands) == 1
+    return commands[0]
+
+
+def test_the_zero_command_stand_runs_on_arm64_with_egl():
+    """#38 asks for the zero-command stand on amd64 and arm64: same command, no -k exclusion."""
+    arm = [job for job in _workflow_jobs().values() if job.get("runs-on") == "ubuntu-24.04-arm"]
+    assert len(arm) == 1, "one MuJoCo tests (arm64) job on the free ubuntu-24.04-arm runner"
+    runs = [step.get("run", "") for step in arm[0]["steps"]]
+    command = _taskfile_evidence_command()
+    assert command.startswith("MUJOCO_GL=egl ") and " -k " not in command
+    assert any(command in run for run in runs), runs
+    assert any(run.strip() == "task setup" for run in runs)
+    uploads = [step.get("with", {}).get("name") for step in arm[0]["steps"]]
+    assert "mujoco-evidence-arm64-${{ github.run_attempt }}" in uploads
+
+
+def test_publish_tests_publishes_an_arm64_check_from_this_attempt():
+    jobs = _workflow_jobs()
+    arm = next(name for name, job in jobs.items() if job.get("runs-on") == "ubuntu-24.04-arm")
+    publish = jobs["publish-tests"]
+    assert arm in publish["needs"] and "verify" in publish["needs"]
+    downloads = [
+        s["with"]["name"] for s in publish["steps"] if "download-artifact" in s.get("uses", "")
+    ]
+    assert "mujoco-evidence-amd64-${{ github.run_attempt }}" in downloads
+    assert "mujoco-evidence-arm64-${{ github.run_attempt }}" in downloads
+    runs = "\n".join(step.get("run", "") for step in publish["steps"])
+    assert 'tools/test_results.py --name "MuJoCo tests (amd64)"' in runs
+    assert 'tools/test_results.py --name "MuJoCo tests (arm64)"' in runs

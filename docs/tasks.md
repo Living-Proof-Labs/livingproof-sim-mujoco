@@ -312,7 +312,7 @@ commands:
  - uv run --no-sync pytest tests/test_installed_adapter_commit.py --junitxml=artifacts/installed-adapter.xml
  - uv run --no-sync pytest tests/test_pins.py tests/test_pins_review.py --junitxml=artifacts/pins.xml
  - uv run --no-sync pytest tests/test_guidelines_pins.py --junitxml=artifacts/guidelines-pins.xml
- - uv run --no-sync pytest tests/test_evidence.py -k "not zero_command_check" --junitxml=artifacts/evidence.xml
+ - MUJOCO_GL=egl uv run --no-sync pytest tests/test_evidence.py --junitxml=artifacts/evidence.xml
  - uv run --no-sync pytest tests/test_declared_hashes.py tests/test_declared_profile_hashes_review.py tests/test_declared_hashes_real_runs.py --junitxml=artifacts/declared-hashes.xml
  - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
  - uv run --no-sync pytest tests/test_scenario_sources.py tests/test_scenario_supported.py --junitxml=artifacts/scenario-sources.xml

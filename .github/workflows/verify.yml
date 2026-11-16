@@ -85,8 +85,38 @@ jobs:
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
         with:
           path: artifacts/manual/html
+  test-arm64:
+    name: verify (arm64)
+    # #38: the zero-command stand must also run on arm64. Same development image,
+    # same EGL command as Taskfile.runtime.yml's test task, no -k exclusion.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e
+        with:
+          version: '3.54.0'
+      - name: Match checkout ownership
+        run: |
+          echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
+      - run: task setup
+      - name: Zero-command stand and evidence tests on arm64 (EGL)
+        run: docker compose run --rm tooling sh -c 'MUJOCO_GL=egl uv run --no-sync pytest tests/test_evidence.py --junitxml=artifacts/evidence.xml'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: mujoco-evidence-arm64-${{ github.run_attempt }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
   publish-tests:
-    needs: verify
+    needs: [verify, test-arm64]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-24.04
     permissions:
@@ -112,6 +142,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 tools/test_results.py --name "MuJoCo tests (amd64)" --path '*.xml' --root reports
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: ${{ !cancelled() }}
+        with:
+          name: mujoco-evidence-arm64-${{ github.run_attempt }}
+          path: reports-arm64
+      - name: Publish completed arm64 test check
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/test_results.py --name "MuJoCo tests (arm64)" --path 'evidence.xml' --root reports-arm64
   deploy-docs:
     needs: [verify, publish-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
