@@ -71,7 +71,7 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
 livingproof-unitree-g1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1", tag = "v2.2.1" }
-livingproof-unitree-go1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1", tag = "v2.1.13" }
+livingproof-unitree-go1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1", tag = "v2.2.1" }
 livingproof-booster-t1 = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1", tag = "v2.2.1" }
 
 # The robot packages' own sources pin this project to v2.0.3. These tests run
