@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Scenario parameters, route geometry, lock sources, and frozen hallway bytes.
 
-The case files are the bytes of robot-capability-specs v2.2.0 (commit
-23bec516bda29be7b26555286cbf2e8217ac5c81). See
-tests/fixtures/robot-capability-specs-v2.2.0/PROVENANCE.json.
+The case files are the bytes of robot-capability-specs v2.3.0 (commit
+57317e617014a6df97bb7fba9d92a890af8d42e5). Those bytes match v2.2.0. See
+tests/fixtures/robot-capability-specs-v2.3.0/PROVENANCE.json.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def _toy():
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = ROOT / "tests/fixtures/robot-capability-specs-v2.2.0"
+CATALOG = ROOT / "tests/fixtures/robot-capability-specs-v2.3.0"
 PARITY = ROOT / "tests/fixtures/lpv-run-43402628666"
 # Production Python outside these paths must not name the scenario or its world.
 ALLOW = (
@@ -50,7 +50,7 @@ def _sha(path: Path) -> str:
 
 def _catalog():
     provenance = json.loads((CATALOG / "PROVENANCE.json").read_text())
-    assert provenance["tag"] == "v2.2.0"
+    assert provenance["tag"] == "v2.3.0"
     assert provenance["commit"] == frozen.PARAMETERS_COMMIT
     loaded = {}
     for name, meta in provenance["files"].items():

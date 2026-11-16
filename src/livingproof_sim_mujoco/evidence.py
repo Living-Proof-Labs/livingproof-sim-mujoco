@@ -115,7 +115,7 @@ def read_lock(path: Path) -> dict:
 _LOCK_EXAMPLE = {
     "world": '"world": {"id": "<world>", "version": "0.1.0"}',
     "releases": (
-        '"releases": {"specs": {"tag": "v2.2.0", "commit": "<40 hex>"}, '
+        '"releases": {"specs": {"tag": "v2.3.0", "commit": "<40 hex>"}, '
         '"runner": {"tag": "v2.1.1", "commit": "<40 hex>"}}'
     ),
     "configurations": (
@@ -676,7 +676,7 @@ def build_run_manifest(
     if not isinstance(specs, dict):
         raise SystemExit(
             "the verification lock releases.specs needs a tag and commit. "
-            'Example: "specs": {"tag": "v2.2.0", "commit": "<40 hex>"}'
+            'Example: "specs": {"tag": "v2.3.0", "commit": "<40 hex>"}'
         )
     scenario = lock.get("scenario", frozen.SCENARIO)
     parameters_out = {}
@@ -723,6 +723,86 @@ def build_run_manifest(
     }
 
 
+def _record_unsupported(
+    robot: Robot,
+    root: Path,
+    lock_path: Path,
+    lock: dict,
+    name: str,
+    entry: dict,
+    document: dict,
+    support: dict,
+    trials: int | None,
+    waiting: list[str],
+    adapter_sha: str,
+    out: Path,
+) -> dict:
+    """Evidence for an unmet ``scenario_supported``, with no world and no trials.
+
+    The declaration is known from the lock, the parameter file and
+    ``manifest.json``. The world fixture and the route are not loaded, so a
+    scenario whose world this package does not vendor still gets a record.
+    """
+    plan = lock_field(lock, "plan", dict)
+    count = trial_count(plan, trials)
+    offset = declared_offset(plan)
+    out = Path(out)
+    (out / "trials").mkdir(parents=True, exist_ok=False)
+    created = dt.datetime.now(dt.timezone.utc)
+    scenario_name = lock.get("scenario", frozen.SCENARIO)
+    run_id = frozen.evidence_run_id(scenario_name, robot.id, name, created)
+    profile_sha = sha256(root / "robot.json")
+    robot_commit = sc.git_head(root)[0]
+    places = document.get("places") if isinstance(document, dict) else None
+    spawn = places.get("start") if isinstance(places, dict) else None
+    world_lock = lock.get("world") if isinstance(lock.get("world"), dict) else {}
+    started = time.perf_counter()
+    manifest = {
+        "format": FORMAT,
+        "run_id": run_id,
+        "created": created.isoformat(timespec="seconds"),
+        "lock": {"path": lock_path.name, "sha256": sha256(lock_path), "content": lock},
+        "pending_release": waiting,
+        "plan": executed_plan(plan, count),
+        "start": {"spawn": spawn, "pose": "nominal", "offset": offset},
+        "preconditions": [support],
+        "robot": {
+            "id": robot.id,
+            "profile_sha256": profile_sha,
+            "profile": json.loads((root / "robot.json").read_text()),
+        },
+        "configuration": {
+            "name": name,
+            "version": entry["version"],
+            "sha256": entry["sha256"],
+            "profile": json.loads((root / entry["path"]).read_text()),
+        },
+        "world": {"id": world_lock.get("id"), "version": world_lock.get("version")},
+        "environment": {
+            "simulator": {
+                "id": "mujoco",
+                "version": mujoco.__version__,
+                "adapter": "livingproof-sim-mujoco",
+                "adapter_commit": adapter_sha,
+            },
+            "runner": {
+                "version": metadata.version("livingproof-sim-mujoco"),
+                "tag": lock["releases"]["runner"]["tag"],
+                "commit": lock["releases"]["runner"]["commit"],
+            },
+            "source_commit": robot_commit,
+        },
+        "host": {"wall_clock_s": round(time.perf_counter() - started, 3), "cpu": host_cpus()},
+        "trials": {
+            "count": count,
+            "results": [],
+            "reproducibility": reproducibility([]),
+        },
+    }
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    return manifest
+
+
 def evidence(
     ref: str,
     name: str,
@@ -748,6 +828,30 @@ def evidence(
         )
     entry = locked_configuration(lock, name, root)
     fetch(root)
+    # scenario_supported needs only the lock, the parameter file and manifest.json.
+    # It is decided before the world fixture or the route, so an undeclared
+    # scenario still records UNSUPPORTED when that world is not vendored here.
+    parameter_document, _parameter_source = sources.parameters_document_for(root, lock)
+    support = None
+    if sc.scenario_support_required(parameter_document):
+        support = sc.scenario_supported_precondition(
+            root, sc.requested_scenario_id(lock, parameter_document)
+        )
+        if not support["met"]:
+            return _record_unsupported(
+                robot,
+                root,
+                lock_path,
+                lock,
+                name,
+                entry,
+                parameter_document,
+                support,
+                trials,
+                waiting,
+                adapter_sha,
+                out,
+            )
     plan, prepared = recording(robot, lock, name)
     p = prepared.recorded
     world = prepared.world
@@ -764,7 +868,20 @@ def evidence(
         prepared.document,
         width_decimals=robot.width_decimals,
     )
+    # A scenario that lists scenario_supported and declares it keeps this
+    # ordering. An unmet declaration already returned above, before the world.
+    if support is not None:
+        checked.append(support)
     unmet = unmet_required(checked)
+    # A declared scenario with no command is not given an invented velocity.
+    # The adapter drives that robot; this runner does not.
+    if unmet is None and prepared.command is None:
+        raise SystemExit(
+            "ERROR: the scenario parameter file has no command, so this runner does not "
+            "send one. A declared scenario is driven by its adapter. "
+            'Example: "command": {"mode": "constant", '
+            '"forward": {"parameter": "command_speed"}, "sideways": 0, "turn_rate": 0}'
+        )
     # A missing wall or an origin start writes nothing. An unmet precondition
     # does not build a model: the robot cannot attempt the scenario.
     if unmet is None:

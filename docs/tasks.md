@@ -314,12 +314,12 @@ commands:
  - uv run --no-sync pytest tests/test_guidelines_pins.py --junitxml=artifacts/guidelines-pins.xml
  - uv run --no-sync pytest tests/test_evidence.py -k "not zero_command_check" --junitxml=artifacts/evidence.xml
  - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
- - uv run --no-sync pytest tests/test_scenario_sources.py --junitxml=artifacts/scenario-sources.xml
+ - uv run --no-sync pytest tests/test_scenario_sources.py tests/test_scenario_supported.py --junitxml=artifacts/scenario-sources.xml
  - uv run --no-sync pytest tests/test_compose.py tests/test_locked_source_review.py --junitxml=artifacts/compose.xml
  - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
  - MUJOCO_GL=osmesa uv run --no-sync pytest tests/test_media.py --junitxml=artifacts/media.xml
  - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py tests/test_test_results.py tests/test_test_results_review.py --junitxml=artifacts/other.xml
- - uv run --no-sync pytest tests/test_lock_cli_review.py tests/test_go1_pin_review.py --junitxml=artifacts/lock-cli.xml
+ - uv run --no-sync pytest tests/test_lock_cli_review.py tests/test_go1_pin_review.py tests/test_g1_pin_review.py tests/test_t1_pin_review.py --junitxml=artifacts/lock-cli.xml
 ```
 
 ### `task -t Taskfile.runtime.yml verify`
