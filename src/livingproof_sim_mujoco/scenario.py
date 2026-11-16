@@ -51,6 +51,7 @@ __all__ = [
     "prepare",
     "requested_scenario_id",
     "resolve_limits",
+    "scenario_places",
     "scenario_support_required",
     "scenario_supported_precondition",
 ]
@@ -190,7 +191,35 @@ def prepare(robot: dict, conf: dict, world: dict, document: dict | None = None) 
         "exit_x": float(reference[0]),
         "spawn": document["places"]["start"],
     }
-    return Prepared(recorded, command_vector(document, inputs), resolved, document)
+    command = command_vector(document, inputs)
+    if command is None:
+        # Outcome-only scenario: the exit is a segment on the route, not a line x =
+        # exit_x, so the straight-hallway exit_x is not recorded for it.
+        del recorded["exit_x"]
+    return Prepared(recorded, command, resolved, document)
+
+
+def scenario_places(world: dict, document: dict) -> dict:
+    """The world places the parameter file names, for an adapter that drives the robot.
+
+    ``{"start": pose, "exit": segment, "route": polyline, "through": [region, ...]}``,
+    each the world's own place object. A name the world does not have is an ERROR.
+    """
+    names = {p["name"]: p for p in world.get("places", [])}
+    wanted = document.get("places", {})
+
+    def one(role: str, name: str) -> dict:
+        if name not in names:
+            raise ScenarioParameterError(
+                f"ERROR: the world has no place {name!r} named by the scenario parameter "
+                f"file's places.{role}. Nothing was recorded. "
+                'Example: a world with a place named by the parameter file\'s "route".'
+            )
+        return copy.deepcopy(names[name])
+
+    out = {role: one(role, wanted[role]) for role in ("start", "exit", "route")}
+    out["through"] = [one("through", name) for name in wanted.get("through", [])]
+    return out
 
 
 def parameters(robot: dict, conf: dict, world: dict, document: dict | None = None) -> dict:

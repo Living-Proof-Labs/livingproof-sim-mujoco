@@ -411,3 +411,225 @@ def observe(
         },
         "trace": {"columns": COLUMNS, "samples": samples},
     }
+
+
+# --- Route observations (any-layout worlds, outcome-only scenarios) ---------------
+#
+# A scenario with no command is driven by its robot adapter (robot-capability-specs
+# v2.3.0, "How the robot is driven"). Its world may turn, so nothing here assumes a
+# centreline at y = 0 or an exit at x = exit_x. The hallway observation above stays
+# byte-identical for the frozen scenario; this format is only written for runs the
+# adapter drives.
+
+ROUTE_FORMAT = "livingproof-route-observation/0.1.0"
+ROUTE_COLUMNS = ["t", "x", "y", "z", "wall_distance", "wall_intrusion"]
+
+
+def _nearest_on_route(route: list, point) -> list[float]:
+    """The point of the route polyline nearest ``point`` (x and y only)."""
+    best, nearest = None, None
+    for a, b in zip(route[:-1], route[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length2 = dx * dx + dy * dy
+        t = 0.0 if length2 == 0 else ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / length2
+        t = min(1.0, max(0.0, t))
+        q = [a[0] + t * dx, a[1] + t * dy]
+        d = math.hypot(point[0] - q[0], point[1] - q[1])
+        if best is None or d < best:
+            best, nearest = d, q
+    return nearest
+
+
+def route_wall_faces(model: mujoco.MjModel, walls: list[str], route: list) -> dict[str, dict]:
+    """Each wall's face toward the route, from its compiled box geom.
+
+    A wall's ``axis`` is its thinner horizontal axis (0 = x, 1 = y). ``side`` is the
+    direction (+1 or -1 along that axis) from the wall to the nearest point of the
+    route, so the robot's side. ``inner`` is the face on that side and ``outer`` the
+    other face. Walls must be axis-aligned boxes on the world body.
+    """
+    out = {}
+    for name in walls:
+        g = model.geom(name)
+        if int(g.type[0]) != mujoco.mjtGeom.mjGEOM_BOX:
+            raise ValueError(f"wall {name} is not a box geom")
+        if not np.allclose(model.geom_quat[g.id], [1, 0, 0, 0]) or model.geom_bodyid[g.id] != 0:
+            raise ValueError(f"wall {name} must be an axis-aligned world geom")
+        centre = [float(v) for v in model.geom_pos[g.id]]
+        half = [float(v) for v in model.geom_size[g.id]]
+        axis = 0 if half[0] < half[1] else 1
+        towards = _nearest_on_route(route, centre)
+        if abs(towards[axis] - centre[axis]) <= half[axis]:
+            raise ValueError(f"wall {name} lies on the route")
+        side = 1 if towards[axis] > centre[axis] else -1
+        out[name] = {
+            "axis": "xy"[axis],
+            "side": side,
+            "inner": round(centre[axis] + side * half[axis], 6),
+            "outer": round(centre[axis] - side * half[axis], 6),
+            # Not written: the geom id, the normal axis index and the span on the two
+            # other axes, for ``RouteReach.past``.
+            "span": {
+                "id": g.id,
+                "axis": axis,
+                **{a: (centre[a] - half[a], centre[a] + half[a]) for a in (0, 1, 2) if a != axis},
+            },
+        }
+    return out
+
+
+class RouteReach(Reach):
+    """How far the robot's collision geometry reaches past each wall's inner face."""
+
+    def past(self, data: mujoco.MjData, faces: dict) -> dict[str, float | None]:
+        """For each wall, the largest distance any collision geom alongside it reaches
+        past the inner face (negative while clear). A geom counts for a wall where it can
+        be in the wall: within the wall's span on the two other axes, or straddling the
+        span's edge with a negative ``mj_geomDistance``. None when no geom is alongside."""
+        out = {}
+        for w, f in faces.items():
+            span, best = f["span"], None
+            normal = span["axis"]
+            for g in self.robot:
+                inside = True
+                for axis in (a for a in (0, 1, 2) if a != normal):
+                    lo, hi = self.extent(data, g, axis)
+                    a, b = span[axis]
+                    if hi < a or lo > b:
+                        break
+                    inside = inside and a <= lo and hi <= b
+                else:
+                    if not inside and (
+                        mujoco.mj_geomDistance(self.model, data, g, span["id"], DISTMAX, None)
+                        >= 0.0
+                    ):
+                        continue
+                    lo, hi = self.extent(data, g, normal)
+                    r = f["inner"] - lo if f["side"] > 0 else hi - f["inner"]
+                    best = r if best is None else max(best, r)
+            out[w] = best
+        return out
+
+
+def _inside(region: dict, x: float, y: float) -> bool:
+    """A region place's closed x and y ranges (boundaries included)."""
+    return region["x"][0] <= x <= region["x"][1] and region["y"][0] <= y <= region["y"][1]
+
+
+def observe_route(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    step: Callable[[mujoco.MjData], None],
+    *,
+    base_body: str,
+    walls: list[str],
+    seconds: float,
+    route: dict,
+    exit_place: dict,
+    through: list[dict],
+    sample_hz: float = 50.0,
+    on_step: Callable[[int, mujoco.MjData], None] | None = None,
+) -> dict:
+    """Run one adapter-driven trial from the current state and return its observations.
+
+    ``route``, ``exit_place`` and ``through`` are the world's places named by the
+    scenario parameter file. Recorded, with no threshold applied: the base trace, the
+    first exit crossing (the parameter package's sample rule), the first sample inside
+    each ``through`` region, the largest distance from the route, the lowest base
+    height and every wall contact on the robot's collision geometry. The trial ends
+    at the first exit crossing, after ``seconds``, when the state becomes non-finite,
+    or ``left_world`` when any robot part is past a wall's outer face or the base
+    reaches the exit line outside the exit segment.
+    """
+    points = route["points"]
+    exit_doc = {"points": exit_place["points"], "reference": exit_place.get("reference")}
+    distance = WallDistance(model, walls)
+    faces = route_wall_faces(model, walls, points)
+    reach = RouteReach(model)
+    base = model.body(base_body).id
+    every = max(1, int(round(1 / (sample_hz * model.opt.timestep))))
+    samples, contacts, open_contact = [], [], None
+    end, exit_time, left = "time_limit", None, None
+    entered = {place["name"]: None for place in through}
+    route_distance = {"value": -1.0, "time": None}
+    height = {"value": float("inf"), "time": None}
+    previous = None
+    for i in range(int(round(seconds / model.opt.timestep)) + 1):
+        if on_step is not None:
+            on_step(i, data)
+        if i % every == 0:
+            if not np.all(np.isfinite(data.qpos)):
+                end = "non_finite_state"
+                break
+            t = round(float(data.time), 4)
+            x, y, z = (float(v) for v in data.xpos[base])
+            per_wall = distance(data)
+            d = min(per_wall.values(), default=DISTMAX)
+            r = reach.past(data, faces)
+            intrusion = {w: v for w, v in r.items() if v is not None}
+            wall, deepest = max(intrusion.items(), key=lambda kv: kv[1], default=(None, None))
+            samples.append(
+                [t, round(x, 4), round(y, 4), round(z, 4), round(d, 4)]
+                + [None if deepest is None else round(deepest, 4)]
+            )
+            for place in through:
+                if entered[place["name"]] is None and _inside(place, x, y):
+                    entered[place["name"]] = t
+            point = [x, y, z]
+            along = route_step(points, exit_doc, previous, point)
+            previous = point
+            if along["distance"] > route_distance["value"]:
+                route_distance = {"value": round(along["distance"], 4), "time": t}
+            if z < height["value"]:
+                height = {"value": round(z, 4), "time": t}
+            if deepest is not None and deepest >= 0.0:
+                if open_contact is None:
+                    open_contact = {"wall": wall, "start": t, "end": t, "depth": 0.0}
+                    contacts.append(open_contact)
+                open_contact["end"] = t
+                open_contact["depth"] = round(max(open_contact["depth"], deepest), 4)
+            else:
+                open_contact = None
+            thickness = {w: abs(f["inner"] - f["outer"]) for w, f in faces.items()}
+            through_wall = [w for w, v in intrusion.items() if v > thickness[w]]
+            if through_wall:
+                left = {"time": t, "via": through_wall[0], "x": round(x, 4), "y": round(y, 4)}
+                end = "left_world"
+                break
+            if along["crosses"]:
+                exit_time, end = t, "crossed_exit"
+                break
+            if along["reached_line"]:
+                left = {
+                    "time": t,
+                    "via": "exit-outside-segment",
+                    "x": round(x, 4),
+                    "y": round(y, 4),
+                }
+                end = "left_world"
+                break
+        step(data)
+    return {
+        "format": ROUTE_FORMAT,
+        "end": end,
+        "duration_s": samples[-1][0] if samples else 0.0,
+        "exit_time": exit_time,
+        "places_entered": entered,
+        "left_world": left,
+        "max_route_distance": route_distance,
+        "min_base_height": height,
+        "wall_contacts": contacts,
+        "places": {
+            "route": route["name"],
+            "exit": exit_place["name"],
+            "through": [place["name"] for place in through],
+        },
+        "wall_distance": {"method": "mj_geomDistance", "distmax": DISTMAX},
+        "wall_intrusion": {
+            "method": "robot collision-geometry extent past each wall's inner face, "
+            "along the wall's thinner horizontal axis",
+            "walls": {w: {k: v for k, v in f.items() if k != "span"} for w, f in faces.items()},
+            "geometry": reach.record,
+        },
+        "trace": {"columns": ROUTE_COLUMNS, "samples": samples},
+    }

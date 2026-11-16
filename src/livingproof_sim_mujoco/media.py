@@ -203,6 +203,7 @@ def _record(args):
         route,
         exit_place,
         world,
+        places,
     ) = args
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"trial-{index:02d}.mcap"
@@ -223,6 +224,7 @@ def _record(args):
         command=command,
         route=route,
         exit_place=exit_place,
+        places=places,
     )
     got = hashlib.sha256(ev.observation_bytes(obs)).hexdigest()
     if got != expected:
@@ -273,6 +275,8 @@ def media(
     world = prepared.world
     geometry = ev.sc.route_geometry(world, prepared.document)
     route, exit_place = geometry if geometry else (None, None)
+    # An outcome-only scenario is driven by the adapter, as in the evidence run.
+    places = ev.sc.scenario_places(world, prepared.document) if prepared.command is None else None
     picked = pick(json.loads(Path(verification).read_text()))
     offset = ev.declared_offset(plan)
     out = Path(out)
@@ -298,6 +302,7 @@ def media(
             route,
             exit_place,
             prepared.world,
+            places,
         )
         for t in manifest["trials"]["results"]
     ]

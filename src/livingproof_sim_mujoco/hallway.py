@@ -19,6 +19,9 @@ from livingproof_sim_mujoco import contract
 WORLDS = Path(__file__).parent / "worlds"
 RESULT_FORMAT = contract.RESULT_FORMAT
 SUPPORTED_FORMAT = "livingproof-world/0.1"
+# Format 0.2 ("Any layout", world contract 0.3.0) has the same keys; every wall is still an
+# axis-aligned box, so the same MJCF mapping applies.
+SUPPORTED_FORMATS = (SUPPORTED_FORMAT, "livingproof-world/0.2")
 GEOMETRY_KEYS = {"name", "type", "role", "centre", "size"}
 PLACE_KEYS = {
     "segment": {"name", "type", "points", "reference"},
@@ -141,7 +144,7 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
 def supported(world: dict) -> None:
     """Raise Unsupported for the first declared feature this adapter cannot map."""
     fid, ver = world.get("id", "?"), world.get("content_version", "?")
-    if world.get("format") != SUPPORTED_FORMAT:
+    if world.get("format") not in SUPPORTED_FORMATS:
         raise Unsupported(fid, ver, f"world format {world.get('format')!r}")
     for key in sorted(set(world) - WORLD_KEYS):
         raise Unsupported(fid, ver, f"top-level field {key!r}")

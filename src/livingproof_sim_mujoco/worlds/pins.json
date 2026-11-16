@@ -6,5 +6,13 @@
     "path": "worlds/hallway-open/0.1.0",
     "release_sha256": "ad7663f5aa853830d3910a43b32c183173095d6d5494b6983e69dd3e8371c135",
     "extension": "hallway-open-0.1.0.mujoco.json"
+  },
+  "hallway-corner/0.1.0": {
+    "repository": "Living-Proof-Labs/livingproof-worlds",
+    "tag": "v1.3.0",
+    "commit": "12915e34e6ad1dfe376ec2fcb49d5afb957caff9",
+    "path": "worlds/hallway-corner/0.1.0",
+    "release_sha256": "0fbccdb29c1cca7a0c3fac401029061b547cbbf340de8c8401cec6b3010d693b",
+    "extension": "hallway-corner-0.1.0.mujoco.json"
   }
 }
