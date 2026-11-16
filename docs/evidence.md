@@ -90,9 +90,11 @@ That is robot-capability-specs v2.3.0, Scenario support. The optional `scenarios
 names the scenarios the adapter declares. A list that does not name the requested
 scenario, an empty list, or a manifest with no `scenarios` list records
 `UNSUPPORTED: precondition scenario_supported unmet` and runs no trial. A missing
-manifest file names nothing, the same as a manifest with no list. The record is the
-evidence manifest: the precondition is unmet, `trials.results` is empty, and no robot
-pass or fail is written. The planned `trials.count` stays at least 1 so the evidence
+manifest file names nothing, the same as a manifest with no list. That decision is
+made as soon as the lock and the parameter file are read, before the world fixture
+or the route. The record is the evidence manifest: the precondition is unmet,
+`trials.results` is empty, and no robot pass or fail is written. The requested
+world is named from the lock and is not loaded. The planned `trials.count` stays at least 1 so the evidence
 keeps the shape the capability verifier grades as `UNSUPPORTED`. A scenario that does
 not list the precondition keeps running, including one whose parameter file still has
 its command and whose manifest has no list. A declared scenario that has a command

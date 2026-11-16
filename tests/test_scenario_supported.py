@@ -18,7 +18,9 @@ import jsonschema
 import mujoco
 import pytest
 
-from livingproof_sim_mujoco import compose, evidence, observations
+from livingproof_scenario_parameters import ScenarioParameterError
+
+from livingproof_sim_mujoco import compose, evidence, observations, scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "tests/fixtures/robot-capability-specs-v2.3.0"
@@ -262,6 +264,84 @@ def test_walk_hallway_manifest_leaves_walk_corner_unsupported(tmp_path, monkeypa
     assert code == 0
     printed = capsys.readouterr().out.strip()
     assert printed == f"{RECORD}: {detail}; no trials run"
+
+
+def test_real_walk_corner_file_is_unsupported_before_the_world_fixture(
+    tmp_path, monkeypatch, capsys
+):
+    """v2.3.0 walk-corner parameters, and a manifest that only lists walk-hallway.
+
+    hallway-corner is not a vendored fixture. The record is still written, and
+    the world fixture is not loaded.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    raw = (CATALOG / "walk-corner-parameters.json").read_bytes()
+    provenance = json.loads((CATALOG / "PROVENANCE.json").read_text())
+    assert (
+        hashlib.sha256(raw).hexdigest()
+        == provenance["files"]["walk-corner-parameters.json"]["sha256"]
+    )
+    assert "command" not in json.loads(raw)
+    (repo / "corner-parameters.json").write_bytes(raw)
+    lock_path = repo / "caller.lock.json"
+    lock = json.loads(lock_path.read_text())
+    lock["scenario"] = "walk-corner@0.1.0"
+    lock["world"] = {"id": "hallway-corner", "version": "0.1.0"}
+    lock["sources"] = {
+        "parameters": {
+            "path": "corner-parameters.json",
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+    }
+    lock_path.write_text(json.dumps(lock))
+    _write_manifest(repo, _manifest(["walk-hallway"]))
+
+    def refuse_world(*_args, **_kwargs):
+        raise AssertionError("world fixture was loaded for an undeclared scenario")
+
+    monkeypatch.setattr(compose, "vendored_world", refuse_world)
+    calls = _forbid_robot_and_physics(monkeypatch)
+    out = tmp_path / "out"
+    recorded = evidence.evidence("test_evidence:TOY", "stock", out, trials=1, lock=lock_path)
+    detail = "walk-corner is not named by the robot manifest scenarios"
+    assert calls == []
+    assert _support(recorded) == {"name": "scenario_supported", "met": False, "detail": detail}
+    assert recorded["world"] == {"id": "hallway-corner", "version": "0.1.0"}
+    assert "clear_width" not in recorded["world"]
+    assert recorded["trials"] == {
+        "count": 1,
+        "results": [],
+        "reproducibility": {"compared": False, "identical": None, "finding": None},
+    }
+    assert list((out / "trials").iterdir()) == []
+    assert not (out / "run-manifest.json").exists()
+    text = (out / "manifest.json").read_text()
+    assert "PASS" not in text and "FAIL" not in text
+    assert "unknown fixture" not in text
+    code = evidence.main(
+        [
+            "test_evidence:TOY",
+            "stock",
+            str(tmp_path / "cli"),
+            "--lock",
+            str(lock_path),
+            "--trials",
+            "1",
+        ]
+    )
+    assert code == 0
+    assert capsys.readouterr().out.strip() == f"{RECORD}: {detail}; no trials run"
+
+
+def test_a_route_the_world_does_not_have_is_an_error():
+    """A missing route place is ERROR, not an uncaught KeyError."""
+    from test_evidence import CONF, ROBOT, WORLD
+
+    document = json.loads((CATALOG / "walk-corner-parameters.json").read_text())
+    with pytest.raises(ScenarioParameterError, match="ERROR") as caught:
+        scenario.prepare(ROBOT, CONF, WORLD, document)
+    assert "route-centreline" in str(caught.value)
+    assert not isinstance(caught.value, KeyError)
 
 
 def test_declared_scenario_runs_the_trials(tmp_path, monkeypatch):

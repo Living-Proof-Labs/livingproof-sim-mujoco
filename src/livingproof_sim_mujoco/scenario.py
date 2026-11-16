@@ -161,7 +161,15 @@ def route_geometry(world: dict, document: dict) -> tuple[list, dict] | None:
 def prepare(robot: dict, conf: dict, world: dict, document: dict | None = None) -> Prepared:
     """Resolve the parameter file against the robot, configuration and world."""
     document = _document(document)
-    raw = read_inputs(document, {"world": world, "robot": robot, "configuration": conf})
+    try:
+        raw = read_inputs(document, {"world": world, "robot": robot, "configuration": conf})
+    except KeyError as exc:
+        missing = exc.args[0] if exc.args else exc
+        raise ScenarioParameterError(
+            f"ERROR: the world has no place {missing!r} named by the scenario parameter file. "
+            "Route length is measured on that place, so nothing was recorded. "
+            'Example: a world with a place named by the parameter file\'s "route".'
+        ) from exc
     resolved = resolve(document, raw)
     inputs = resolved["inputs"]
     raw_time = evaluate(document["limits"]["time_limit"]["expression"], document, inputs)

@@ -18,6 +18,10 @@
     "robot-manifest.schema.json": {
       "path": "specs/robots/robot-manifest.schema.json",
       "sha256": "563076811d78ce8f2326a4253e1e34093d66c6487c0d215903cae4887990d4c4"
+    },
+    "walk-corner-parameters.json": {
+      "path": "specs/scenarios/walk-corner/parameters.json",
+      "sha256": "62f2912c33b557d58cd454daf7d1eea543e919dec0e9b53e613d4101a5a12977"
     }
   }
 }
