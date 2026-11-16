@@ -78,9 +78,25 @@ with `INCOMPATIBLE` and writes nothing.
 The scenario parameter file still comes from the lock when `sources.parameters` names a
 path and a sha256. A mismatch is an ERROR and the pins file is not used. With no lock
 entry, the file is taken from the robot's `pins.json`. If the pins do not list it either,
-the runner uses its copy of robot-capability-specs v2.2.0 `parameters.json`, checked by
+the runner uses its copy of robot-capability-specs v2.3.0 `parameters.json`, checked by
 sha256. The velocity command is that file's `command`. Only mode `constant` is accepted;
 any other mode is an ERROR. On the straight open hallway the command is `[0.5, 0, 0]`.
+A parameter file with no `command` states only the outcome. This runner does not invent
+a velocity for it.
+
+Before any trial, a scenario that lists the precondition `scenario_supported` is checked
+against the robot repository's `robot-manifest.json` (`livingproof-robot-manifest/0.1`).
+That is robot-capability-specs v2.3.0, Scenario support. The optional `scenarios` list
+names the scenarios the adapter declares. A list that does not name the requested
+scenario, an empty list, or a manifest with no `scenarios` list records
+`UNSUPPORTED: precondition scenario_supported unmet` and runs no trial. A missing
+manifest file names nothing, the same as a manifest with no list. The record is the
+evidence manifest: the precondition is unmet, `trials.results` is empty, and no robot
+pass or fail is written. The planned `trials.count` stays at least 1 so the evidence
+keeps the shape the capability verifier grades as `UNSUPPORTED`. A scenario that does
+not list the precondition keeps running, including one whose parameter file still has
+its command and whose manifest has no list. A declared scenario that has a command
+runs the trials. Invalid manifest data is a test-system `ERROR` and writes nothing.
 
 The `world` in `run-manifest.json` names the vendored `world.json` that was loaded: its
 `id` and `version` come from the lock, and its `sha256` is the digest of those bytes. A

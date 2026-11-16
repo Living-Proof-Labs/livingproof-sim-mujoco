@@ -115,7 +115,7 @@ def read_lock(path: Path) -> dict:
 _LOCK_EXAMPLE = {
     "world": '"world": {"id": "<world>", "version": "0.1.0"}',
     "releases": (
-        '"releases": {"specs": {"tag": "v2.2.0", "commit": "<40 hex>"}, '
+        '"releases": {"specs": {"tag": "v2.3.0", "commit": "<40 hex>"}, '
         '"runner": {"tag": "v2.1.1", "commit": "<40 hex>"}}'
     ),
     "configurations": (
@@ -676,7 +676,7 @@ def build_run_manifest(
     if not isinstance(specs, dict):
         raise SystemExit(
             "the verification lock releases.specs needs a tag and commit. "
-            'Example: "specs": {"tag": "v2.2.0", "commit": "<40 hex>"}'
+            'Example: "specs": {"tag": "v2.3.0", "commit": "<40 hex>"}'
         )
     scenario = lock.get("scenario", frozen.SCENARIO)
     parameters_out = {}
@@ -764,7 +764,27 @@ def evidence(
         prepared.document,
         width_decimals=robot.width_decimals,
     )
+    # robot-capability-specs v2.3.0, Scenario support. Only a scenario that
+    # lists scenario_supported is checked. An unmet one is recorded before any
+    # trial and is never a robot pass or fail.
+    if sc.scenario_support_required(prepared.document):
+        support = sc.scenario_supported_precondition(
+            root, sc.requested_scenario_id(lock, prepared.document)
+        )
+        if not support["met"]:
+            checked.insert(0, support)
+        else:
+            checked.append(support)
     unmet = unmet_required(checked)
+    # A declared scenario with no command is not given an invented velocity.
+    # The adapter drives that robot; this runner does not.
+    if unmet is None and prepared.command is None:
+        raise SystemExit(
+            "ERROR: the scenario parameter file has no command, so this runner does not "
+            "send one. A declared scenario is driven by its adapter. "
+            'Example: "command": {"mode": "constant", '
+            '"forward": {"parameter": "command_speed"}, "sideways": 0, "turn_rate": 0}'
+        )
     # A missing wall or an origin start writes nothing. An unmet precondition
     # does not build a model: the robot cannot attempt the scenario.
     if unmet is None:

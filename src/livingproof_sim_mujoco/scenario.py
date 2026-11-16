@@ -11,6 +11,8 @@ exported so robot packages that already import them keep importing.
 from __future__ import annotations
 
 import copy
+import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -47,7 +49,10 @@ __all__ = [
     "place",
     "preconditions",
     "prepare",
+    "requested_scenario_id",
     "resolve_limits",
+    "scenario_support_required",
+    "scenario_supported_precondition",
 ]
 
 
@@ -103,13 +108,17 @@ def resolve_limits(document: dict, raw: dict) -> dict:
 HALLWAY_COMMAND = (0.5, 0.0, 0.0)
 
 
-def command_vector(document: dict, inputs: dict) -> list[float]:
+def command_vector(document: dict, inputs: dict) -> list[float] | None:
     """``[forward, sideways, turn_rate]`` from the parameter file's command.
 
     Only ``mode`` ``constant`` with the vector ``[0.5, 0, 0]`` is accepted.
-    Any other mode or vector is an ERROR.
+    Any other mode or vector is an ERROR. A parameter file with no ``command``
+    returns None: the scenario states the outcome, and this runner does not
+    invent a velocity command.
     """
-    command = document.get("command") if isinstance(document, dict) else None
+    if not isinstance(document, dict) or "command" not in document:
+        return None
+    command = document.get("command")
     mode = command.get("mode") if isinstance(command, dict) else None
     if not isinstance(command, dict) or mode != "constant":
         raise ScenarioParameterError(
@@ -229,6 +238,110 @@ def preconditions(
         ("simulator_declared", "mujoco" in robot["simulators"], f"simulators {robot['simulators']}")
     )
     return [{"name": n, "met": bool(ok), "detail": d} for n, ok, d in out]
+
+
+# livingproof-robot-manifest/0.1, at the robot repository root.
+ROBOT_MANIFEST = "robot-manifest.json"
+MANIFEST_FORMAT = "livingproof-robot-manifest/0.1"
+_SCENARIO_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_NO_LIST = "the robot manifest has no scenarios list"
+
+
+def scenario_support_required(document: dict) -> bool:
+    """Whether this scenario lists the precondition ``scenario_supported``.
+
+    robot-capability-specs v2.3.0, Scenario support: the check applies only to
+    a scenario that lists that precondition. A parameter file with no
+    ``command`` is outcome-only, and only an adapter whose robot manifest
+    declares the scenario is run. A ``preconditions`` entry of the same name
+    says so too. A scenario that still has a command and does not name the
+    precondition is not checked, so a manifest with no list keeps running it.
+    """
+    if not isinstance(document, dict):
+        return False
+    named = document.get("preconditions")
+    if isinstance(named, dict) and "scenario_supported" in named:
+        return True
+    return "command" not in document
+
+
+def requested_scenario_id(lock: dict, document: dict) -> str:
+    """Scenario id of this run, without the ``@revision`` suffix."""
+    raw = lock.get("scenario") if isinstance(lock, dict) else None
+    if isinstance(raw, dict):
+        raw = raw.get("id")
+    if isinstance(raw, str):
+        ident = raw.split("@", 1)[0]
+        if _SCENARIO_ID.fullmatch(ident):
+            return ident
+    scenario = document.get("scenario") if isinstance(document, dict) else None
+    ident = scenario.get("id") if isinstance(scenario, dict) else None
+    if isinstance(ident, str) and _SCENARIO_ID.fullmatch(ident):
+        return ident
+    raise SystemExit(
+        'ERROR: the requested scenario id is missing. Example: "scenario": "<scenario>@0.1.0"'
+    )
+
+
+def _read_robot_manifest(root: Path) -> dict | None:
+    """The robot manifest, or None when the repository has no manifest file.
+
+    A missing file names no scenarios. Invalid manifest data is a test-system
+    ERROR: it is never read as supported or unsupported.
+    """
+    path = Path(root) / ROBOT_MANIFEST
+    if not path.is_file():
+        return None
+    try:
+        document = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"ERROR: {ROBOT_MANIFEST} is not JSON ({exc}). "
+            "Invalid manifest data is a test-system ERROR, never UNSUPPORTED. "
+            f'Example: {{"format": "{MANIFEST_FORMAT}", "scenarios": ["<scenario>"]}}'
+        ) from exc
+    if not isinstance(document, dict) or document.get("format") != MANIFEST_FORMAT:
+        raise SystemExit(
+            f"ERROR: {ROBOT_MANIFEST} must be a {MANIFEST_FORMAT} object. "
+            "Invalid manifest data is a test-system ERROR, never UNSUPPORTED. "
+            f'Example: {{"format": "{MANIFEST_FORMAT}", "scenarios": ["<scenario>"]}}'
+        )
+    if "scenarios" not in document:
+        return document
+    scenarios = document["scenarios"]
+    valid = (
+        isinstance(scenarios, list)
+        and len(scenarios) == len(set(scenarios))
+        and all(isinstance(item, str) and _SCENARIO_ID.fullmatch(item) for item in scenarios)
+    )
+    if not valid:
+        raise SystemExit(
+            f"ERROR: {ROBOT_MANIFEST} scenarios must be unique scenario ids, "
+            f"got {scenarios!r}. Invalid manifest data is a test-system ERROR, "
+            'never UNSUPPORTED. Example: "scenarios": ["<scenario>"]'
+        )
+    return document
+
+
+def scenario_supported_precondition(root: Path, scenario_id: str) -> dict:
+    """``scenario_supported`` against the robot manifest's ``scenarios`` list.
+
+    A list that does not name ``scenario_id``, an empty list, or a manifest
+    with no ``scenarios`` list is unmet. The spec counts a missing list as
+    naming nothing. A missing manifest file is that same case: the adapter
+    has not declared the scenario.
+    """
+    manifest = _read_robot_manifest(root)
+    if manifest is None or "scenarios" not in manifest:
+        return {"name": "scenario_supported", "met": False, "detail": _NO_LIST}
+    scenarios = manifest["scenarios"]
+    if scenario_id in scenarios:
+        return {"name": "scenario_supported", "met": True, "detail": scenario_id}
+    return {
+        "name": "scenario_supported",
+        "met": False,
+        "detail": f"{scenario_id} is not named by the robot manifest scenarios",
+    }
 
 
 def git_head(path: Path) -> tuple[str, bool]:
