@@ -525,3 +525,69 @@ def test_trials_are_not_dispatched_on_a_cpu_count_pool():
     assert "ProcessPool" not in evidence_src and "cpu_count" not in evidence_src
     assert "ProcessPool" not in media_src and "cpu_count" not in media_src
     assert "pool" not in evidence_src
+
+
+# Vera review of #77 (#38): the zero-command stand now runs in CI on EGL. These make it
+# fail when the adapter runs but does not stand, ignores the adapter's policy, or
+# writes no clip, not only when the adapter raises.
+
+
+def _stand(tmp_path, monkeypatch):
+    from livingproof_sim_mujoco import walk
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.setattr(
+        Toy, "runner_settings", lambda self: {"sample_hz": 50.0, "stand_seconds": 0.2}
+    )
+    return walk.stand(TOY, "stock", tmp_path / "out", lock=_lock(repo))
+
+
+def test_zero_command_stand_records_a_standing_robot_and_a_real_clip(tmp_path, monkeypatch):
+    commands = []
+    policy = Toy.policy
+
+    def recording(self, model, ctrl):
+        inner = policy(self, model, ctrl)
+
+        class Recording:
+            def step(self, data, command):
+                commands.append(list(command))
+                return inner.step(data, command)
+
+        return Recording()
+
+    monkeypatch.setattr(Toy, "policy", recording)
+    result = _stand(tmp_path, monkeypatch)
+    assert result["standing"] is True and result["end"] == "time_limit"
+    assert commands and all(command == [0.0, 0.0, 0.0] for command in commands)
+    clip = tmp_path / "out" / result["clip"]
+    assert clip.read_bytes()[4:8] == b"ftyp"  # an MP4 the renderer actually wrote
+
+
+def _falls(self, model, data, ctrl, spawn, *, start_offset=None):
+    mujoco.mj_resetData(model, data)
+    data.qpos[2] = -1.0  # base below any fall height
+    mujoco.mj_forward(model, data)
+
+
+class _NonFinite:
+    def step(self, data, command):
+        data.qpos[:] = float("nan")
+
+
+@pytest.mark.parametrize(
+    ("method", "broken", "end"),
+    [
+        ("initial_state", _falls, "fell"),
+        ("policy", lambda self, model, ctrl: _NonFinite(), "non_finite_state"),
+    ],
+)
+def test_zero_command_stand_reports_an_adapter_that_runs_but_cannot_stand(
+    tmp_path, monkeypatch, method, broken, end
+):
+    monkeypatch.setattr(Toy, method, broken)
+    result = _stand(tmp_path, monkeypatch)
+    assert result["standing"] is False and result["end"] == end
