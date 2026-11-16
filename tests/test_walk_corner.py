@@ -16,6 +16,7 @@ from pathlib import Path
 
 import mujoco
 import pytest
+import yaml
 
 from livingproof_sim_mujoco import compose, evidence, hallway, observations, pins, sources
 
@@ -305,3 +306,10 @@ def test_route_wall_faces_put_each_inner_face_toward_the_route():
         "wall-inner-first": ("y", -1, 0.75),
         "wall-inner-second": ("x", 1, -0.75),
     }
+
+
+def test_ci_test_task_runs_walk_corner():
+    """CI runs ``task test``; this file must be in it (Vera, review of PR #68)."""
+    tasks = yaml.safe_load((ROOT / "Taskfile.runtime.yml").read_text())["tasks"]
+    commands = " ".join(str(c) for c in tasks["test"]["cmds"])
+    assert "tests/test_walk_corner.py" in commands
