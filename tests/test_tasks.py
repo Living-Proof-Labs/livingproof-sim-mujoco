@@ -73,8 +73,12 @@ def test_the_zero_command_stand_runs_in_ci_with_egl():
 
 
 def test_the_development_image_has_a_headless_egl_driver():
-    """MUJOCO_GL=egl needs libEGL and Mesa's EGL driver in the image the task runs in."""
+    """MUJOCO_GL=egl needs libEGL, Mesa's EGL driver and a GL library PyOpenGL can load.
+
+    PyOpenGL's EGL platform loads libOpenGL or libGL; without one, ``import mujoco``
+    fails with "'NoneType' object has no attribute 'glGetError'" (CI run 43861442755).
+    """
     dockerfile = Path("Dockerfile").read_text()
     development = dockerfile.split("AS development", 1)[1].split("\nFROM ", 1)[0]
     packages = set(development.replace("\\\n", " ").split())
-    assert {"libegl1", "libegl-mesa0", "libgl1-mesa-dri"} <= packages
+    assert {"libegl1", "libegl-mesa0", "libgl1-mesa-dri", "libopengl0", "libgl1"} <= packages
