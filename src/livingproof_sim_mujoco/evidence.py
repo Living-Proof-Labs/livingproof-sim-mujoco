@@ -391,9 +391,123 @@ def observation_bytes(obs: dict) -> bytes:
 
 
 def trajectory_sha256(obs: dict) -> str:
-    """sha256 of the recorded trace. Identical trials share this hash."""
+    """sha256 of the recorded trace. Identical trials share this hash.
+
+    No file holds these bytes. They are the observation's ``trace`` as compact,
+    key-sorted JSON (``json.dumps(trace, separators=(",", ":"), sort_keys=True)``,
+    UTF-8). Recompute it from a published trial with ``trajectory_sha256_of``.
+    """
     body = json.dumps(obs.get("trace"), separators=(",", ":"), sort_keys=True).encode()
     return hashlib.sha256(body).hexdigest()
+
+
+def trajectory_sha256_of(trial_path: Path) -> str:
+    """``trajectory_sha256`` recomputed from a published ``trials/trial-NN.json``."""
+    return trajectory_sha256(json.loads(Path(trial_path).read_text(encoding="utf-8")))
+
+
+# Every sha256 the evidence manifests declare, by key with list indexes removed, and
+# what it covers. ``artifact``: the file at the sibling ``path`` in this evidence folder.
+# ``trajectory``: recomputed from the trial file at the sibling ``path``
+# (``trajectory_sha256_of``). ``source``: a pinned input named elsewhere in the
+# manifest (the lock file, the vendored world.json, the robot's robot.json and
+# configuration file); those files are not part of the evidence artifact.
+DECLARED_HASHES = {
+    "manifest.json": {
+        "trials.results[].sha256": "artifact",
+        "trials.results[].trajectory_sha256": "trajectory",
+        "lock.sha256": "source",
+        "lock.content.world.sha256": "source",
+        "lock.content.configurations[].sha256": "source",
+        "robot.profile_sha256": "source",
+        "configuration.sha256": "source",
+        "world.sha256": "source",
+    },
+    "run-manifest.json": {
+        "world.sha256": "source",
+        "robot.profile_sha256": "source",
+        "configuration.sha256": "source",
+    },
+}
+# Hashes under these prefixes are ``source`` whatever their name: the embedded robot and
+# configuration profiles cite pinned files in the robot repository or upstream (each robot
+# names its own settings files, e.g. ``settings.deploy_config.sha256``), and a lock's
+# ``sources`` pin scenario inputs by path and sha256. Neither is a file in this folder.
+DECLARED_SOURCE_PREFIXES = {
+    "manifest.json": ("robot.profile.", "configuration.profile.", "lock.content.sources."),
+    "run-manifest.json": ("robot.profile.", "configuration.profile."),
+}
+
+
+def _covers(name: str, key: str):
+    """What the hash at ``key`` in manifest ``name`` covers, or None when undocumented."""
+    general = re.sub(r"\[\d+\]", "[]", key)
+    covers = DECLARED_HASHES[name].get(general)
+    if covers is None and general.startswith(DECLARED_SOURCE_PREFIXES.get(name, ())):
+        return "source"
+    return covers
+
+
+def _hash_fields(node, key: str = ""):
+    """``(key, value, parent)`` for every field whose name contains ``sha256``."""
+    if isinstance(node, dict):
+        for name, value in node.items():
+            here = f"{key}.{name}" if key else name
+            if "sha256" in name:
+                yield here, value, node
+            yield from _hash_fields(value, here)
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _hash_fields(value, f"{key}[{index}]")
+
+
+def declared_hashes(out: Path) -> list[dict]:
+    """Every sha256 declared in ``out``'s manifests: ``{file, key, sha256, covers, path}``.
+
+    ``covers`` is ``artifact``, ``trajectory`` or ``source`` (see ``DECLARED_HASHES`` and
+    ``DECLARED_SOURCE_PREFIXES``), or ``None`` for a field this module does not document.
+    """
+    out = Path(out)
+    found = []
+    for name in DECLARED_HASHES:
+        path = out / name
+        if not path.is_file():
+            continue
+        for key, value, parent in _hash_fields(json.loads(path.read_text(encoding="utf-8"))):
+            found.append(
+                {
+                    "file": name,
+                    "key": key,
+                    "sha256": value,
+                    "covers": _covers(name, key),
+                    "path": parent.get("path"),
+                }
+            )
+    return found
+
+
+def unresolved_hashes(out: Path) -> list[str]:
+    """One message per declared hash in ``out`` that does not resolve. Empty when all do."""
+    out = Path(out)
+    problems = []
+    for item in declared_hashes(out):
+        where = f"{item['file']} {item['key']}"
+        covers, rel = item["covers"], item["path"]
+        if covers is None:
+            problems.append(
+                f"{where} is not documented: it names no file in this folder and no "
+                "recompute. Add it to evidence.DECLARED_HASHES with what it covers."
+            )
+        elif covers in ("artifact", "trajectory"):
+            target = out / rel if isinstance(rel, str) else None
+            if target is None or not target.is_file():
+                problems.append(f"{where}: its path {rel!r} is not a file in this folder.")
+                continue
+            actual = sha256(target) if covers == "artifact" else trajectory_sha256_of(target)
+            if actual != item["sha256"]:
+                how = "the file" if covers == "artifact" else "the trace recomputed from"
+                problems.append(f"{where} is {item['sha256']} but {how} {rel} gives {actual}.")
+    return problems
 
 
 def _write_trial(out: Path, index: int, obs: dict, wall_clock_s: float) -> dict:

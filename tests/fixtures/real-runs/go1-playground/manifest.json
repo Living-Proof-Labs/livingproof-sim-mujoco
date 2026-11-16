@@ -1,0 +1,424 @@
+{
+  "format": "livingproof-hallway-evidence/2.0.0",
+  "run_id": "walk-corner-unitree-go1-playground-20261116T130319Z",
+  "created": "2026-11-16T13:03:19+00:00",
+  "lock": {
+    "path": "corner.lock.json",
+    "sha256": "73e2b31da57889948d4e64308704b4222c61b52adeb8bf9699a2aaeff97f1e58",
+    "content": {
+      "plan": {
+        "trials": 1
+      },
+      "scenario": "walk-corner@0.1.0",
+      "world": {
+        "id": "hallway-corner",
+        "version": "0.1.0",
+        "sha256": "8393881e8b38a090f51c3a424ca444623a901f642f75186cb4d41ac7482898f5"
+      },
+      "configurations": [
+        {
+          "name": "playground",
+          "path": "configurations/playground.json",
+          "version": "1.0.0",
+          "sha256": "07bcbab38570ddb1c76c8508916298f2dc633be1543a78af7971bec338d6f930"
+        }
+      ],
+      "releases": {
+        "runner": {
+          "tag": "v3.2.0",
+          "commit": "4ff176028a0f20ce30f022d45796d098bd8f1025"
+        },
+        "specs": {
+          "tag": "v2.3.0",
+          "commit": "57317e617014a6df97bb7fba9d92a890af8d42e5"
+        }
+      }
+    }
+  },
+  "pending_release": [],
+  "plan": {
+    "trials": {
+      "count": 1
+    }
+  },
+  "start": {
+    "spawn": "spawn-entrance",
+    "pose": "nominal",
+    "offset": null
+  },
+  "preconditions": [
+    {
+      "name": "fits_width",
+      "met": true,
+      "detail": "0.282 + 2 x clearance = 0.48 m vs 1.5 m"
+    },
+    {
+      "name": "configuration_offered",
+      "met": true,
+      "detail": "playground"
+    },
+    {
+      "name": "velocity_interface",
+      "met": true,
+      "detail": "interface ['velocity_command']"
+    },
+    {
+      "name": "simulator_declared",
+      "met": true,
+      "detail": "simulators ['mujoco']"
+    },
+    {
+      "name": "scenario_supported",
+      "met": true,
+      "detail": "walk-corner"
+    }
+  ],
+  "robot": {
+    "id": "unitree-go1",
+    "profile_sha256": "6fb708ddda5e800eae14ef1a9af52c415f905b8512871ca5100eed54ce71eb14",
+    "profile": {
+      "$comment": "Robot profile (robot-capability-specs v2.0.2, specs/robots). model_source is the Playground Go1 feet-only MJCF; its meshes are mujoco_menagerie unitree_go1 @ 1b86ece (BSD-3-Clause, (c) Unitree Robotics), pinned in pins.json with every other upstream file.",
+      "format": "livingproof-robot-profile/0.1",
+      "id": "unitree-go1",
+      "manufacturer": "Unitree Robotics",
+      "model": "Go1",
+      "class": "quadruped",
+      "model_source": {
+        "repo": "https://github.com/google-deepmind/mujoco_playground",
+        "path": "mujoco_playground/_src/locomotion/go1/xmls/go1_mjx_feetonly.xml",
+        "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+        "sha256": "c33da7ff33b33d305163b6b05fadde9430b8777ccf1db88fda2e58d9cfabf82a",
+        "license": "Apache-2.0 (MJCF); meshes BSD-3-Clause (Unitree Robotics, via mujoco_menagerie)"
+      },
+      "dimensions": {
+        "width": {
+          "value": 0.282,
+          "unit": "m",
+          "source": "measured",
+          "ref": "task profile:measure (mesh vertices, home keyframe)"
+        },
+        "length": {
+          "value": 0.679,
+          "unit": "m",
+          "source": "measured",
+          "ref": "task profile:measure (mesh vertices, home keyframe)"
+        },
+        "height": {
+          "value": 0.4,
+          "unit": "m",
+          "source": "published",
+          "ref": "Unitree Go1 specification (645 x 280 x 400 mm standing)"
+        },
+        "mass": {
+          "value": 12.74,
+          "unit": "kg",
+          "source": "measured",
+          "ref": "task profile:measure (sum of MJCF body masses)"
+        }
+      },
+      "configurations": [
+        {
+          "name": "playground",
+          "path": "configurations/playground.json"
+        }
+      ],
+      "default_configuration": "playground",
+      "simulators": [
+        "mujoco"
+      ]
+    }
+  },
+  "configuration": {
+    "name": "playground",
+    "version": "1.0.0",
+    "sha256": "07bcbab38570ddb1c76c8508916298f2dc633be1543a78af7971bec338d6f930",
+    "profile": {
+      "$comment": "Configuration profile (robot-capability-specs v2.0.2). Gains and limits are the Playground's published Go1 values, copied here so this file states what runs; tests check them against the pinned upstream files.",
+      "format": "livingproof-configuration-profile/0.1",
+      "robot": "unitree-go1",
+      "name": "playground",
+      "version": "1.0.0",
+      "summary": "Google DeepMind MuJoCo Playground Go1 joystick controller (go1_policy.onnx) on the Playground's own Go1 MJCF and <position> actuators.",
+      "controller": {
+        "publisher": "Google DeepMind",
+        "artifact": {
+          "repo": "https://github.com/google-deepmind/mujoco_playground",
+          "path": "mujoco_playground/experimental/sim2sim/onnx/go1_policy.onnx",
+          "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+          "sha256": "386cde6a1eac679e2f2a313ade2b395d9f26905b151ee3b019c2c4163d49b6f2",
+          "license": "Apache-2.0"
+        },
+        "format": "onnx",
+        "interface": [
+          "velocity_command"
+        ],
+        "rate_hz": 50
+      },
+      "locomotion": {
+        "max_speed": {
+          "value": 1.5,
+          "unit": "m/s",
+          "source": "published",
+          "ref": "Playground go1 joystick.py command range vx [-1.5, 1.5] (play_go1_joystick.py vel_scale_x 1.5)"
+        },
+        "nominal_base_height": {
+          "value": 0.278,
+          "unit": "m",
+          "source": "published",
+          "ref": "Playground go1 MJCF keyframe home base z"
+        },
+        "fall_base_height": {
+          "value": 0.18,
+          "unit": "m",
+          "source": "chosen",
+          "reason": "About two-thirds of the home trunk height (0.278 m), the same rule as the G1 configurations."
+        }
+      },
+      "settings": {
+        "adapter": "playground_go1_joystick",
+        "reference": {
+          "repo": "https://github.com/google-deepmind/mujoco_playground",
+          "path": "mujoco_playground/experimental/sim2sim/play_go1_joystick.py",
+          "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+          "sha256": "f422e041e9382d96a6b4d60f7a9065f2bc849599dadbd57939fd03677292abb9",
+          "license": "Apache-2.0"
+        },
+        "training_env": {
+          "repo": "https://github.com/google-deepmind/mujoco_playground",
+          "path": "mujoco_playground/_src/locomotion/go1/joystick.py",
+          "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+          "sha256": "519680905e024304c1df4c209aebc80fcdb22a74487d9e775f0077cd8c6fe3ec",
+          "license": "Apache-2.0"
+        },
+        "ctrl_dt_s": 0.02,
+        "physics_dt_s": 0.004,
+        "action_scale": 0.5,
+        "observation": {
+          "order": [
+            "local_linvel",
+            "gyro",
+            "gravity",
+            "joint_pos",
+            "joint_vel",
+            "last_action",
+            "command"
+          ],
+          "linvel_sensor": "local_linvel",
+          "gyro_sensor": "gyro",
+          "imu_site": "imu",
+          "note": "No gait phase; the command is the last term (play_go1_joystick.py get_obs)."
+        },
+        "first_tick": 4,
+        "first_tick_note": "play_go1_joystick.py increments its counter before the modulo test, so the policy first acts on the 5th control callback (physics step index 4), then every 5 steps.",
+        "initial_keyframe": "home",
+        "default_pose": "home keyframe qpos[7:]",
+        "gains": {
+          "kp": {
+            "FR_hip_joint": 35.0,
+            "FR_thigh_joint": 35.0,
+            "FR_calf_joint": 35.0,
+            "FL_hip_joint": 35.0,
+            "FL_thigh_joint": 35.0,
+            "FL_calf_joint": 35.0,
+            "RR_hip_joint": 35.0,
+            "RR_thigh_joint": 35.0,
+            "RR_calf_joint": 35.0,
+            "RL_hip_joint": 35.0,
+            "RL_thigh_joint": 35.0,
+            "RL_calf_joint": 35.0
+          },
+          "joint_damping": {
+            "value": {
+              "FR_hip_joint": 0.5,
+              "FR_thigh_joint": 0.5,
+              "FR_calf_joint": 0.5,
+              "FL_hip_joint": 0.5,
+              "FL_thigh_joint": 0.5,
+              "FL_calf_joint": 0.5,
+              "RR_hip_joint": 0.5,
+              "RR_thigh_joint": 0.5,
+              "RR_calf_joint": 0.5,
+              "RL_hip_joint": 0.5,
+              "RL_thigh_joint": 0.5,
+              "RL_calf_joint": 0.5
+            },
+            "note": "the D term: passive joint damping in the MJCF (joystick.py Kd 0.5), unchanged"
+          },
+          "source": "Playground go1 MJCF <position> actuators (kp 35; joystick.py Kp 35)"
+        },
+        "limits": {
+          "target_range_rad": {
+            "FR_hip_joint": [
+              -0.863,
+              0.863
+            ],
+            "FR_thigh_joint": [
+              -0.6859999999999999,
+              4.501
+            ],
+            "FR_calf_joint": [
+              -2.818,
+              -0.8879999999999999
+            ],
+            "FL_hip_joint": [
+              -0.863,
+              0.863
+            ],
+            "FL_thigh_joint": [
+              -0.6859999999999999,
+              4.501
+            ],
+            "FL_calf_joint": [
+              -2.818,
+              -0.8879999999999999
+            ],
+            "RR_hip_joint": [
+              -0.863,
+              0.863
+            ],
+            "RR_thigh_joint": [
+              -0.6859999999999999,
+              4.501
+            ],
+            "RR_calf_joint": [
+              -2.818,
+              -0.8879999999999999
+            ],
+            "RL_hip_joint": [
+              -0.863,
+              0.863
+            ],
+            "RL_thigh_joint": [
+              -0.6859999999999999,
+              4.501
+            ],
+            "RL_calf_joint": [
+              -2.818,
+              -0.8879999999999999
+            ]
+          },
+          "target_range_note": "the <position> actuators' ctrlrange (inheritrange 1), enforced by MuJoCo",
+          "torque_limits_nm": {
+            "value": {
+              "FR_hip_joint": [
+                -23.7,
+                23.7
+              ],
+              "FR_thigh_joint": [
+                -23.7,
+                23.7
+              ],
+              "FR_calf_joint": [
+                -35.55,
+                35.55
+              ],
+              "FL_hip_joint": [
+                -23.7,
+                23.7
+              ],
+              "FL_thigh_joint": [
+                -23.7,
+                23.7
+              ],
+              "FL_calf_joint": [
+                -35.55,
+                35.55
+              ],
+              "RR_hip_joint": [
+                -23.7,
+                23.7
+              ],
+              "RR_thigh_joint": [
+                -23.7,
+                23.7
+              ],
+              "RR_calf_joint": [
+                -35.55,
+                35.55
+              ],
+              "RL_hip_joint": [
+                -23.7,
+                23.7
+              ],
+              "RL_thigh_joint": [
+                -23.7,
+                23.7
+              ],
+              "RL_calf_joint": [
+                -35.55,
+                35.55
+              ]
+            },
+            "source": "published",
+            "ref": "Playground go1 MJCF actuator forcerange, enforced by the model"
+          }
+        },
+        "actuation": "position: Playground's own <position> actuators, unchanged; MuJoCo computes the PD inside mj_step"
+      },
+      "known_issues": "Single published configuration: Unitree publishes no Go1 locomotion policy (unitree_rl_gym, unitree_rl_lab, unitree_rl_mjlab, unitree_mujoco checked)."
+    }
+  },
+  "world": {
+    "id": "hallway-corner",
+    "version": "0.1.0",
+    "clear_width": 1.5,
+    "route_length": 5.5
+  },
+  "environment": {
+    "simulator": {
+      "id": "mujoco",
+      "version": "3.17.0",
+      "adapter": "livingproof-sim-mujoco",
+      "adapter_commit": "4ff176028a0f20ce30f022d45796d098bd8f1025"
+    },
+    "runner": {
+      "version": "3.2.0",
+      "tag": "v3.2.0",
+      "commit": "4ff176028a0f20ce30f022d45796d098bd8f1025"
+    },
+    "base_body": "trunk",
+    "walls": [
+      "wall-outer-first",
+      "wall-outer-second",
+      "wall-inner-first",
+      "wall-inner-second"
+    ],
+    "source_commit": "c2fc81f6d5c03206bde4ed858dee2074542bfe5d"
+  },
+  "host": {
+    "wall_clock_s": 2.915,
+    "cpu": {
+      "sched_affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "sched_affinity_count": 8,
+      "process_cpu_count": 8,
+      "os_cpu_count": 8
+    }
+  },
+  "trials": {
+    "count": 1,
+    "results": [
+      {
+        "index": 1,
+        "path": "trials/trial-01.json",
+        "sha256": "e73ee3a6e02dd4604b0c6c7530377da1dad3ae4a0326c29c858eefd6a2a9b206",
+        "trajectory_sha256": "4f4e5eb8eae007598edcb09cf224b2ab4bf4ea8ba4f9a3090d25ae734f4aabdb",
+        "outcome": "crossed_exit",
+        "wall_clock_s": 2.911
+      }
+    ],
+    "reproducibility": {
+      "compared": false,
+      "identical": null,
+      "finding": null
+    }
+  }
+}
