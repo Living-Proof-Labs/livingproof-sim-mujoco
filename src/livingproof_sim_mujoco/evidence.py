@@ -429,6 +429,23 @@ DECLARED_HASHES = {
         "configuration.sha256": "source",
     },
 }
+# Hashes under these prefixes are ``source`` whatever their name: the embedded robot and
+# configuration profiles cite pinned files in the robot repository or upstream (each robot
+# names its own settings files, e.g. ``settings.deploy_config.sha256``), and a lock's
+# ``sources`` pin scenario inputs by path and sha256. Neither is a file in this folder.
+DECLARED_SOURCE_PREFIXES = {
+    "manifest.json": ("robot.profile.", "configuration.profile.", "lock.content.sources."),
+    "run-manifest.json": ("robot.profile.", "configuration.profile."),
+}
+
+
+def _covers(name: str, key: str):
+    """What the hash at ``key`` in manifest ``name`` covers, or None when undocumented."""
+    general = re.sub(r"\[\d+\]", "[]", key)
+    covers = DECLARED_HASHES[name].get(general)
+    if covers is None and general.startswith(DECLARED_SOURCE_PREFIXES.get(name, ())):
+        return "source"
+    return covers
 
 
 def _hash_fields(node, key: str = ""):
@@ -447,12 +464,12 @@ def _hash_fields(node, key: str = ""):
 def declared_hashes(out: Path) -> list[dict]:
     """Every sha256 declared in ``out``'s manifests: ``{file, key, sha256, covers, path}``.
 
-    ``covers`` is ``artifact``, ``trajectory`` or ``source`` (see ``DECLARED_HASHES``),
-    or ``None`` for a field this module does not document.
+    ``covers`` is ``artifact``, ``trajectory`` or ``source`` (see ``DECLARED_HASHES`` and
+    ``DECLARED_SOURCE_PREFIXES``), or ``None`` for a field this module does not document.
     """
     out = Path(out)
     found = []
-    for name, documented in DECLARED_HASHES.items():
+    for name in DECLARED_HASHES:
         path = out / name
         if not path.is_file():
             continue
@@ -462,7 +479,7 @@ def declared_hashes(out: Path) -> list[dict]:
                     "file": name,
                     "key": key,
                     "sha256": value,
-                    "covers": documented.get(re.sub(r"\[\d+\]", "[]", key)),
+                    "covers": _covers(name, key),
                     "path": parent.get("path"),
                 }
             )
