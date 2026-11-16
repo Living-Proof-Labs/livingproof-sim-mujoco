@@ -3,8 +3,8 @@
 
 This is the compatibility module for scenario ids. Generic modules do not name
 the scenario or the world. The parameter file is the byte copy of
-robot-capability-specs v2.2.0 ``specs/scenarios/walk-hallway/parameters.json``
-(commit 23bec516bda29be7b26555286cbf2e8217ac5c81). It is the last resort when
+robot-capability-specs v2.3.0 ``specs/scenarios/walk-hallway/parameters.json``
+(commit 57317e617014a6df97bb7fba9d92a890af8d42e5). The bytes match v2.2.0. It is the last resort when
 the verification lock and the robot pins do not carry the file.
 """
 
@@ -15,8 +15,8 @@ import json
 from pathlib import Path
 
 PARAMETERS_SHA256 = "9226aa6bc0e577863bdc210514e7e7c3a7edc32f49c4f7b46aa7249837f08b3d"
-PARAMETERS_TAG = "v2.2.0"
-PARAMETERS_COMMIT = "23bec516bda29be7b26555286cbf2e8217ac5c81"
+PARAMETERS_TAG = "v2.3.0"
+PARAMETERS_COMMIT = "57317e617014a6df97bb7fba9d92a890af8d42e5"
 SCENARIO = "walk-hallway@0.1.0"
 EXIT, SPAWN = "exit", "spawn-entrance"
 # Pins path used when a robot lock does not name a world id and version.
