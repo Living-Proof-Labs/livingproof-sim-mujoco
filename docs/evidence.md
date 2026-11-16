@@ -165,6 +165,28 @@ has no separate commit lookup.
 
 The generated command reference in `docs/command.md` is the physics command `livingproof-sim-mujoco`. It does not list this module, so those exits stay as they are.
 
+## Declared hashes
+
+Every sha256 in `manifest.json` and `run-manifest.json` resolves, and
+`evidence.DECLARED_HASHES` lists each field with what it covers:
+
+- `trials.results[].sha256` is the sha256 of the file at that result's `path`
+  (`trials/trial-NN.json`) in the evidence folder.
+- `trials.results[].trajectory_sha256` names no file. It is the sha256 of the trial
+  observation's `trace` as compact, key-sorted UTF-8 JSON:
+  `json.dumps(obs["trace"], separators=(",", ":"), sort_keys=True)`. Recompute it from the
+  published trial with `evidence.trajectory_sha256_of("trials/trial-NN.json")`. Identical
+  trials share it; the reproducibility check compares it.
+- `lock.sha256`, `world.sha256`, `lock.content.world.sha256`,
+  `lock.content.configurations[].sha256`, `configuration.sha256` and
+  `robot.profile_sha256` are pinned inputs: the lock file, the vendored `world.json`, the
+  robot's configuration file and its `robot.json`, at the commits the manifest records.
+  They are not files in the evidence artifact.
+
+`evidence.unresolved_hashes(folder)` returns one message per declared hash that does not
+resolve (an artifact file that differs, a trajectory that does not recompute, or a field
+`DECLARED_HASHES` does not document). It is empty for a run this module wrote.
+
 ## Evidence media
 
 `python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>
