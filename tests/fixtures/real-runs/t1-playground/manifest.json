@@ -1,0 +1,300 @@
+{
+  "format": "livingproof-hallway-evidence/2.0.0",
+  "run_id": "walk-corner-booster-t1-playground-20261116T142326Z",
+  "created": "2026-11-16T14:23:26+00:00",
+  "lock": {
+    "path": "corner.lock.json",
+    "sha256": "c6dd4deef365f166eb49573dded49f7f549a74a16037b48893b7821cb42d9879",
+    "content": {
+      "plan": {
+        "trials": 1
+      },
+      "scenario": "walk-corner@0.1.0",
+      "world": {
+        "id": "hallway-corner",
+        "version": "0.1.0",
+        "sha256": "8393881e8b38a090f51c3a424ca444623a901f642f75186cb4d41ac7482898f5"
+      },
+      "configurations": [
+        {
+          "name": "playground",
+          "path": "configurations/playground.json",
+          "version": "1.0.0",
+          "sha256": "beb97983a415b43f21e4cad0a715692e7d2b76bf1e55b58240871b754e0d4407"
+        }
+      ],
+      "releases": {
+        "runner": {
+          "tag": "v3.2.0",
+          "commit": "4ff176028a0f20ce30f022d45796d098bd8f1025"
+        },
+        "specs": {
+          "tag": "v2.3.0",
+          "commit": "57317e617014a6df97bb7fba9d92a890af8d42e5"
+        }
+      }
+    }
+  },
+  "pending_release": [],
+  "plan": {
+    "trials": {
+      "count": 1
+    }
+  },
+  "start": {
+    "spawn": "spawn-entrance",
+    "pose": "nominal",
+    "offset": null
+  },
+  "preconditions": [
+    {
+      "name": "fits_width",
+      "met": true,
+      "detail": "0.541 + 2 x clearance = 0.641 m vs 1.5 m"
+    },
+    {
+      "name": "configuration_offered",
+      "met": true,
+      "detail": "playground"
+    },
+    {
+      "name": "velocity_interface",
+      "met": true,
+      "detail": "interface ['velocity_command']"
+    },
+    {
+      "name": "simulator_declared",
+      "met": true,
+      "detail": "simulators ['mujoco']"
+    },
+    {
+      "name": "scenario_supported",
+      "met": true,
+      "detail": "walk-corner"
+    }
+  ],
+  "robot": {
+    "id": "booster-t1",
+    "profile_sha256": "5c69827a1b47806903c7e223d06d4be8d5d76b0ea419538e14900b00143afc6c",
+    "profile": {
+      "$comment": "Robot profile (robot-capability-specs v2.3.0, specs/robots). model_source is booster_gym's MuJoCo model of the T1 (12 leg joints; head, arms and waist fixed to the trunk); its meshes are pinned in pins.json with every other upstream file. Supported scenario ids are declared in manifest.json, not here.",
+      "format": "livingproof-robot-profile/0.1",
+      "id": "booster-t1",
+      "manufacturer": "Booster Robotics",
+      "model": "T1 (booster_gym locomotion model, 12 actuated leg joints)",
+      "class": "humanoid",
+      "model_source": {
+        "repo": "https://github.com/BoosterRobotics/booster_gym",
+        "path": "resources/T1/T1_locomotion.xml",
+        "commit": "da396a06d6eed99e2de72d7749c48ee8748950f9",
+        "sha256": "ac435ff179b1393294d41ee5dbc3d1161a6b9032e0a53fe2f4d693402dd4db36",
+        "license": "Apache-2.0 (booster_gym, model and meshes)"
+      },
+      "dimensions": {
+        "width": {
+          "value": 0.541,
+          "unit": "m",
+          "source": "measured",
+          "ref": "task profile:measure (mesh vertices at the published initial pose)"
+        },
+        "length": {
+          "value": 0.226,
+          "unit": "m",
+          "source": "measured",
+          "ref": "task profile:measure (mesh vertices at the published initial pose)"
+        },
+        "height": {
+          "value": 1.165,
+          "unit": "m",
+          "source": "measured",
+          "ref": "task profile:measure (mesh vertices at the published initial pose)"
+        },
+        "mass": {
+          "value": 31.61,
+          "unit": "kg",
+          "source": "measured",
+          "ref": "task profile:measure (sum of MJCF body masses)"
+        }
+      },
+      "configurations": [
+        {
+          "name": "stock",
+          "path": "configurations/stock.json"
+        },
+        {
+          "name": "playground",
+          "path": "configurations/playground.json"
+        }
+      ],
+      "default_configuration": "stock",
+      "simulators": [
+        "mujoco"
+      ]
+    }
+  },
+  "configuration": {
+    "name": "playground",
+    "version": "1.0.0",
+    "sha256": "beb97983a415b43f21e4cad0a715692e7d2b76bf1e55b58240871b754e0d4407",
+    "profile": {
+      "$comment": "Configuration profile (robot-capability-specs v2.0.2). Every value is MuJoCo Playground's play_t1_joystick.py / t1_mjx_feetonly.xml at the pinned commit; tests check them against the pinned upstream files. Nothing is tuned.",
+      "format": "livingproof-configuration-profile/0.1",
+      "robot": "booster-t1",
+      "name": "playground",
+      "version": "1.0.0",
+      "summary": "Google DeepMind MuJoCo Playground's T1 joystick policy (experimental/sim2sim/onnx/t1_policy.onnx) on Playground's own T1 MJCF <position> actuators, with the observation, default pose (keyframe home) and rates of play_t1_joystick.py.",
+      "controller": {
+        "publisher": "Google DeepMind (MuJoCo Playground)",
+        "artifact": {
+          "repo": "https://github.com/google-deepmind/mujoco_playground",
+          "path": "mujoco_playground/experimental/sim2sim/onnx/t1_policy.onnx",
+          "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+          "sha256": "3f25f2b9c3dd49bab915577f7d5caba4e753a6cb29df2d7488ef7da14d1966b4",
+          "license": "Apache-2.0"
+        },
+        "format": "onnx",
+        "interface": [
+          "velocity_command"
+        ],
+        "rate_hz": 50
+      },
+      "locomotion": {
+        "max_speed": {
+          "value": 1.0,
+          "unit": "m/s",
+          "source": "published",
+          "ref": "mujoco_playground t1/joystick.py default_config lin_vel_x [-1, 1]"
+        },
+        "nominal_base_height": {
+          "value": 0.67,
+          "unit": "m",
+          "source": "measured",
+          "ref": "task profile:stand:playground (play_t1_joystick.py loop, zero command, 10 s: trunk 0.667 m)"
+        },
+        "fall_base_height": {
+          "value": 0.44,
+          "unit": "m",
+          "source": "chosen",
+          "reason": "About two-thirds of the standing trunk height, the rule used for stock and the G1."
+        }
+      },
+      "settings": {
+        "adapter": "playground_joystick",
+        "model": "playground",
+        "reference": {
+          "repo": "https://github.com/google-deepmind/mujoco_playground",
+          "path": "mujoco_playground/experimental/sim2sim/play_t1_joystick.py",
+          "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+          "sha256": "a0de562254e1b244fb99ab52db3867b7142b0e10dc2cd5d21b4054fd65427df5",
+          "license": "Apache-2.0"
+        },
+        "scene": {
+          "repo": "https://github.com/google-deepmind/mujoco_playground",
+          "path": "mujoco_playground/_src/locomotion/t1/xmls/scene_mjx_feetonly_flat_terrain.xml",
+          "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+          "sha256": "55d59aa255dc415be422f7ec376dad2b302913977989dbffe8a0ee3721409ea7",
+          "license": "Apache-2.0"
+        },
+        "robot_mjcf": {
+          "repo": "https://github.com/google-deepmind/mujoco_playground",
+          "path": "mujoco_playground/_src/locomotion/t1/xmls/t1_mjx_feetonly.xml",
+          "commit": "12ad7f3842791ced39f27e5ac96d066bbe361653",
+          "sha256": "ef66de5286b480342a2795bdf7fc8cc837293fafe714cda117cc3a7e49e41a7a",
+          "license": "Apache-2.0"
+        },
+        "meshes": {
+          "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+          "path": "booster_t1/assets",
+          "commit": "1b86ece576591213e2b666ebf59508454200ca97",
+          "license": "Apache-2.0"
+        },
+        "ctrl_dt_s": 0.02,
+        "sim_dt_s": 0.002,
+        "action_scale": 1.0,
+        "gait_hz": 1.5,
+        "gait_offsets_rad": [
+          0.0,
+          3.141592653589793
+        ],
+        "initial_keyframe": "home",
+        "observation": {
+          "linvel_sensor": "local_linvel",
+          "gyro_sensor": "gyro",
+          "imu_site": "imu",
+          "zeroed_joints": [
+            "AAHead_yaw",
+            "Head_pitch"
+          ],
+          "size": 85
+        },
+        "scene_note": "play_t1_joystick.py loads the rough-terrain scene (heightfield floor, keyframe z 0.72). This configuration uses Playground's flat-terrain scene of the same robot MJCF (plane floor, keyframe home z 0.665), as the G1 playground configuration does. The robot MJCF, actuators and gains are unchanged.",
+        "command_note": "play_t1_joystick.py's vel_scale_x/y/rot (1, 0.8, 1) only scale gamepad input; the runner passes the command directly. Its phase is pi for |command| < 0.01; only non-zero commands are run.",
+        "actuation": "position: the MJCF's own <position> actuators (kp from its default classes, joint damping/armature as published); ctrl = action * 1.0 + keyframe home qpos[7:], once per 10 physics steps, first in physics step 9"
+      }
+    }
+  },
+  "world": {
+    "id": "hallway-corner",
+    "version": "0.1.0",
+    "clear_width": 1.5,
+    "route_length": 5.5
+  },
+  "environment": {
+    "simulator": {
+      "id": "mujoco",
+      "version": "3.17.0",
+      "adapter": "livingproof-sim-mujoco",
+      "adapter_commit": "4ff176028a0f20ce30f022d45796d098bd8f1025"
+    },
+    "runner": {
+      "version": "3.2.0",
+      "tag": "v3.2.0",
+      "commit": "4ff176028a0f20ce30f022d45796d098bd8f1025"
+    },
+    "base_body": "Trunk",
+    "walls": [
+      "wall-outer-first",
+      "wall-outer-second",
+      "wall-inner-first",
+      "wall-inner-second"
+    ],
+    "model": "playground",
+    "source_commit": "8e09bb82234742c3ce88aa5fe2e7e02afaf3858a"
+  },
+  "host": {
+    "wall_clock_s": 3.7,
+    "cpu": {
+      "sched_affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "sched_affinity_count": 8,
+      "process_cpu_count": 8,
+      "os_cpu_count": 8
+    }
+  },
+  "trials": {
+    "count": 1,
+    "results": [
+      {
+        "index": 1,
+        "path": "trials/trial-01.json",
+        "sha256": "e8197735a4abd4fc5aea6bd9b726ac9bca7566101e3c50fa4226f6f481bf8d1a",
+        "trajectory_sha256": "6831d3599fa357e82395c68529cef4e9a21a6c55e982d6b9d567b1d09261e4e2",
+        "outcome": "crossed_exit",
+        "wall_clock_s": 3.695
+      }
+    ],
+    "reproducibility": {
+      "compared": false,
+      "identical": null,
+      "finding": null
+    }
+  }
+}
