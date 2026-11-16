@@ -165,6 +165,35 @@ has no separate commit lookup.
 
 The generated command reference in `docs/command.md` is the physics command `livingproof-sim-mujoco`. It does not list this module, so those exits stay as they are.
 
+## Declared hashes
+
+Every sha256 in `manifest.json` and `run-manifest.json` resolves, and
+`evidence.DECLARED_HASHES` lists each field with what it covers:
+
+- `trials.results[].sha256` is the sha256 of the file at that result's `path`
+  (`trials/trial-NN.json`) in the evidence folder.
+- `trials.results[].trajectory_sha256` names no file. It is the sha256 of the trial
+  observation's `trace` as compact, key-sorted UTF-8 JSON:
+  `json.dumps(obs["trace"], separators=(",", ":"), sort_keys=True)`. Recompute it from the
+  published trial with `evidence.trajectory_sha256_of("trials/trial-NN.json")`. Identical
+  trials share it; the reproducibility check compares it.
+- `lock.sha256`, `world.sha256`, `lock.content.world.sha256`,
+  `lock.content.configurations[].sha256`, `configuration.sha256` and
+  `robot.profile_sha256` are pinned inputs: the lock file, the vendored `world.json`, the
+  robot's configuration file and its `robot.json`, at the commits the manifest records.
+  They are not files in the evidence artifact.
+- Every sha256 under `robot.profile.` or `configuration.profile.` (in either manifest) and
+  under `lock.content.sources.` (in `manifest.json`) is a pinned source too, whatever its
+  name: the embedded profiles cite pinned files in the robot repository or upstream, such
+  as `robot.profile.model_source.sha256`, `configuration.profile.controller.artifact.sha256`
+  and each robot's own `configuration.profile.settings.<file>.sha256`, and a lock's
+  `sources` pin scenario inputs. `evidence.DECLARED_SOURCE_PREFIXES` lists the prefixes.
+
+`evidence.unresolved_hashes(folder)` returns one message per declared hash that does not
+resolve (an artifact file that differs, a trajectory that does not recompute, or a field
+`DECLARED_HASHES` and `DECLARED_SOURCE_PREFIXES` do not document). It is empty for a run
+this module wrote, including real G1, T1 and Go1 runs (`tests/fixtures/real-runs`).
+
 ## Evidence media
 
 `python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>

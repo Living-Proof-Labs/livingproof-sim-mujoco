@@ -1,0 +1,7 @@
+{
+  "note": "Real walk-corner 0.1.0 runs on hallway-corner 0.1.0, one trial each, recorded by Cody for the #74 review (Vera) from released robot tags. Profiles as each robot publishes them, so every profile-embedded sha256 the robots write is present.",
+  "g1-stock": {"robot": "livingproof-unitree-g1 v2.2.1 (6872598)", "runner": "livingproof-sim-mujoco v3.2.1"},
+  "t1-stock": {"robot": "livingproof-booster-t1 v2.2.0 (8e09bb8)", "runner": "livingproof-sim-mujoco v3.2.0"},
+  "t1-playground": {"robot": "livingproof-booster-t1 v2.2.0 (8e09bb8)", "runner": "livingproof-sim-mujoco v3.2.0"},
+  "go1-playground": {"robot": "livingproof-unitree-go1 v2.2.0 (c2fc81f)", "runner": "livingproof-sim-mujoco v3.2.0"}
+}
