@@ -73,6 +73,13 @@ class Robot(Protocol):
     # Optional: ``camera = (distance, elevation, azimuth)`` for the tracking camera of the
     # stand clip and media videos; read through ``camera()``. Never affects evidence.
 
+    # Optional, required for a scenario with no command that the robot manifest declares:
+    # ``drive(name, model, ctrl, policy, places) -> step``. ``places`` is
+    # ``scenario.scenario_places`` (start, exit, route and through, the world's own place
+    # objects). ``step(data)`` advances one physics timestep, driving the robot its own
+    # way, for example ``policy.step(data, command)`` with its own steering. The runner
+    # sends no command and records what the robot does.
+
 
 def camera(robot, default: tuple[float, float, float]) -> tuple[float, float, float]:
     """The adapter's optional tracking camera (distance, elevation, azimuth), else default."""
@@ -228,14 +235,16 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
     if isinstance(lock.get("sources"), dict) and "world" in lock["sources"]:
         sources.world_source(root, lock)
     selected = sources.WorldSource(world, "vendored", digest, relative)
-    refusal = frozen.unsupported_world(world)
-    if refusal:
-        raise SystemExit(refusal)
     try:
         prepared = sc.prepare(robot.robot(), robot.configuration(name), world, document)
     except ScenarioParameterError as exc:
         text = str(exc)
         raise SystemExit(text if text.startswith("ERROR") else f"ERROR: {text}") from exc
+    # A scenario with a command is written in the frozen observation format, which
+    # stays on format 0.1 worlds. An adapter-driven scenario uses the route format.
+    refusal = frozen.unsupported_world(world) if prepared.command is not None else None
+    if refusal:
+        raise SystemExit(refusal)
     # The world that was loaded and checked. The manifests name this one (#39).
     prepared.world = world
     prepared.world_source = selected
@@ -317,12 +326,14 @@ def run_trial(
     command: list[float] | None = None,
     route: list | None = None,
     exit_place: dict | None = None,
+    places: dict | None = None,
 ) -> dict:
     """One trial at the nominal pose through ``observations.observe``.
 
     ``on_step`` (for example ``livingproof_sim_mujoco.media.Recorder``) only reads
     ``data``, so it cannot change the observation. Every trial in the run uses this
-    same call.
+    same call. With no ``command`` and the scenario's ``places``, the adapter's
+    ``drive`` steps the robot and ``observations.observe_route`` records the trial.
     """
     one_torch_thread()
     from livingproof_sim_mujoco.observations import observe
@@ -331,6 +342,28 @@ def run_trial(
     rs = robot.runner_settings()
     model, data, ctrl, walls = compose.place(robot, name, world, p["spawn"], start_offset)
     policy = robot.policy(model, ctrl)
+    if command is None and places is not None:
+        # The adapter drives the robot; the runner sends no command (outcome-only).
+        from livingproof_sim_mujoco.observations import observe_route
+
+        step = robot.drive(name, model, ctrl, policy, places)
+        hook = on_step(model, robot.base_body(name)) if on_step is not None else None
+        obs = observe_route(
+            model,
+            data,
+            step,
+            base_body=robot.base_body(name),
+            walls=walls,
+            seconds=p["time_limit"],
+            route=places["route"],
+            exit_place=places["exit"],
+            through=places["through"],
+            sample_hz=rs["sample_hz"],
+            on_step=hook,
+        )
+        if hook is not None:
+            hook.close()
+        return obs
     if command is None:
         command = [p["command_speed"], 0.0, 0.0]
     hook = on_step(model, robot.base_body(name)) if on_step is not None else None
@@ -874,14 +907,23 @@ def evidence(
         checked.append(support)
     unmet = unmet_required(checked)
     # A declared scenario with no command is not given an invented velocity.
-    # The adapter drives that robot; this runner does not.
+    # The adapter drives that robot; this runner does not. An adapter that declares
+    # the scenario but cannot drive it is a test-system ERROR, before any output.
+    places = None
     if unmet is None and prepared.command is None:
-        raise SystemExit(
-            "ERROR: the scenario parameter file has no command, so this runner does not "
-            "send one. A declared scenario is driven by its adapter. "
-            'Example: "command": {"mode": "constant", '
-            '"forward": {"parameter": "command_speed"}, "sideways": 0, "turn_rate": 0}'
-        )
+        if not callable(getattr(robot, "drive", None)):
+            raise SystemExit(
+                f"ERROR: {robot.id} declares {sc.requested_scenario_id(lock, prepared.document)} "
+                "in its robot manifest, but its adapter has no drive(). The scenario "
+                "parameter file has no command, so this runner does not send one: the "
+                "adapter drives the robot its own way. Nothing was recorded. "
+                "Example: def drive(self, name, model, ctrl, policy, places): "
+                "return lambda data: policy.step(data, steer(data, places['route']))"
+            )
+        try:
+            places = sc.scenario_places(world, prepared.document)
+        except ScenarioParameterError as exc:
+            raise SystemExit(str(exc)) from exc
     # A missing wall or an origin start writes nothing. An unmet precondition
     # does not build a model: the robot cannot attempt the scenario.
     if unmet is None:
@@ -924,6 +966,7 @@ def evidence(
                 command=prepared.command,
                 route=route,
                 exit_place=exit_place,
+                places=places,
             )
             results.append(_write_trial(out, index, obs, time.perf_counter() - t0))
     wall_clock_s = round(time.perf_counter() - started, 3)
@@ -953,7 +996,7 @@ def evidence(
             "version": world_id["version"],
             "clear_width": world["dimensions"]["clear_width"],
             "route_length": p["route_length"],
-            "exit_x": p["exit_x"],
+            **({"exit_x": p["exit_x"]} if "exit_x" in p else {}),
         },
         "environment": {
             "simulator": {

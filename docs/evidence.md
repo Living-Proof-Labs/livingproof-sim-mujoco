@@ -100,6 +100,26 @@ not list the precondition keeps running, including one whose parameter file stil
 its command and whose manifest has no list. A declared scenario that has a command
 runs the trials. Invalid manifest data is a test-system `ERROR` and writes nothing.
 
+A declared scenario with no command, such as walk-corner 0.1.0 on hallway-corner 0.1.0,
+is driven by the robot adapter. The adapter's optional
+`drive(name, model, ctrl, policy, places)` returns `step(data)`, which advances one
+physics timestep its own way. `places` holds the world's own `start`, `exit`, `route`
+and `through` places, as the parameter file names them. The runner sends no velocity
+and writes each trial as `livingproof-route-observation/0.1.0`:
+- the base trace, with distance to the walls and how far the robot reaches past each
+  wall's inner face;
+- the first exit crossing and the first sample inside each `through` region;
+- the largest distance from the route and the lowest base height;
+- every wall contact.
+
+The trial ends `crossed_exit`, `time_limit`, `non_finite_state`, or `left_world`
+(through a wall, or across the exit line outside the exit segment). No threshold is
+applied; the capability verifier grades. A declared adapter with no `drive` is a
+test-system `ERROR` that writes nothing. When neither the lock nor the robot pins carry
+the parameter file, the walk-corner file vendored from robot-capability-specs v2.3.0
+(`scenarios/catalog.json`) is used. The walk-hallway observation and its bytes are
+unchanged.
+
 The `world` in `run-manifest.json` names the vendored `world.json` that was loaded: its
 `id` and `version` come from the lock, and its `sha256` is the digest of those bytes. A
 lock `world.sha256` that disagrees is an ERROR before anything is written. A `world.tag`

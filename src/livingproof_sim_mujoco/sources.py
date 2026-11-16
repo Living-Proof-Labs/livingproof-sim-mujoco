@@ -173,5 +173,36 @@ def parameters_document_for(root: Path, lock: dict | None) -> tuple[dict, str]:
     pinned = _pinned(root, relative) if relative else None
     if pinned is not None:
         return json.loads(pinned.read_text()), "pins"
+    vendored = vendored_parameters(lock)
+    if vendored is not None:
+        return vendored, "vendored"
     # TODO(#40 step 7): remove this vendored copy once the lock always has the file.
     return parameters_document(), "vendored"
+
+
+SCENARIOS = Path(__file__).parent / "scenarios"
+
+
+def vendored_parameters(lock: dict | None) -> dict | None:
+    """The vendored parameter file for the lock's ``scenario`` (id@revision), or None.
+
+    ``scenarios/catalog.json`` names the specs release each file was copied from and
+    its sha256. A file that does not match is a test-system ERROR, never a substitute.
+    """
+    scenario = lock.get("scenario") if isinstance(lock, dict) else None
+    if isinstance(scenario, dict):
+        scenario = scenario.get("id")
+    if not isinstance(scenario, str):
+        return None
+    entry = json.loads((SCENARIOS / "catalog.json").read_text()).get(scenario)
+    if not isinstance(entry, dict):
+        return None
+    data = (SCENARIOS / entry["file"]).read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != entry["sha256"]:
+        raise SystemExit(
+            f"ERROR: vendored parameter file for {scenario} has sha256 {digest}, but "
+            f"scenarios/catalog.json records {entry['sha256']} "
+            f"({entry['repository']} {entry['tag']}). Restore it from that release."
+        )
+    return json.loads(data)
