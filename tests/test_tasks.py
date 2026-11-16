@@ -49,3 +49,32 @@ def test_devcontainer_exposes_view_port_without_public_visibility():
     assert config["forwardPorts"] == [8000]
     assert config["postCreateCommand"] == "task setup"
     assert "visibility" not in config["portsAttributes"]["8000"]
+
+
+def _runtime_test_commands():
+    import yaml
+
+    tasks = yaml.safe_load(Path("Taskfile.runtime.yml").read_text())["tasks"]
+    return [command for command in tasks["test"]["cmds"] if isinstance(command, str)]
+
+
+def test_the_zero_command_stand_runs_in_ci_with_egl():
+    """#38: the evidence tests, the zero-command stand included, run headless on EGL."""
+    evidence = [
+        command for command in _runtime_test_commands() if "tests/test_evidence.py" in command
+    ]
+    assert evidence == [
+        "MUJOCO_GL=egl uv run --no-sync pytest tests/test_evidence.py "
+        "--junitxml=artifacts/evidence.xml"
+    ]
+    assert not any("zero_command" in command for command in _runtime_test_commands())
+    reference = Path("docs/tasks.md").read_text()
+    assert evidence[0] in reference and "zero_command" not in reference
+
+
+def test_the_development_image_has_a_headless_egl_driver():
+    """MUJOCO_GL=egl needs libEGL and Mesa's EGL driver in the image the task runs in."""
+    dockerfile = Path("Dockerfile").read_text()
+    development = dockerfile.split("AS development", 1)[1].split("\nFROM ", 1)[0]
+    packages = set(development.replace("\\\n", " ").split())
+    assert {"libegl1", "libegl-mesa0", "libgl1-mesa-dri"} <= packages
