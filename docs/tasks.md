@@ -314,7 +314,7 @@ commands:
  - uv run --no-sync pytest tests/test_guidelines_pins.py --junitxml=artifacts/guidelines-pins.xml
  - uv run --no-sync pytest tests/test_evidence.py -k "not zero_command_check" --junitxml=artifacts/evidence.xml
  - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
- - uv run --no-sync pytest tests/test_scenario_sources.py --junitxml=artifacts/scenario-sources.xml
+ - uv run --no-sync pytest tests/test_scenario_sources.py tests/test_scenario_supported.py --junitxml=artifacts/scenario-sources.xml
  - uv run --no-sync pytest tests/test_compose.py tests/test_locked_source_review.py --junitxml=artifacts/compose.xml
  - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
  - MUJOCO_GL=osmesa uv run --no-sync pytest tests/test_media.py --junitxml=artifacts/media.xml
