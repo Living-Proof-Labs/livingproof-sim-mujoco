@@ -1,7 +1,7 @@
 {
   "repository": "Living-Proof-Labs/robot-capability-specs",
-  "tag": "v2.2.0",
-  "commit": "23bec516bda29be7b26555286cbf2e8217ac5c81",
+  "tag": "v2.3.0",
+  "commit": "57317e617014a6df97bb7fba9d92a890af8d42e5",
   "files": {
     "parameters.json": {
       "path": "specs/scenarios/walk-hallway/parameters.json",
@@ -14,6 +14,14 @@
     "route-geometry-cases.json": {
       "path": "specs/scenarios/route-geometry-cases.json",
       "sha256": "7e830740314d54d39a484399b9e0a85dddf0d627f4143d3ca427447be149b570"
+    },
+    "robot-manifest.schema.json": {
+      "path": "specs/robots/robot-manifest.schema.json",
+      "sha256": "563076811d78ce8f2326a4253e1e34093d66c6487c0d215903cae4887990d4c4"
+    },
+    "walk-corner-parameters.json": {
+      "path": "specs/scenarios/walk-corner/parameters.json",
+      "sha256": "62f2912c33b557d58cd454daf7d1eea543e919dec0e9b53e613d4101a5a12977"
     }
   }
 }
