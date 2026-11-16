@@ -85,7 +85,7 @@ A parameter file with no `command` states only the outcome. This runner does not
 a velocity for it.
 
 Before any trial, a scenario that lists the precondition `scenario_supported` is checked
-against the robot repository's `robot-manifest.json` (`livingproof-robot-manifest/0.1`).
+against the robot repository's `manifest.json` (`livingproof-robot-manifest/0.1`).
 That is robot-capability-specs v2.3.0, Scenario support. The optional `scenarios` list
 names the scenarios the adapter declares. A list that does not name the requested
 scenario, an empty list, or a manifest with no `scenarios` list records

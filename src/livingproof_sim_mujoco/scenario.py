@@ -240,8 +240,8 @@ def preconditions(
     return [{"name": n, "met": bool(ok), "detail": d} for n, ok, d in out]
 
 
-# livingproof-robot-manifest/0.1, at the robot repository root.
-ROBOT_MANIFEST = "robot-manifest.json"
+# livingproof-robot-manifest/0.1. Robot packages publish this at the repository root.
+ROBOT_MANIFEST = "manifest.json"
 MANIFEST_FORMAT = "livingproof-robot-manifest/0.1"
 _SCENARIO_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NO_LIST = "the robot manifest has no scenarios list"

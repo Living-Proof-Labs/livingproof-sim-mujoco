@@ -102,7 +102,7 @@ def _write_manifest(repo: Path, document: dict | None) -> None:
     if document is None:
         return
     VALIDATOR.validate(document)
-    (repo / "robot-manifest.json").write_text(json.dumps(document) + "\n")
+    (repo / "manifest.json").write_text(json.dumps(document) + "\n")
 
 
 def _forbid_robot_and_physics(monkeypatch):
@@ -217,6 +217,53 @@ def test_missing_command_is_unsupported_before_a_trial_when_undeclared(
     assert capsys.readouterr().out.strip().startswith(RECORD)
 
 
+def test_walk_hallway_manifest_leaves_walk_corner_unsupported(tmp_path, monkeypatch, capsys):
+    """A manifest.json like the robot packages: scenarios is only walk-hallway.
+
+    walk-corner lists scenario_supported and has no command, so it is
+    UNSUPPORTED with no trials. A leftover robot-manifest.json is not read.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    document = _parameters()
+    del document["command"]
+    document["scenario"]["id"] = "walk-corner"
+    _use_parameters(repo, document)
+    lock_path = repo / "caller.lock.json"
+    lock = json.loads(lock_path.read_text())
+    lock["scenario"] = "walk-corner@0.1.0"
+    lock_path.write_text(json.dumps(lock))
+    published = _manifest(["walk-hallway"])
+    VALIDATOR.validate(published)
+    assert published["format"] == "livingproof-robot-manifest/0.1"
+    assert published["scenarios"] == ["walk-hallway"]
+    _write_manifest(repo, published)
+    decoy = _manifest(["walk-corner"])
+    (repo / "robot-manifest.json").write_text(json.dumps(decoy) + "\n")
+    calls = _forbid_robot_and_physics(monkeypatch)
+    out = tmp_path / "out"
+    recorded = evidence.evidence("test_evidence:TOY", "stock", out, lock=repo / "caller.lock.json")
+    detail = "walk-corner is not named by the robot manifest scenarios"
+    assert calls == []
+    assert _support(recorded) == {"name": "scenario_supported", "met": False, "detail": detail}
+    assert recorded["trials"]["results"] == []
+    assert list((out / "trials").iterdir()) == []
+    assert not (out / "run-manifest.json").exists()
+    text = (out / "manifest.json").read_text()
+    assert "PASS" not in text and "FAIL" not in text
+    code = evidence.main(
+        [
+            "test_evidence:TOY",
+            "stock",
+            str(tmp_path / "cli"),
+            "--lock",
+            str(repo / "caller.lock.json"),
+        ]
+    )
+    assert code == 0
+    printed = capsys.readouterr().out.strip()
+    assert printed == f"{RECORD}: {detail}; no trials run"
+
+
 def test_declared_scenario_runs_the_trials(tmp_path, monkeypatch):
     repo = _repo(tmp_path, monkeypatch)
     _use_parameters(repo, _require_support(_parameters()))
@@ -288,7 +335,7 @@ def test_invalid_scenarios_is_a_test_system_error_and_writes_nothing(tmp_path, m
     repo = _repo(tmp_path, monkeypatch)
     _use_parameters(repo, _require_support(_parameters()))
     # The schema rejects this. The runner must too, and must not call it unsupported.
-    (repo / "robot-manifest.json").write_text(json.dumps(_manifest(["Walk-Corner"])))
+    (repo / "manifest.json").write_text(json.dumps(_manifest(["Walk-Corner"])))
     calls = _forbid_robot_and_physics(monkeypatch)
     out = tmp_path / "out"
     with pytest.raises(SystemExit, match="ERROR"):
