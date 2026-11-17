@@ -5,6 +5,7 @@ an incompatible document is refused with a clear message and nothing is written.
 """
 
 import json
+import math
 
 import pytest
 import test_scenario_sources as t
@@ -109,4 +110,43 @@ def test_declared_world_with_wrong_typed_values_is_refused_clearly(tmp_path, mon
     with pytest.raises(SystemExit) as refused:
         t._evidence(repo, out, trials=1)
     assert str(refused.value).startswith(("ERROR", "INCOMPATIBLE", "UNSUPPORTED"))
+    assert not out.exists()
+
+
+def _place(world: dict, name: str) -> dict:
+    return next(p for p in world["places"] if p["name"] == name)
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda w: _wall(w).update(size=[True, 1, 1]), id="size-bool"),
+        pytest.param(lambda w: _wall(w).update(size=[math.nan, 1, 1]), id="size-nan"),
+        pytest.param(lambda w: _wall(w).update(size=[math.inf, 1, 1]), id="size-inf"),
+        pytest.param(lambda w: _pose(w).update(yaw_deg=True), id="yaw-bool"),
+        pytest.param(lambda w: _pose(w).update(position=[math.inf, 0, 0]), id="position-inf"),
+        pytest.param(
+            lambda w: _place(w, "exit").update(points=[[[0, 0, 0]], [1, 1, 1]]), id="points-nested"
+        ),
+        pytest.param(lambda w: _wall(w).update(size=[-1, 1, 1]), id="size-negative"),
+        pytest.param(lambda w: _wall(w).update(size=[0, 0, 0]), id="size-zero"),
+        pytest.param(lambda w: _place(w, "exit").update(points=[]), id="segment-no-points"),
+        pytest.param(
+            lambda w: _place(w, "exit").update(points=[[0, 0, 0]]), id="segment-one-point"
+        ),
+        pytest.param(
+            lambda w: _place(w, "passage-centreline").update(points=[[0, 0, 0]]),
+            id="polyline-one-point",
+        ),
+    ],
+)
+def test_declared_world_with_invalid_numbers_or_point_counts_is_incompatible(
+    tmp_path, monkeypatch, edit
+):
+    world = json.loads(VENDORED.read_text())
+    edit(world)
+    repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="^INCOMPATIBLE"):
+        t._evidence(repo, out, trials=1)
     assert not out.exists()
