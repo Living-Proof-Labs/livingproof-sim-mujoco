@@ -513,6 +513,31 @@ def test_a_robot_world_file_is_not_the_simulated_world(tmp_path, monkeypatch):
     assert "livingproof-world/0.2" in frozen.unsupported_world(world)
 
 
+def test_prepare_run_loads_declared_world_bytes_not_a_mismatched_vendored_copy(
+    tmp_path, monkeypatch
+):
+    """When sources.world is present, those bytes are loaded (livingproof-verification#119).
+
+    A mismatched vendored copy is not substituted. Locks without sources.world
+    still use the vendored release, so published runs stay unchanged.
+    """
+    toy, repo = _toy_repo(tmp_path, monkeypatch)
+    vendored = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
+    vendored_digest = _sha(vendored)
+    declared_digest = _lock_world(repo, _named_world(clear=1.6))
+    assert declared_digest != vendored_digest
+    lock = json.loads((repo / "caller.lock.json").read_text())
+    assert lock["world"]["sha256"] == vendored_digest
+    assert lock["sources"]["world"]["sha256"] == declared_digest
+    prepared = evidence.prepare_run(toy.TOY, "stock", lock)
+    assert prepared.world_source.origin == "lock"
+    assert prepared.world_source.sha256 == declared_digest
+    assert prepared.world["dimensions"]["clear_width"] == 1.6
+    vendored_world = json.loads(vendored.read_text())
+    assert prepared.world != vendored_world
+    assert vendored_world["dimensions"]["clear_width"] == 1.5
+
+
 def test_run_manifest_names_the_vendored_world_not_a_robot_file(tmp_path, monkeypatch):
     """A sources.world file and a pins file are not the world that was loaded."""
     _toy, repo = _toy_repo(tmp_path, monkeypatch)
