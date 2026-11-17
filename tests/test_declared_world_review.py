@@ -6,6 +6,7 @@ an incompatible document is refused with a clear message and nothing is written.
 
 import json
 import math
+import shutil
 
 import pytest
 import test_scenario_sources as t
@@ -148,5 +149,70 @@ def test_declared_world_with_invalid_numbers_or_point_counts_is_incompatible(
     repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
     out = tmp_path / "out"
     with pytest.raises(SystemExit, match="^INCOMPATIBLE"):
+        t._evidence(repo, out, trials=1)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda w: w.pop("license"), id="missing-license"),
+        pytest.param(lambda w: w.update(content_version="latest"), id="content-version-not-semver"),
+        pytest.param(lambda w: w["dimensions"].update(bogus=1), id="dimensions-extra-key"),
+    ],
+)
+def test_declared_world_breaking_published_schema_rules_is_incompatible(
+    tmp_path, monkeypatch, edit
+):
+    """Rules only the published schema states, so the schema check itself is exercised."""
+    world = json.loads(VENDORED.read_text())
+    edit(world)
+    repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="^INCOMPATIBLE"):
+        t._evidence(repo, out, trials=1)
+    assert not out.exists()
+
+
+def test_declared_world_with_a_tampered_vendored_schema_is_refused(tmp_path, monkeypatch):
+    from livingproof_sim_mujoco import world_shapes
+
+    copy = tmp_path / "schema"
+    shutil.copytree(world_shapes.SCHEMA_DIR, copy)
+    target = copy / "world.schema.json"
+    target.write_text(target.read_text().replace('"minItems": 2', '"minItems": 1', 1))
+    monkeypatch.setattr(world_shapes, "SCHEMA_DIR", copy)
+    world_shapes._load_schema.cache_clear()
+    world_shapes._schema_pin.cache_clear()
+    try:
+        repo = _declare(tmp_path, monkeypatch, json.loads(VENDORED.read_text()), t.LEGACY_WORLD)
+        out = tmp_path / "out"
+        with pytest.raises(SystemExit, match="checksum"):
+            t._evidence(repo, out, trials=1)
+        assert not out.exists()
+    finally:
+        world_shapes._load_schema.cache_clear()
+        world_shapes._schema_pin.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(
+            lambda w: w["geometry"].append(dict(w["geometry"][1])),
+            id="duplicate-geometry-name",
+        ),
+        pytest.param(
+            lambda w: w["places"].append(dict(_place(w, "spawn-entrance"))),
+            id="duplicate-place-name",
+        ),
+    ],
+)
+def test_declared_world_with_duplicate_names_is_refused_clearly(tmp_path, monkeypatch, edit):
+    world = json.loads(VENDORED.read_text())
+    edit(world)
+    repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="^(INCOMPATIBLE|UNSUPPORTED)"):
         t._evidence(repo, out, trials=1)
     assert not out.exists()
