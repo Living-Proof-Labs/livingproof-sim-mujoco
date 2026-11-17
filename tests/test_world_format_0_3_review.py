@@ -10,6 +10,7 @@ place. A world that breaks that, or lacks geometry or places, is refused with
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 import test_world_format_0_3 as t
@@ -83,6 +84,45 @@ def _wall(world: dict) -> dict:
     ],
 )
 def test_wrong_shaped_fields_are_refused_not_a_crash(edit):
+    world = t._world()
+    edit(world)
+    with pytest.raises(hallway.Unsupported):
+        hallway.supported(world)
+
+
+def _named(world: dict, name: str) -> dict:
+    return next(p for p in world["places"] if p["name"] == name)
+
+
+def _pose(world: dict) -> dict:
+    return next(p for p in world["places"] if p["type"] == "pose")
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda w: _wall(w).update(size=[True, 1, 1]), id="size-bool"),
+        pytest.param(lambda w: _wall(w).update(size=[math.nan, 1, 1]), id="size-nan"),
+        pytest.param(lambda w: _wall(w).update(size=[math.inf, 1, 1]), id="size-inf"),
+        pytest.param(lambda w: _pose(w).update(yaw_deg=True), id="yaw-bool"),
+        pytest.param(lambda w: _pose(w).update(position=[math.inf, 0, 0]), id="position-inf"),
+        pytest.param(
+            lambda w: _named(w, "end-north").update(points=[[[0, 0, 0]], [1, 1, 1]]),
+            id="points-nested",
+        ),
+        pytest.param(lambda w: _wall(w).update(size=[-1, 1, 1]), id="size-negative"),
+        pytest.param(lambda w: _wall(w).update(size=[0, 0, 0]), id="size-zero"),
+        pytest.param(lambda w: _named(w, "end-north").update(points=[]), id="segment-no-points"),
+        pytest.param(
+            lambda w: _named(w, "end-north").update(points=[[0, 0, 0]]), id="segment-one-point"
+        ),
+        pytest.param(
+            lambda w: _named(w, "route-forward").update(points=[[0, 0, 0]]),
+            id="polyline-one-point",
+        ),
+    ],
+)
+def test_invalid_numbers_or_point_counts_are_unsupported(edit):
     world = t._world()
     edit(world)
     with pytest.raises(hallway.Unsupported):
