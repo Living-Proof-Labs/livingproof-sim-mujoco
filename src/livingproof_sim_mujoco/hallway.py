@@ -19,9 +19,13 @@ from livingproof_sim_mujoco import contract
 WORLDS = Path(__file__).parent / "worlds"
 RESULT_FORMAT = contract.RESULT_FORMAT
 SUPPORTED_FORMAT = "livingproof-world/0.1"
-# Format 0.2 ("Any layout", world contract 0.3.0) has the same keys; every wall is still an
+# Format 0.2 ("Any layout") has the same keys as 0.1; every wall is still an
 # axis-aligned box, so the same MJCF mapping applies.
-SUPPORTED_FORMATS = (SUPPORTED_FORMAT, "livingproof-world/0.2")
+# Format 0.3 keeps those keys and adds a `traversals` list of
+# {name, from, start, route, finish} naming existing places. Geometry and
+# places still map the same way; compose / add_world / initial_state expose
+# the named start, route and finish places.
+SUPPORTED_FORMATS = (SUPPORTED_FORMAT, "livingproof-world/0.2", "livingproof-world/0.3")
 GEOMETRY_KEYS = {"name", "type", "role", "centre", "size"}
 PLACE_KEYS = {
     "segment": {"name", "type", "points", "reference"},
@@ -41,6 +45,7 @@ WORLD_KEYS = {
     "dimensions",
     "geometry",
     "places",
+    "traversals",
     "tolerances",
     "provenance",
     "license",
