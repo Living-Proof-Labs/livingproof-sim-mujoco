@@ -33,6 +33,8 @@ PLACE_KEYS = {
     "polyline": {"name", "type", "points"},
     "pose": {"name", "type", "position", "yaw_deg"},
 }
+TRAVERSAL_KEYS = {"name", "from", "start", "route", "finish"}
+TRAVERSAL_PLACE_FIELDS = ("from", "start", "route", "finish")
 WORLD_KEYS = {
     "format",
     "id",
@@ -155,6 +157,13 @@ def supported(world: dict) -> None:
         raise Unsupported(fid, ver, f"top-level field {key!r}")
     if world.get("units") != "m":
         raise Unsupported(fid, ver, f"units {world.get('units')!r}")
+    for field in ("geometry", "places"):
+        if not isinstance(world.get(field), list):
+            raise Unsupported(
+                fid,
+                ver,
+                f"missing {field}" if field not in world else f"{field} is not a list",
+            )
     for g in world["geometry"]:
         if g.get("type") != "box":
             raise Unsupported(fid, ver, f"geometry {g.get('name')!r} type {g.get('type')!r}")
@@ -168,6 +177,30 @@ def supported(world: dict) -> None:
             raise Unsupported(fid, ver, f"place {p.get('name')!r} type {p.get('type')!r}")
         for key in sorted(set(p) - allowed):
             raise Unsupported(fid, ver, f"place {p.get('name')!r} field {key!r}")
+    if world.get("format") == "livingproof-world/0.3":
+        _supported_traversals(fid, ver, world)
+
+
+def _supported_traversals(fid: str, ver: str, world: dict) -> None:
+    """Refuse a 0.3 world whose traversals are missing, malformed, or name unknown places."""
+    traversals = world.get("traversals")
+    if not isinstance(traversals, list) or not traversals:
+        raise Unsupported(fid, ver, "traversals must be a non-empty list")
+    declared = {p.get("name") for p in world["places"] if isinstance(p, dict)}
+    for item in traversals:
+        if not isinstance(item, dict):
+            raise Unsupported(fid, ver, "traversal item is not an object")
+        missing = TRAVERSAL_KEYS - set(item)
+        extra = set(item) - TRAVERSAL_KEYS
+        name = item.get("name", "?")
+        if missing:
+            raise Unsupported(fid, ver, f"traversal {name!r} missing {sorted(missing)[0]}")
+        if extra:
+            raise Unsupported(fid, ver, f"traversal {name!r} has extra field {sorted(extra)[0]}")
+        for role in TRAVERSAL_PLACE_FIELDS:
+            place = item[role]
+            if place not in declared:
+                raise Unsupported(fid, ver, f"traversal {name!r} {role} {place!r} is not a place")
 
 
 def _v(values) -> str:
