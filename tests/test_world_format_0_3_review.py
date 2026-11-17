@@ -64,3 +64,26 @@ def test_older_vendored_formats_are_still_accepted(fixture, expected_format):
     world = json.loads((VENDORED / fixture / "world.json").read_text())
     assert world["format"] == expected_format
     hallway.supported(world)
+
+
+def _wall(world: dict) -> dict:
+    return next(g for g in world["geometry"] if g["role"] == "wall")
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda w: w["geometry"].__setitem__(0, "x"), id="geometry-item-not-an-object"),
+        pytest.param(lambda w: w["places"].__setitem__(0, "x"), id="place-item-not-an-object"),
+        pytest.param(lambda w: _wall(w).pop("size"), id="wall-without-size"),
+        pytest.param(lambda w: _wall(w).pop("centre"), id="wall-without-centre"),
+        pytest.param(lambda w: _wall(w).update(size="big"), id="wall-size-not-a-list"),
+        pytest.param(lambda w: _first(w, start=["spawn-west"]), id="traversal-start-a-list"),
+        pytest.param(lambda w: _first(w, finish={"a": 1}), id="traversal-finish-an-object"),
+    ],
+)
+def test_wrong_shaped_fields_are_refused_not_a_crash(edit):
+    world = t._world()
+    edit(world)
+    with pytest.raises(hallway.Unsupported):
+        hallway.supported(world)
