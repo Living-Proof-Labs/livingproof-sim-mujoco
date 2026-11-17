@@ -10,6 +10,9 @@ place. A world that breaks that, or lacks geometry or places, is refused with
 from __future__ import annotations
 
 import json
+import shutil
+import re
+import hashlib
 import math
 
 import pytest
@@ -126,4 +129,70 @@ def test_invalid_numbers_or_point_counts_are_unsupported(edit):
     world = t._world()
     edit(world)
     with pytest.raises(hallway.Unsupported):
+        hallway.supported(world)
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda w: w.pop("license"), id="missing-license"),
+        pytest.param(lambda w: w.update(content_version="latest"), id="content-version-not-semver"),
+        pytest.param(lambda w: w["dimensions"].update(bogus=1), id="dimensions-extra-key"),
+        pytest.param(lambda w: _wall(w).update(name="Not Kebab"), id="geometry-name-pattern"),
+    ],
+)
+def test_published_schema_rules_are_unsupported(edit):
+    """Rules only the published schema states, so the schema check itself is exercised."""
+    world = t._world()
+    edit(world)
+    with pytest.raises(hallway.Unsupported):
+        hallway.supported(world)
+
+
+def test_vendored_schemas_match_their_pins():
+    from livingproof_sim_mujoco import world_shapes
+
+    pin = json.loads((world_shapes.SCHEMA_DIR / "pins.json").read_text())
+    assert re.fullmatch(r"[0-9a-f]{40}", pin["commit"])
+    assert set(world_shapes.SCHEMA_BY_FORMAT.values()) <= set(pin["files"])
+    for name, digest in pin["files"].items():
+        data = (world_shapes.SCHEMA_DIR / name).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == digest, name
+
+
+def test_a_tampered_vendored_schema_is_refused(tmp_path, monkeypatch):
+    from livingproof_sim_mujoco import world_shapes
+
+    copy = tmp_path / "schema"
+    shutil.copytree(world_shapes.SCHEMA_DIR, copy)
+    target = copy / "world-0.3.schema.json"
+    target.write_text(target.read_text().replace('"minItems": 2', '"minItems": 1', 1))
+    monkeypatch.setattr(world_shapes, "SCHEMA_DIR", copy)
+    world_shapes._load_schema.cache_clear()
+    world_shapes._schema_pin.cache_clear()
+    try:
+        with pytest.raises(hallway.Unsupported, match="checksum"):
+            hallway.supported(t._world())
+    finally:
+        world_shapes._load_schema.cache_clear()
+        world_shapes._schema_pin.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(
+            lambda w: w["geometry"][3].update(name=w["geometry"][2]["name"]),
+            id="duplicate-geometry-name",
+        ),
+        pytest.param(
+            lambda w: w["places"][2].update(name=w["places"][0]["name"]),
+            id="duplicate-place-name",
+        ),
+    ],
+)
+def test_duplicate_names_are_unsupported_not_a_mujoco_error(edit):
+    world = t._world()
+    edit(world)
+    with pytest.raises(hallway.Unsupported, match="name"):
         hallway.supported(world)
