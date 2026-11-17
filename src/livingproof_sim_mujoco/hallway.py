@@ -165,6 +165,13 @@ def supported(world: dict) -> None:
         raise Unsupported(fid, ver, f"top-level field {key!r}")
     if world.get("units") != "m":
         raise Unsupported(fid, ver, f"units {world.get('units')!r}")
+    # Validate against the published schema first; defer the raise so existing
+    # adapter mapping messages (type, role, extra fields) stay unchanged.
+    schema_error = None
+    try:
+        world_shapes.validate_schema(world)
+    except world_shapes.WorldShapeError as exc:
+        schema_error = exc
     for field in ("geometry", "places"):
         if not isinstance(world.get(field), list):
             raise Unsupported(
@@ -201,6 +208,8 @@ def supported(world: dict) -> None:
             raise Unsupported(fid, ver, f"place {p.get('name')!r} field {key!r}")
     if world.get("format") == "livingproof-world/0.3":
         _supported_traversals(fid, ver, world)
+    if schema_error is not None:
+        raise Unsupported(fid, ver, str(schema_error)) from schema_error
 
 
 def _supported_traversals(fid: str, ver: str, world: dict) -> None:

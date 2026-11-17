@@ -1,0 +1,10 @@
+{
+  "repository": "Living-Proof-Labs/livingproof-worlds",
+  "tag": "v1.4.0",
+  "commit": "971b39ee845a18c50da627a7410d22e3b98171f9",
+  "path": "schema",
+  "files": {
+    "world.schema.json": "3137bbfe101f9bf1622fe8e45d5a4a5bc1a2bdfe3193be9c388eb21a6737796c",
+    "world-0.3.schema.json": "9edca767eba15dc226a698782fb0d88ac6d19a6313d375f878166363d976cdbf"
+  }
+}
