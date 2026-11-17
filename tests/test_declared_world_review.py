@@ -46,3 +46,32 @@ def test_declared_world_that_is_not_an_object_is_refused(tmp_path, monkeypatch):
         t._evidence(repo, out, trials=1)
     assert str(refused.value).startswith(("ERROR", "INCOMPATIBLE", "UNSUPPORTED"))
     assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda w: w.update(geometry="x"), id="geometry-not-a-list"),
+        pytest.param(lambda w: w["geometry"][1].pop("size"), id="geometry-item-without-size"),
+        pytest.param(lambda w: w["places"].__setitem__(0, "x"), id="place-not-an-object"),
+    ],
+)
+def test_declared_world_with_malformed_shapes_is_refused_clearly(tmp_path, monkeypatch, edit):
+    world = json.loads(VENDORED.read_text())
+    edit(world)
+    repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as refused:
+        t._evidence(repo, out, trials=1)
+    assert str(refused.value).startswith(("ERROR", "INCOMPATIBLE", "UNSUPPORTED"))
+    assert not out.exists()
+
+
+def test_declared_world_with_an_unmappable_feature_is_unsupported(tmp_path, monkeypatch):
+    world = json.loads(VENDORED.read_text())
+    world["geometry"][1]["type"] = "mesh"
+    repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="UNSUPPORTED: .*type 'mesh'"):
+        t._evidence(repo, out, trials=1)
+    assert not out.exists()
