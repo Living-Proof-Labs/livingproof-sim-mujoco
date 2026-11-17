@@ -229,6 +229,45 @@ def _require_declared_world(world: dict) -> None:
             "must include the fields the adapter maps. "
             'Example: a world.json with "geometry", "places", and "dimensions".'
         )
+    geometry = world["geometry"]
+    if not isinstance(geometry, list) or not geometry:
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world geometry must be a non-empty list "
+            "of objects. "
+            'Example: "geometry": [{"name": "floor", "type": "box", '
+            '"role": "floor", "centre": [0, 0, 0], "size": [1, 1, 0.1]}].'
+        )
+    for index, item in enumerate(geometry):
+        if not isinstance(item, dict):
+            raise SystemExit(
+                "INCOMPATIBLE: lock sources.world "
+                f"geometry[{index}] must be an object with name, type, role, "
+                "centre and size."
+            )
+        absent = [key for key in sorted(hallway.GEOMETRY_KEYS) if key not in item]
+        if absent:
+            named = ", ".join(repr(key) for key in absent)
+            raise SystemExit(
+                "INCOMPATIBLE: lock sources.world "
+                f"geometry[{index}] has no {named}. Each geometry item needs "
+                "name, type, role, centre and size."
+            )
+    places = world["places"]
+    if not isinstance(places, list) or not places:
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world places must be a non-empty list "
+            "of objects. "
+            'Example: "places": [{"name": "spawn-entrance", "type": "pose", '
+            '"position": [0, 0, 0], "yaw_deg": 0}].'
+        )
+    for index, item in enumerate(places):
+        if not isinstance(item, dict):
+            raise SystemExit(f"INCOMPATIBLE: lock sources.world places[{index}] must be an object.")
+    if not isinstance(world["dimensions"], dict):
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world dimensions must be an object. "
+            'Example: "dimensions": {"clear_width": 1.5}.'
+        )
     try:
         hallway.supported(world)
     except hallway.Unsupported as exc:
