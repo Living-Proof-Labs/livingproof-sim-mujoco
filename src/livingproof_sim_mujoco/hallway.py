@@ -14,7 +14,7 @@ from importlib.metadata import version
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
 
-from livingproof_sim_mujoco import contract
+from livingproof_sim_mujoco import contract, world_shapes
 
 WORLDS = Path(__file__).parent / "worlds"
 RESULT_FORMAT = contract.RESULT_FORMAT
@@ -148,6 +148,14 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
     return {"world": world, "extension": extension, "pin": pin}
 
 
+def _shape(fid: str, ver: str, value, check):
+    """Run a world_shapes check, mapping WorldShapeError to Unsupported."""
+    try:
+        return check(value)
+    except world_shapes.WorldShapeError as exc:
+        raise Unsupported(fid, ver, str(exc)) from exc
+
+
 def supported(world: dict) -> None:
     """Raise Unsupported for the first declared feature this adapter cannot map."""
     fid, ver = world.get("id", "?"), world.get("content_version", "?")
@@ -164,14 +172,28 @@ def supported(world: dict) -> None:
                 ver,
                 f"missing {field}" if field not in world else f"{field} is not a list",
             )
-    for g in world["geometry"]:
+    for index, item in enumerate(world["geometry"]):
+        g = _shape(
+            fid,
+            ver,
+            item,
+            lambda value, i=index: world_shapes.require_geometry_item(
+                value, keys=GEOMETRY_KEYS, label=f"geometry[{i}]"
+            ),
+        )
         if g.get("type") != "box":
             raise Unsupported(fid, ver, f"geometry {g.get('name')!r} type {g.get('type')!r}")
         if g.get("role") not in ("floor", "wall"):
             raise Unsupported(fid, ver, f"geometry {g.get('name')!r} role {g.get('role')!r}")
         for key in sorted(set(g) - GEOMETRY_KEYS):
             raise Unsupported(fid, ver, f"geometry {g.get('name')!r} field {key!r}")
-    for p in world["places"]:
+    for index, item in enumerate(world["places"]):
+        p = _shape(
+            fid,
+            ver,
+            item,
+            lambda value, i=index: world_shapes.require_place_item(value, f"places[{i}]"),
+        )
         allowed = PLACE_KEYS.get(p.get("type"))
         if allowed is None:
             raise Unsupported(fid, ver, f"place {p.get('name')!r} type {p.get('type')!r}")
@@ -197,8 +219,19 @@ def _supported_traversals(fid: str, ver: str, world: dict) -> None:
             raise Unsupported(fid, ver, f"traversal {name!r} missing {sorted(missing)[0]}")
         if extra:
             raise Unsupported(fid, ver, f"traversal {name!r} has extra field {sorted(extra)[0]}")
+        name = _shape(
+            fid,
+            ver,
+            item.get("name"),
+            lambda value: world_shapes.require_string(value, "traversal name"),
+        )
         for role in TRAVERSAL_PLACE_FIELDS:
-            place = item[role]
+            place = _shape(
+                fid,
+                ver,
+                item[role],
+                lambda value, r=role: world_shapes.require_string(value, f"traversal {r}"),
+            )
             if place not in declared:
                 raise Unsupported(fid, ver, f"traversal {name!r} {role} {place!r} is not a place")
 
