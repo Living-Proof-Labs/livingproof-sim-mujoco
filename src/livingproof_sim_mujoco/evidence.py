@@ -227,7 +227,18 @@ def _declared_world_shape(value, check):
 
 
 def _require_declared_world(world: dict) -> None:
-    """Refuse a declared ``sources.world`` the adapter cannot map, before it is used."""
+    """Refuse a declared ``sources.world`` the adapter cannot map, before it is used.
+
+    This must run before ``evidence()`` creates the output directory. Schema
+    validation runs first; existing field and mapping checks stay as backstops
+    so an unmappable feature still raises UNSUPPORTED and a schema failure that
+    those checks miss still raises INCOMPATIBLE, with nothing written.
+    """
+    schema_error = None
+    try:
+        world_shapes.validate_schema(world)
+    except world_shapes.WorldShapeError as exc:
+        schema_error = exc
     missing = [key for key in _DECLARED_WORLD_FIELDS if key not in world]
     if missing:
         named = ", ".join(repr(key) for key in missing)
@@ -290,6 +301,10 @@ def _require_declared_world(world: dict) -> None:
         hallway.supported(world)
     except hallway.Unsupported as exc:
         raise SystemExit(str(exc)) from exc
+    if schema_error is not None:
+        raise SystemExit(
+            f"INCOMPATIBLE: lock sources.world {world.get('format')} {schema_error}"
+        ) from schema_error
 
 
 def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepared:
@@ -1127,6 +1142,9 @@ def evidence(
             raise SystemExit(str(exc)) from exc
     # A missing wall or an origin start writes nothing. An unmet precondition
     # does not build a model: the robot cannot attempt the scenario.
+    # World refusals (INCOMPATIBLE/UNSUPPORTED, including an exit with no
+    # points) must already have been raised above: nothing after this mkdir
+    # may refuse the declared world.
     if unmet is None:
         compose.place(robot, name, world, p["spawn"], offset)
     out = Path(out)
