@@ -501,15 +501,18 @@ def test_pinned_parameters_are_used_without_a_lock_entry(tmp_path, monkeypatch):
     assert run["parameters"]["wall_clearance"] == 0.05
 
 
-def test_a_robot_world_file_is_not_the_simulated_world(tmp_path, monkeypatch):
-    """A 0.2 world file in the robot repository is not loaded. The vendored release is."""
+def test_a_declared_0_2_world_is_not_replaced_by_the_vendored_release(tmp_path, monkeypatch):
+    """A sources.world format 0.2 file is refused, not substituted with vendored 0.1."""
     _toy, repo = _toy_repo(tmp_path, monkeypatch)
-    world = json.loads((ROOT / "tests/fixtures/l-shaped-0.2.json").read_text())
+    vendored = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
+    world = json.loads(vendored.read_text())
+    world["format"] = "livingproof-world/0.2"
     digest = _write(repo, "locked/world.json", world)
     _edit_lock(repo, sources={"world": {"path": "locked/world.json", "sha256": digest}})
     out = tmp_path / "out"
-    manifest = _evidence(repo, out, trials=1)
-    assert manifest["world"]["clear_width"] == 1.5
+    with pytest.raises(SystemExit, match="livingproof-world/0.2"):
+        _evidence(repo, out, trials=1)
+    assert not out.exists()
     assert "livingproof-world/0.2" in frozen.unsupported_world(world)
 
 
@@ -538,23 +541,27 @@ def test_prepare_run_loads_declared_world_bytes_not_a_mismatched_vendored_copy(
     assert vendored_world["dimensions"]["clear_width"] == 1.5
 
 
-def test_run_manifest_names_the_vendored_world_not_a_robot_file(tmp_path, monkeypatch):
-    """A sources.world file and a pins file are not the world that was loaded."""
-    _toy, repo = _toy_repo(tmp_path, monkeypatch)
+def test_run_manifest_names_the_declared_world_not_a_vendored_or_pinned_file(tmp_path, monkeypatch):
+    """When sources.world is present, the run names those bytes, not vendored or pins."""
+    toy, repo = _toy_repo(tmp_path, monkeypatch)
+    vendored_path = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
+    declared = json.loads(vendored_path.read_text())
+    declared["title"] = "declared-not-vendored"
     pinned = _pin_world(repo, _named_world(clear=3.0))
-    selected = _lock_world(repo, _named_world())
-    assert selected != pinned
+    selected = _lock_world(repo, declared)
+    vendored = _sha(vendored_path)
+    assert selected != pinned and selected != vendored
+    _edit_lock(repo, world={**LEGACY_WORLD, "sha256": selected})
     out = tmp_path / "out"
     manifest = _evidence(repo, out, trials=1)
-    vendored = _sha(ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json")
     run = json.loads((out / "run-manifest.json").read_text())
-    assert run["world"] == {"id": "hallway-open", "version": "0.1.0", "sha256": vendored}
-    assert manifest["world"]["clear_width"] == 1.5
+    assert run["world"] == {"id": "hallway-open", "version": "0.1.0", "sha256": selected}
+    assert manifest["world"]["clear_width"] == declared["dimensions"]["clear_width"]
     assert manifest["trials"]["results"][0]["outcome"] == "crossed_exit"
     lock = json.loads((repo / "caller.lock.json").read_text())
-    prepared = evidence.prepare_run(_toy.TOY, "stock", lock)
-    assert prepared.world_source.origin == "vendored"
-    assert evidence.world_identity(repo, lock, prepared.world_source)["sha256"] == vendored
+    prepared = evidence.prepare_run(toy.TOY, "stock", lock)
+    assert prepared.world_source.origin == "lock"
+    assert evidence.world_identity(repo, lock, prepared.world_source)["sha256"] == selected
 
 
 def test_missing_world_identity_writes_nothing(tmp_path, monkeypatch):
@@ -574,8 +581,7 @@ def test_missing_world_identity_writes_nothing(tmp_path, monkeypatch):
 def test_source_world_bytes_are_not_the_simulated_world(tmp_path, monkeypatch):
     """A sources.world sha256 that does not match its file is an error.
 
-    The file is not the simulated world. A mismatch exits 1 and writes nothing,
-    the same way a world.sha256 that is not the vendored file does.
+    A mismatch exits 1 and writes nothing; the vendored file is not substituted.
     """
     _toy, repo = _toy_repo(tmp_path, monkeypatch)
     _write(repo, "locked/world.json", _named_world())

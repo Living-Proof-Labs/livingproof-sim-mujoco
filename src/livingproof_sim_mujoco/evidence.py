@@ -218,9 +218,11 @@ def parameters(robot: Robot, name: str, lock: dict) -> dict:
 def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepared:
     """Parameters, command and world for one configuration.
 
-    The world is the vendored release named by ``lock["world"]``. Scenario
-    parameter bytes still follow ``sources``: a lock entry, else the robot
-    pins, else the vendored parameter file.
+    When the lock declares ``sources.world``, those bytes are the simulated
+    world. A mismatched vendored copy is not substituted. Locks without
+    ``sources.world`` still load the vendored release named by ``lock["world"]``.
+    Scenario parameter bytes still follow ``sources``: a lock entry, else the
+    robot pins, else the vendored parameter file.
     """
     if lock is None:
         raise SystemExit(
@@ -229,12 +231,18 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
         )
     root = Path(robot.root)
     document, _source = sources.parameters_document_for(root, lock)
-    world, digest, relative = compose.vendored_world(lock)
-    # sources.world does not select the simulated world. A sha256 that does not
-    # match the file it names is still an error, the same as world.sha256.
     if isinstance(lock.get("sources"), dict) and "world" in lock["sources"]:
-        sources.world_source(root, lock)
-    selected = sources.WorldSource(world, "vendored", digest, relative)
+        selected = sources.world_source(root, lock)
+        world = selected.document
+        if not isinstance(world, dict):
+            raise SystemExit(
+                "ERROR: lock sources.world did not yield a world document. "
+                'Example: "sources": {"world": {"path": "world.json", '
+                '"sha256": "<64 hex>"}}'
+            )
+    else:
+        world, digest, relative = compose.vendored_world(lock)
+        selected = sources.WorldSource(world, "vendored", digest, relative)
     try:
         prepared = sc.prepare(robot.robot(), robot.configuration(name), world, document)
     except ScenarioParameterError as exc:
@@ -597,11 +605,12 @@ def _require(label: str, value: str, pattern: re.Pattern[str]) -> str:
 
 
 def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dict:
-    """``{"id", "version", "sha256"}`` of the vendored world this run loaded.
+    """``{"id", "version", "sha256"}`` of the world this run loaded.
 
     Lock ``world.id`` and ``world.version`` must agree with that file. The
-    sha256 is the digest of the vendored ``world.json``. A lock ``world.sha256``
-    that disagrees is an ERROR.
+    sha256 is the digest of the loaded ``world.json`` (``sources.world`` when
+    present, otherwise the vendored file). A lock ``world.sha256`` that
+    disagrees is an ERROR.
     """
     legacy = lock.get("world", {})
     if not isinstance(legacy, dict):
