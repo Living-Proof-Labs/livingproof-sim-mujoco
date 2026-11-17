@@ -75,3 +75,38 @@ def test_declared_world_with_an_unmappable_feature_is_unsupported(tmp_path, monk
     with pytest.raises(SystemExit, match="UNSUPPORTED: .*type 'mesh'"):
         t._evidence(repo, out, trials=1)
     assert not out.exists()
+
+
+def _wall(world: dict) -> dict:
+    return next(g for g in world["geometry"] if g["role"] == "wall")
+
+
+def _pose(world: dict) -> dict:
+    return next(p for p in world["places"] if p["type"] == "pose")
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(lambda w: w["geometry"].__setitem__(0, "x"), id="geometry-item-not-an-object"),
+        pytest.param(lambda w: w.update(geometry=[]), id="geometry-empty"),
+        pytest.param(lambda w: w.update(dimensions=[]), id="dimensions-not-an-object"),
+        pytest.param(lambda w: _wall(w).update(size="big"), id="wall-size-a-string"),
+        pytest.param(lambda w: _wall(w).update(size=[1, 2]), id="wall-size-two-numbers"),
+        pytest.param(lambda w: _wall(w).update(size=["a", "b", "c"]), id="wall-size-strings"),
+        pytest.param(lambda w: _wall(w).update(centre="here"), id="wall-centre-a-string"),
+        pytest.param(lambda w: _wall(w).update(centre=None), id="wall-centre-null"),
+        pytest.param(lambda w: _wall(w).update(name=7), id="geometry-name-not-a-string"),
+        pytest.param(lambda w: _pose(w).update(position="x"), id="pose-position-a-string"),
+        pytest.param(lambda w: _pose(w).update(yaw_deg="north"), id="pose-yaw-a-string"),
+    ],
+)
+def test_declared_world_with_wrong_typed_values_is_refused_clearly(tmp_path, monkeypatch, edit):
+    world = json.loads(VENDORED.read_text())
+    edit(world)
+    repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as refused:
+        t._evidence(repo, out, trials=1)
+    assert str(refused.value).startswith(("ERROR", "INCOMPATIBLE", "UNSUPPORTED"))
+    assert not out.exists()
