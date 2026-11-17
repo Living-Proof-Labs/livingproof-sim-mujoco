@@ -128,8 +128,12 @@ published verification locks name livingproof-worlds v1.1.0; that release's
 `world.json` is the vendored file byte for byte, so those locks are accepted.
 When the lock declares `sources.world`, those bytes are the simulated world. A sha256
 that does not match the file it names is an ERROR, and a mismatched vendored copy is
-not substituted. The pins file is not used. Locks without `sources.world` still load
-the vendored release named by `lock.world`.
+not substituted. The pins file is not used. The declared document is checked before
+use: it must include `geometry`, `places`, and `dimensions`, and be mappable. A world
+that fails that check is `INCOMPATIBLE` (or `UNSUPPORTED` for an unmappable feature)
+and nothing is written. `world.tag` and `world.commit` are not compared with a
+vendored release when `sources.world` is set; `world.sha256` pins the bytes. Locks
+without `sources.world` still load the vendored release named by `lock.world`.
 
 ## Standing check
 

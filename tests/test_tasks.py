@@ -82,3 +82,29 @@ def test_the_development_image_has_a_headless_egl_driver():
     development = dockerfile.split("AS development", 1)[1].split("\nFROM ", 1)[0]
     packages = set(development.replace("\\\n", " ").split())
     assert {"libegl1", "libegl-mesa0", "libgl1-mesa-dri", "libopengl0", "libgl1"} <= packages
+
+
+# These modules have their own Taskfile tasks, not the main CI ``test`` task.
+_SEPARATE_TEST_MODULES = frozenset(
+    {
+        "tests/test_preview.py",
+    }
+)
+
+
+def test_runtime_test_task_collects_every_unit_test_module():
+    """A new tests/test_*.py must be listed in the CI test task.
+
+    CI calls pytest on an explicit file list. A module that is not on that
+    list can fail locally and still leave MuJoCo tests green (livingproof-sim-mujoco#88).
+    tests/docs/ is collected by ``task test:docs``; test_preview.py by ``task test:preview``.
+    """
+    commands = "\n".join(_runtime_test_commands())
+    missing = []
+    for path in sorted(Path("tests").glob("test_*.py")):
+        relative = path.as_posix()
+        if relative in _SEPARATE_TEST_MODULES:
+            continue
+        if relative not in commands:
+            missing.append(relative)
+    assert missing == []

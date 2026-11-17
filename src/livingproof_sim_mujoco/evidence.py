@@ -33,7 +33,7 @@ import mujoco
 
 from livingproof_scenario_parameters import ScenarioParameterError
 
-from livingproof_sim_mujoco import compose, scenario as sc, sources
+from livingproof_sim_mujoco import compose, hallway, scenario as sc, sources
 from livingproof_sim_mujoco.compat import hallway as frozen
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
@@ -215,6 +215,26 @@ def parameters(robot: Robot, name: str, lock: dict) -> dict:
     return prepare_run(robot, name, lock).recorded
 
 
+_DECLARED_WORLD_FIELDS = ("geometry", "places", "dimensions")
+
+
+def _require_declared_world(world: dict) -> None:
+    """Refuse a declared ``sources.world`` the adapter cannot map, before it is used."""
+    missing = [key for key in _DECLARED_WORLD_FIELDS if key not in world]
+    if missing:
+        named = ", ".join(repr(key) for key in missing)
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world has no "
+            f"{named}. The declared world is the one that is simulated, so it "
+            "must include the fields the adapter maps. "
+            'Example: a world.json with "geometry", "places", and "dimensions".'
+        )
+    try:
+        hallway.supported(world)
+    except hallway.Unsupported as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepared:
     """Parameters, command and world for one configuration.
 
@@ -240,6 +260,7 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
                 'Example: "sources": {"world": {"path": "world.json", '
                 '"sha256": "<64 hex>"}}'
             )
+        _require_declared_world(world)
     else:
         world, digest, relative = compose.vendored_world(lock)
         selected = sources.WorldSource(world, "vendored", digest, relative)

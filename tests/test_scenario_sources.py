@@ -527,7 +527,9 @@ def test_prepare_run_loads_declared_world_bytes_not_a_mismatched_vendored_copy(
     toy, repo = _toy_repo(tmp_path, monkeypatch)
     vendored = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
     vendored_digest = _sha(vendored)
-    declared_digest = _lock_world(repo, _named_world(clear=1.6))
+    declared = json.loads(vendored.read_text())
+    declared["dimensions"] = {**declared["dimensions"], "clear_width": 1.6}
+    declared_digest = _lock_world(repo, declared)
     assert declared_digest != vendored_digest
     lock = json.loads((repo / "caller.lock.json").read_text())
     assert lock["world"]["sha256"] == vendored_digest
