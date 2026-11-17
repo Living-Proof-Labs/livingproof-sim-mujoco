@@ -33,7 +33,7 @@ import mujoco
 
 from livingproof_scenario_parameters import ScenarioParameterError
 
-from livingproof_sim_mujoco import compose, hallway, scenario as sc, sources
+from livingproof_sim_mujoco import compose, hallway, scenario as sc, sources, world_shapes
 from livingproof_sim_mujoco.compat import hallway as frozen
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
@@ -218,6 +218,14 @@ def parameters(robot: Robot, name: str, lock: dict) -> dict:
 _DECLARED_WORLD_FIELDS = ("geometry", "places", "dimensions")
 
 
+def _declared_world_shape(value, check):
+    """Run a world_shapes check, mapping WorldShapeError to an INCOMPATIBLE refusal."""
+    try:
+        return check(value)
+    except world_shapes.WorldShapeError as exc:
+        raise SystemExit(f"INCOMPATIBLE: lock sources.world {exc}") from exc
+
+
 def _require_declared_world(world: dict) -> None:
     """Refuse a declared ``sources.world`` the adapter cannot map, before it is used."""
     missing = [key for key in _DECLARED_WORLD_FIELDS if key not in world]
@@ -252,6 +260,12 @@ def _require_declared_world(world: dict) -> None:
                 f"geometry[{index}] has no {named}. Each geometry item needs "
                 "name, type, role, centre and size."
             )
+        _declared_world_shape(
+            item,
+            lambda value, i=index: world_shapes.require_geometry_item(
+                value, keys=hallway.GEOMETRY_KEYS, label=f"geometry[{i}]"
+            ),
+        )
     places = world["places"]
     if not isinstance(places, list) or not places:
         raise SystemExit(
@@ -263,6 +277,10 @@ def _require_declared_world(world: dict) -> None:
     for index, item in enumerate(places):
         if not isinstance(item, dict):
             raise SystemExit(f"INCOMPATIBLE: lock sources.world places[{index}] must be an object.")
+        _declared_world_shape(
+            item,
+            lambda value, i=index: world_shapes.require_place_item(value, f"places[{i}]"),
+        )
     if not isinstance(world["dimensions"], dict):
         raise SystemExit(
             "INCOMPATIBLE: lock sources.world dimensions must be an object. "
