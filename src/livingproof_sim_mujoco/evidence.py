@@ -323,8 +323,8 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
     When the lock declares ``sources.world``, those bytes are the simulated
     world. A mismatched vendored copy is not substituted. Locks without
     ``sources.world`` still load the vendored release named by ``lock["world"]``.
-    Scenario parameter bytes still follow ``sources``: a lock entry, else the
-    robot pins, else the vendored parameter file.
+    Scenario parameter bytes come only from ``sources.parameters``; a missing
+    entry is a clear ERROR, not pins or a vendored default.
     """
     if lock is None:
         raise SystemExit(

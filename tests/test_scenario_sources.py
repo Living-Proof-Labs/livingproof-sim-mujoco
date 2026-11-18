@@ -262,9 +262,10 @@ def test_lock_entry_wins_over_pins_and_a_mismatch_is_an_error(tmp_path):
 
     no_entry = {"scenario": "from-lock@0.1.0", "world": {"id": "from-lock", "version": "0.1.0"}}
     assert sources.world_document(root, no_entry)["id"] == "from-pins"
-    document, origin = sources.parameters_document_for(root, no_entry)
-    assert origin == "pins" and document["command"]["forward"] == 0.2
-    assert sources.parameters_document_for(root, None)[1] == "vendored"
+    with pytest.raises(SystemExit, match=r"ERROR: lock sources\.parameters is missing"):
+        sources.parameters_document_for(root, no_entry)
+    with pytest.raises(SystemExit, match=r"ERROR: lock sources\.parameters is missing"):
+        sources.parameters_document_for(root, None)
 
     bad = json.loads(json.dumps(lock))
     bad["sources"]["world"]["sha256"] = "0" * 64
@@ -428,8 +429,6 @@ def test_sub_picometre_clamp_only_removes_float_residue():
 
 
 def test_vendored_parameter_file_is_checked_byte_for_byte(tmp_path, monkeypatch):
-    import inspect
-
     spec = CATALOG / "parameters.json"
     assert _sha(ROOT / "src/livingproof_sim_mujoco/compat/parameters.json") == _sha(spec)
     tampered = tmp_path / "parameters.json"
@@ -437,10 +436,8 @@ def test_vendored_parameter_file_is_checked_byte_for_byte(tmp_path, monkeypatch)
     monkeypatch.setattr(frozen, "_PATH", tampered)
     with pytest.raises(RuntimeError, match="ERROR: vendored parameter file sha256"):
         frozen.parameters_document()
-    with pytest.raises(RuntimeError, match="ERROR"):
+    with pytest.raises(SystemExit, match=r"ERROR: lock sources\.parameters is missing"):
         sources.parameters_document_for(tmp_path, None)
-    # The fallback is temporary and must say so where it is used.
-    assert "TODO(#40 step 7)" in inspect.getsource(sources.parameters_document_for)
 
 
 def _toy_repo(tmp_path, monkeypatch):
@@ -455,6 +452,14 @@ def _toy_repo(tmp_path, monkeypatch):
 def _edit_lock(repo: Path, **changes) -> None:
     path = repo / "caller.lock.json"
     lock = json.loads(path.read_text())
+    if (
+        "sources" in changes
+        and isinstance(changes["sources"], dict)
+        and isinstance(lock.get("sources"), dict)
+    ):
+        merged = dict(lock["sources"])
+        merged.update(changes["sources"])
+        changes = {**changes, "sources": merged}
     lock.update(changes)
     path.write_text(json.dumps(lock))
 
@@ -483,22 +488,45 @@ def test_lock_parameter_mismatch_is_an_error_and_writes_nothing(tmp_path, monkey
     assert not out.exists()
 
 
-def test_pinned_parameters_are_used_without_a_lock_entry(tmp_path, monkeypatch):
+def test_pinned_parameters_are_not_used_without_a_lock_entry(tmp_path, monkeypatch):
+    """Pins are not a fallback; a sources.parameters entry is required and wins."""
     _toy, repo = _toy_repo(tmp_path, monkeypatch)
     document = json.loads(json.dumps(_catalog()["parameters.json"]))
     document["parameters"]["wall_clearance"]["values"]["humanoid"] = 0.0625
     _pin_parameters(repo, document)
+    path = repo / "caller.lock.json"
+    lock = json.loads(path.read_text())
+    lock["sources"] = {}
+    path.write_text(json.dumps(lock))
     out = tmp_path / "out"
-    _evidence(repo, out, trials=1)
-    run = json.loads((out / "run-manifest.json").read_text())
-    assert run["parameters"]["wall_clearance"] == 0.0625
-    # And the lock entry wins over that pin when present.
+    with pytest.raises(SystemExit, match=r"ERROR: lock sources\.parameters is missing"):
+        _evidence(repo, out, trials=1)
+    assert not out.exists()
     locked = _catalog()["parameters.json"]
     digest = _write(repo, "locked/parameters.json", locked)
     _edit_lock(repo, sources={"parameters": {"path": "locked/parameters.json", "sha256": digest}})
     _evidence(repo, tmp_path / "out2", trials=1)
     run = json.loads((tmp_path / "out2" / "run-manifest.json").read_text())
     assert run["parameters"]["wall_clearance"] == 0.05
+
+
+def test_missing_sources_parameters_is_a_clear_error_not_a_fallback(tmp_path):
+    """Fail-first for livingproof-verification#119 slice 3: no pins or vendored default."""
+    root = tmp_path
+    pins_parameters = {
+        "format": "parameters",
+        "command": {"mode": "constant", "forward": 0.2, "sideways": 0, "turn_rate": 0},
+    }
+    pins_param_sha = _write(
+        root, ".cache/specs/scenarios/walk-hallway/parameters.json", pins_parameters
+    )
+    _pins(root, "specs", "specs/scenarios/walk-hallway/parameters.json", pins_param_sha)
+    for lock in ({"scenario": "walk-hallway@0.1.0"}, {}, None):
+        with pytest.raises(
+            SystemExit, match=r"ERROR: lock sources\.parameters is missing"
+        ) as caught:
+            sources.parameters_document_for(root, lock)
+        assert "0.2" not in str(caught.value)
 
 
 def test_a_declared_0_2_world_is_not_replaced_by_the_vendored_release(tmp_path, monkeypatch):

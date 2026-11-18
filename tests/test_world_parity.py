@@ -172,6 +172,14 @@ def _new_lock(robot, configuration: str, directory: Path) -> Path:
             },
         },
     }
+    parameters = (
+        Path(__file__).resolve().parents[1] / "src/livingproof_sim_mujoco/compat/parameters.json"
+    )
+    dest_params = Path(robot.root) / "parameters.json"
+    dest_params.write_bytes(parameters.read_bytes())
+    lock["sources"] = {
+        "parameters": {"path": "parameters.json", "sha256": sha256(dest_params)},
+    }
     dest = directory / "lock.json"
     dest.write_text(json.dumps(lock))
     return dest

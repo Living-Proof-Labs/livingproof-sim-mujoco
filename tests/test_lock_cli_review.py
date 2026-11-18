@@ -101,7 +101,7 @@ def _lock_v020(checkout: Path, configuration: str) -> dict:
     entry = {
         c["name"]: c for c in json.loads((checkout / "robot.json").read_text())["configurations"]
     }[configuration]
-    return {
+    lock = {
         "format": "livingproof-verification-lock/0.2.0",
         "procedure": "walk-hallway",
         "scenario": "walk-hallway@0.1.0",
@@ -141,11 +141,22 @@ def _lock_v020(checkout: Path, configuration: str) -> dict:
         ],
         "plan": {"trials": {"count": 3}, "command_speed": 0.5},
     }
+    parameters = (
+        Path(__file__).resolve().parents[1] / "src/livingproof_sim_mujoco/compat/parameters.json"
+    )
+    dest = checkout / "parameters.json"
+    dest.write_bytes(parameters.read_bytes())
+    lock["sources"] = {
+        "parameters": {"path": "parameters.json", "sha256": sha256(dest)},
+    }
+    return lock
 
 
 def _projection(lock: dict) -> dict:
     """capability-verifier evidence_lock.evidence_document: the 1.0.0 projection."""
-    keys = ("scenario", "releases", "world", "configurations", "plan")
+    keys = ["scenario", "releases", "world", "configurations", "plan"]
+    if "sources" in lock:
+        keys.append("sources")
     return {"format": "livingproof-verification-lock/1.0.0", **{k: lock[k] for k in keys}}
 
 
