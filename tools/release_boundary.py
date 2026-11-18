@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Keep robot composition pin-only updates from issuing consumer releases."""
+
 import json
 import os
 import re

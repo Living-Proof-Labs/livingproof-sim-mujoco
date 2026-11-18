@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("release_boundary", ROOT / "tools/release_boundary.py")
+spec = importlib.util.spec_from_file_location(
+    "release_boundary", ROOT / "tools/release_boundary.py"
+)
 boundary = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boundary)
 
@@ -14,14 +16,14 @@ spec.loader.exec_module(boundary)
 def snapshots():
     project = '[build-system]\nrequires = []\n[project]\ndependencies = ["mujoco==3.17.0"]\n'
     project += '[dependency-groups]\nrobots = ["livingproof-unitree-g1", "livingproof-unitree-go1", "livingproof-booster-t1"]\n'
-    project += '[tool.uv.sources]\n'
+    project += "[tool.uv.sources]\n"
     lock = '[[package]]\nname = "numpy"\nversion = "2.4.6"\n'
     lock += '[[package]]\nname = "livingproof-sim-mujoco"\n[package.metadata.requires-dev]\nrobots = [\n'
     for name in sorted(boundary.ROBOTS):
         url = f"https://github.com/Living-Proof-Labs/{name}"
         project += f'{name} = {{ git = "{url}", tag = "v2.2.8" }}\n'
         lock += f'{{ name = "{name}", git = "{url}?tag=v2.2.8" }},\n'
-    lock += ']\n'
+    lock += "]\n"
     for name in sorted(boundary.ROBOTS):
         url = f"https://github.com/Living-Proof-Labs/{name}"
         lock += f'[[package]]\nname = "{name}"\nversion = "0.1.0"\n'
@@ -37,13 +39,16 @@ def test_only_robot_pin_refresh_is_not_a_consumer_release():
     assert boundary.pin_only(snapshots(), bumped(snapshots()))
 
 
-@pytest.mark.parametrize("path,old,new", [
-    ("pyproject.toml", 'mujoco==3.17.0', 'mujoco==3.17.1'),
-    ("uv.lock", 'version = "2.4.6"', 'version = "2.4.7"'),
-    ("pyproject.toml", 'livingproof-unitree-g1",', 'new-runtime",'),
-    ("pyproject.toml", 'tag = "v2.2.8"', 'tag = "main"'),
-    ("uv.lock", 'Living-Proof-Labs/livingproof-unitree-g1', 'attacker/livingproof-unitree-g1'),
-])
+@pytest.mark.parametrize(
+    "path,old,new",
+    [
+        ("pyproject.toml", "mujoco==3.17.0", "mujoco==3.17.1"),
+        ("uv.lock", 'version = "2.4.6"', 'version = "2.4.7"'),
+        ("pyproject.toml", 'livingproof-unitree-g1",', 'new-runtime",'),
+        ("pyproject.toml", 'tag = "v2.2.8"', 'tag = "main"'),
+        ("uv.lock", "Living-Proof-Labs/livingproof-unitree-g1", "attacker/livingproof-unitree-g1"),
+    ],
+)
 def test_runtime_metadata_and_unknown_sources_still_release(path, old, new):
     before = snapshots()
     after = bumped(before)
@@ -71,13 +76,17 @@ def test_two_repository_release_chain_stops_but_mixed_runtime_work_releases(tmp_
     for repo in (simulator, robot):
         repo.mkdir()
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True
+        )
         subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+
     def commit(repo, files, message):
         for path, text in files.items():
             (repo / path).write_text(text)
         subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
         subprocess.run(["git", "-C", str(repo), "commit", "-qm", message], check=True)
+
     commit(robot, {"simulator-pin": "v3.4.1"}, "chore: adopt simulator")
     subprocess.run(["git", "-C", str(robot), "tag", "v2.2.99"], check=True)
     commit(simulator, original, "feat: simulator runtime")
@@ -98,6 +107,7 @@ def test_two_repository_release_chain_stops_but_mixed_runtime_work_releases(tmp_
 
 def test_workflow_retains_tests_and_gates_only_release():
     import yaml
+
     jobs = yaml.safe_load((ROOT / ".github/workflows/verify.yml").read_text())["jobs"]
     assert jobs["release"]["needs"] == ["verify", "publish-tests", "release-boundary"]
     assert "release-needed == 'true'" in jobs["release"]["if"]
