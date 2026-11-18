@@ -123,3 +123,59 @@ def test_parameters_source_names_the_bytes_that_were_read(tmp_path):
     assert selected.path == "p.json"
     # The tuple form used elsewhere is unchanged.
     assert sources.parameters_document_for(root, lock) == (document, "lock")
+
+
+def test_an_unsupported_run_records_the_bytes_it_read_not_a_later_read(tmp_path, monkeypatch):
+    """The UNSUPPORTED path has its own manifest writer; it must follow the one read too (#104).
+
+    Change the file right after the lock check passes. A writer that hashed the file again would
+    record the changed digest; the record must stay the digest of the bytes that were read.
+    """
+    repo = supported._repo(tmp_path, monkeypatch)
+    supported._use_parameters(repo, supported._require_support(supported._parameters()))
+    supported._write_manifest(repo, supported._manifest([]))
+    declared = _lock(repo)["sources"]["parameters"]
+    path = repo / declared["path"]
+    original = hashlib.sha256(path.read_bytes()).hexdigest()
+    reads = []
+    real = sources._read_locked
+
+    def read_then_change(root, entry, kind):
+        data = real(root, entry, kind)
+        if kind == "parameters":
+            reads.append(hashlib.sha256(data).hexdigest())
+            document = json.loads(data)
+            document["note"] = "changed after the lock check"
+            path.write_text(json.dumps(document))
+        return data
+
+    monkeypatch.setattr(sources, "_read_locked", read_then_change)
+    recorded = evidence.evidence(
+        "test_evidence:TOY", "stock", tmp_path / "out", trials=1, lock=repo / "caller.lock.json"
+    )
+    assert recorded["trials"]["results"] == []
+    assert hashlib.sha256(path.read_bytes()).hexdigest() != original
+    assert recorded["sources"]["parameters"]["sha256"] == original
+    assert (
+        json.loads((tmp_path / "out" / "manifest.json").read_text())["sources"]
+        == (recorded["sources"])
+    )
+    assert reads == [original]
+
+
+def test_the_record_has_exactly_the_keys_and_digest_format_consumers_compare(tmp_path, monkeypatch):
+    """livingproof-evaluator-run compares strings exactly: the lock's own form, nothing added.
+
+    ``sources.parameters.sha256`` is 64 lowercase hex characters with no ``sha256:`` prefix,
+    the form of the lock's ``sources.parameters.sha256`` and ``releases.specs.files`` values.
+    The new top-level key holds ``parameters`` only, with ``path`` and ``sha256`` only.
+    """
+    import re
+
+    _toy, repo = t._toy_repo(tmp_path, monkeypatch)
+    manifest = t._evidence(repo, tmp_path / "out", trials=1)
+    assert set(manifest["sources"]) == {"parameters"}
+    assert set(manifest["sources"]["parameters"]) == {"path", "sha256"}
+    digest = manifest["sources"]["parameters"]["sha256"]
+    assert re.fullmatch(r"[0-9a-f]{64}", digest)
+    assert digest == _lock(repo)["sources"]["parameters"]["sha256"]
