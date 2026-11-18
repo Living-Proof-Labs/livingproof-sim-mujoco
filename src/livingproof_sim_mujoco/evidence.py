@@ -22,6 +22,7 @@ import hashlib
 import inspect
 import json
 from importlib import import_module, metadata
+import logging
 from pathlib import Path
 import re
 import subprocess
@@ -33,7 +34,14 @@ import mujoco
 
 from livingproof_scenario_parameters import ScenarioParameterError
 
-from livingproof_sim_mujoco import compose, hallway, scenario as sc, sources, world_shapes
+from livingproof_sim_mujoco import (
+    compose,
+    hallway,
+    observations,
+    scenario as sc,
+    sources,
+    world_shapes,
+)
 from livingproof_sim_mujoco.compat import hallway as frozen
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
@@ -46,7 +54,10 @@ PENDING = "PENDING_RELEASE"
 # uses 2, 124, 130, and 143. The hallway fixture tool uses 0 for PASS, 1 for a non-PASS
 # result, 2 for a fixture error, and 3 for UNSUPPORTED.
 # 4 is only a test-system reproducibility finding, not a robot grade and not those codes.
+# 5 is a trial that ended by an exception; manifest.json is still written for the trials
+# that ran, and verify must not grade the run.
 EXIT_REPRODUCIBILITY = 4
+EXIT_TRIAL_EXCEPTION = 5
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -454,6 +465,7 @@ def run_trial(
     route: list | None = None,
     exit_place: dict | None = None,
     places: dict | None = None,
+    log_fallback: bool = True,
 ) -> dict:
     """One trial at the nominal pose through ``observations.observe``.
 
@@ -487,6 +499,7 @@ def run_trial(
             through=places["through"],
             sample_hz=rs["sample_hz"],
             on_step=hook,
+            log_fallback=log_fallback,
         )
         if hook is not None:
             hook.close()
@@ -506,6 +519,7 @@ def run_trial(
         on_step=hook,
         route=route,
         exit_place=exit_place,
+        log_fallback=log_fallback,
     )
     if hook is not None:
         hook.close()
@@ -651,18 +665,47 @@ def _write_trial(out: Path, index: int, obs: dict, wall_clock_s: float) -> dict:
     }
 
 
+def _exception_type(exc: Exception) -> str:
+    cls = type(exc)
+    if cls.__module__ in ("builtins", "__main__"):
+        return cls.__qualname__
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def _short_exception_message(exc: Exception, limit: int = 240) -> str:
+    text = " ".join(str(exc).split())
+    if not text:
+        return type(exc).__name__
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _trial_exception(index: int, exc: Exception, wall_clock_s: float) -> dict:
+    return {
+        "index": index,
+        "exception": {
+            "type": _exception_type(exc),
+            "message": _short_exception_message(exc),
+        },
+        "wall_clock_s": round(wall_clock_s, 3),
+    }
+
+
 def reproducibility(results: list[dict]) -> dict:
     """Compare identical trials. A disagreement is a test-system finding, not a robot grade.
 
-    Count 1 is not a comparison. Outcome here is the observation's recorded end reason
-    (for example ``crossed_exit``). The capability verifier grades later.
+    Count 1 is not a comparison. Trials that ended by an exception have no observation
+    to compare. Outcome here is the observation's recorded end reason (for example
+    ``crossed_exit``). The capability verifier grades later.
     """
-    if len(results) < 2:
+    completed = [t for t in results if "exception" not in t]
+    if len(completed) < 2:
         return {"compared": False, "identical": None, "finding": None}
     same = (
-        len({t["sha256"] for t in results}) == 1
-        and len({t["trajectory_sha256"] for t in results}) == 1
-        and len({t["outcome"] for t in results}) == 1
+        len({t["sha256"] for t in completed}) == 1
+        and len({t["trajectory_sha256"] for t in completed}) == 1
+        and len({t["outcome"] for t in completed}) == 1
     )
     if same:
         return {"compared": True, "identical": True, "finding": None}
@@ -676,8 +719,8 @@ def reproducibility(results: list[dict]) -> dict:
                 "Identical trials disagreed on trajectory hash or outcome. "
                 "This is a test-system reproducibility finding, not a robot FAIL."
             ),
-            "trajectory_sha256": [t["trajectory_sha256"] for t in results],
-            "outcomes": [t["outcome"] for t in results],
+            "trajectory_sha256": [t["trajectory_sha256"] for t in completed],
+            "outcomes": [t["outcome"] for t in completed],
         },
     }
 
@@ -1201,6 +1244,7 @@ def evidence(
     profile_sha = sha256(root / "robot.json")
     robot_commit = sc.git_head(root)[0]
     results = []
+    seen_fallback: set[str] = set()
     started = time.perf_counter()
     if unmet is None:
         document = build_run_manifest(
@@ -1220,21 +1264,30 @@ def evidence(
         (out / "run-manifest.json").write_text(json.dumps(document, indent=2) + "\n")
         for index in range(1, count + 1):
             t0 = time.perf_counter()
-            geometry = sc.route_geometry(world, prepared.document)
-            route, exit_place = geometry if geometry else (None, None)
-            obs = run_trial(
-                ref,
-                name,
-                plan,
-                p,
-                world,
-                start_offset=offset,
-                command=prepared.command,
-                route=route,
-                exit_place=exit_place,
-                places=places,
+            try:
+                geometry = sc.route_geometry(world, prepared.document)
+                route, exit_place = geometry if geometry else (None, None)
+                obs = run_trial(
+                    ref,
+                    name,
+                    plan,
+                    p,
+                    world,
+                    start_offset=offset,
+                    command=prepared.command,
+                    route=route,
+                    exit_place=exit_place,
+                    places=places,
+                    log_fallback=False,
+                )
+            except Exception as exc:
+                results.append(_trial_exception(index, exc, time.perf_counter() - t0))
+                break
+            seen_fallback.update(
+                obs.get("wall_intrusion", {}).get("geometry", {}).get("visual_fallback_bodies", [])
             )
             results.append(_write_trial(out, index, obs, time.perf_counter() - t0))
+    fallback_bodies = sorted(seen_fallback)
     wall_clock_s = round(time.perf_counter() - started, 3)
     report = reproducibility(results)
     manifest = {
@@ -1289,10 +1342,32 @@ def evidence(
             "source_commit": robot_commit,
         },
         "host": {"wall_clock_s": wall_clock_s, "cpu": host_cpus()},
+        **(
+            {}
+            if unmet is not None
+            else {
+                "wall_intrusion": {
+                    "visual_fallback_count": len(fallback_bodies),
+                    "visual_fallback_bodies": fallback_bodies,
+                }
+            }
+        ),
         "trials": {"count": count, "results": results, "reproducibility": report},
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    if unmet is None and fallback_bodies:
+        observations.log_visual_fallback(fallback_bodies, in_manifest=True)
     return manifest
+
+
+def _configure_logging() -> None:
+    """Emit INFO notes on stderr for direct CLI runs without duplicating test handlers."""
+    pkg_logger = logging.getLogger("livingproof_sim_mujoco")
+    if not logging.getLogger().handlers and not pkg_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        pkg_logger.addHandler(handler)
+        pkg_logger.setLevel(logging.INFO)
 
 
 def main(argv=None) -> int:
@@ -1320,11 +1395,15 @@ def main(argv=None) -> int:
         "Exit 2: the command line is unusable. "
         f"Exit {EXIT_REPRODUCIBILITY}: trials.count > 1 and the trials disagree. "
         "That exit is a test-system reproducibility finding recorded in the manifest, "
-        "not a robot grade. An INCOMPATIBLE or UNSUPPORTED world also exits 1. "
+        "not a robot grade. "
+        f"Exit {EXIT_TRIAL_EXCEPTION}: a trial raised an exception; manifest.json is written "
+        "for the trials that ran, and the run must not be graded. "
+        "An INCOMPATIBLE or UNSUPPORTED world also exits 1. "
         "Example: python -m livingproof_sim_mujoco.evidence "
         "lpl_g1.adapter:ROBOT playground out --lock path/to/lock.json --trials 3"
     )
     a = ap.parse_args(argv)
+    _configure_logging()
     m = evidence(
         a.adapter,
         a.configuration,
@@ -1337,9 +1416,25 @@ def main(argv=None) -> int:
     if unmet is not None:
         print(f"UNSUPPORTED: precondition {unmet['name']} unmet: {unmet['detail']}; no trials run")
         return 0
+    failed = [t for t in m["trials"]["results"] if "exception" in t]
+    if failed:
+        first = failed[0]
+        exc = first["exception"]
+        print(
+            f"trial {first['index']} ended by {exc['type']}: {exc['message']} "
+            f"-> {a.out / 'manifest.json'}",
+            file=sys.stderr,
+        )
+        return EXIT_TRIAL_EXCEPTION
     finding = m["trials"]["reproducibility"]["finding"]
+    fallback_count = m.get("wall_intrusion", {}).get("visual_fallback_count", 0)
+    suffix = ""
+    if fallback_count == 1:
+        suffix = " (1 visual-fallback body)"
+    elif fallback_count:
+        suffix = f" ({fallback_count} visual-fallback bodies)"
     print(
-        f"{m['trials']['count']} observations in {m['host']['wall_clock_s']}s "
+        f"{m['trials']['count']} observations in {m['host']['wall_clock_s']}s{suffix} "
         f"-> {a.out / 'manifest.json'}"
     )
     if finding is not None:
