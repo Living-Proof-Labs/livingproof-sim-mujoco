@@ -83,6 +83,12 @@ any other mode is an ERROR. On the straight open hallway the command is `[0.5, 0
 A parameter file with no `command` states only the outcome. This runner does not invent
 a velocity for it.
 
+`manifest.json` records the file it loaded as `sources.parameters`, with `path` (the lock's
+`sources.parameters` path) and `sha256`. That digest is of the one read that was checked
+against the lock and parsed; the file is not read again. It is also recorded when the
+scenario is UNSUPPORTED and no trial runs. The field is additive, so the evidence format
+stays `livingproof-hallway-evidence/2.0.0`, and `run-manifest.json` does not change.
+
 Before any trial, a scenario that lists the precondition `scenario_supported` is checked
 against the robot repository's `manifest.json` (`livingproof-robot-manifest/0.1`).
 That is robot-capability-specs v2.3.0, Scenario support. The optional `scenarios` list
@@ -183,10 +189,11 @@ Every sha256 in `manifest.json` and `run-manifest.json` resolves, and
   published trial with `evidence.trajectory_sha256_of("trials/trial-NN.json")`. Identical
   trials share it; the reproducibility check compares it.
 - `lock.sha256`, `world.sha256`, `lock.content.world.sha256`,
-  `lock.content.configurations[].sha256`, `configuration.sha256` and
-  `robot.profile_sha256` are pinned inputs: the lock file, the loaded `world.json`, the
-  robot's configuration file and its `robot.json`, at the commits the manifest records.
-  They are not files in the evidence artifact.
+  `lock.content.configurations[].sha256`, `sources.parameters.sha256`,
+  `configuration.sha256` and `robot.profile_sha256` are pinned inputs: the lock file, the
+  loaded `world.json`, the loaded scenario parameter file, the robot's configuration file
+  and its `robot.json`, at the commits the manifest records. They are not files in the
+  evidence artifact.
 - Every sha256 under `robot.profile.` or `configuration.profile.` (in either manifest) and
   under `lock.content.sources.` (in `manifest.json`) is a pinned source too, whatever its
   name: the embedded profiles cite pinned files in the robot repository or upstream, such
