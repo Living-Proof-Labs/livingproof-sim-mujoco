@@ -225,6 +225,7 @@ def _record(args):
         route=route,
         exit_place=exit_place,
         places=places,
+        log_fallback=False,
     )
     got = hashlib.sha256(ev.observation_bytes(obs)).hexdigest()
     if got != expected:

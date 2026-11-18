@@ -22,6 +22,7 @@ import hashlib
 import inspect
 import json
 from importlib import import_module, metadata
+import logging
 from pathlib import Path
 import re
 import subprocess
@@ -33,7 +34,14 @@ import mujoco
 
 from livingproof_scenario_parameters import ScenarioParameterError
 
-from livingproof_sim_mujoco import compose, hallway, scenario as sc, sources, world_shapes
+from livingproof_sim_mujoco import (
+    compose,
+    hallway,
+    observations,
+    scenario as sc,
+    sources,
+    world_shapes,
+)
 from livingproof_sim_mujoco.compat import hallway as frozen
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
@@ -449,6 +457,7 @@ def run_trial(
     route: list | None = None,
     exit_place: dict | None = None,
     places: dict | None = None,
+    log_fallback: bool = True,
 ) -> dict:
     """One trial at the nominal pose through ``observations.observe``.
 
@@ -482,6 +491,7 @@ def run_trial(
             through=places["through"],
             sample_hz=rs["sample_hz"],
             on_step=hook,
+            log_fallback=log_fallback,
         )
         if hook is not None:
             hook.close()
@@ -501,6 +511,7 @@ def run_trial(
         on_step=hook,
         route=route,
         exit_place=exit_place,
+        log_fallback=log_fallback,
     )
     if hook is not None:
         hook.close()
@@ -1195,6 +1206,7 @@ def evidence(
     profile_sha = sha256(root / "robot.json")
     robot_commit = sc.git_head(root)[0]
     results = []
+    seen_fallback: set[str] = set()
     started = time.perf_counter()
     if unmet is None:
         document = build_run_manifest(
@@ -1227,8 +1239,13 @@ def evidence(
                 route=route,
                 exit_place=exit_place,
                 places=places,
+                log_fallback=False,
+            )
+            seen_fallback.update(
+                obs.get("wall_intrusion", {}).get("geometry", {}).get("visual_fallback_bodies", [])
             )
             results.append(_write_trial(out, index, obs, time.perf_counter() - t0))
+    fallback_bodies = sorted(seen_fallback)
     wall_clock_s = round(time.perf_counter() - started, 3)
     report = reproducibility(results)
     manifest = {
@@ -1283,10 +1300,32 @@ def evidence(
             "source_commit": robot_commit,
         },
         "host": {"wall_clock_s": wall_clock_s, "cpu": host_cpus()},
+        **(
+            {}
+            if unmet is not None
+            else {
+                "wall_intrusion": {
+                    "visual_fallback_count": len(fallback_bodies),
+                    "visual_fallback_bodies": fallback_bodies,
+                }
+            }
+        ),
         "trials": {"count": count, "results": results, "reproducibility": report},
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    if unmet is None and fallback_bodies:
+        observations.log_visual_fallback(fallback_bodies, in_manifest=True)
     return manifest
+
+
+def _configure_logging() -> None:
+    """Emit INFO notes on stderr for direct CLI runs without duplicating test handlers."""
+    pkg_logger = logging.getLogger("livingproof_sim_mujoco")
+    if not logging.getLogger().handlers and not pkg_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        pkg_logger.addHandler(handler)
+        pkg_logger.setLevel(logging.INFO)
 
 
 def main(argv=None) -> int:
@@ -1319,6 +1358,7 @@ def main(argv=None) -> int:
         "lpl_g1.adapter:ROBOT playground out --lock path/to/lock.json --trials 3"
     )
     a = ap.parse_args(argv)
+    _configure_logging()
     m = evidence(
         a.adapter,
         a.configuration,
@@ -1332,8 +1372,14 @@ def main(argv=None) -> int:
         print(f"UNSUPPORTED: precondition {unmet['name']} unmet: {unmet['detail']}; no trials run")
         return 0
     finding = m["trials"]["reproducibility"]["finding"]
+    fallback_count = m.get("wall_intrusion", {}).get("visual_fallback_count", 0)
+    suffix = ""
+    if fallback_count == 1:
+        suffix = " (1 visual-fallback body)"
+    elif fallback_count:
+        suffix = f" ({fallback_count} visual-fallback bodies)"
     print(
-        f"{m['trials']['count']} observations in {m['host']['wall_clock_s']}s "
+        f"{m['trials']['count']} observations in {m['host']['wall_clock_s']}s{suffix} "
         f"-> {a.out / 'manifest.json'}"
     )
     if finding is not None:
