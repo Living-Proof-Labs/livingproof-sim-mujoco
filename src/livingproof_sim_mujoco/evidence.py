@@ -317,8 +317,16 @@ def _require_declared_world(world: dict) -> None:
         ) from schema_error
 
 
-def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepared:
+def prepare_run(
+    robot: Robot,
+    name: str,
+    lock: dict | None = None,
+    parameters: sources.ParametersSource | None = None,
+) -> sc.Prepared:
     """Parameters, command and world for one configuration.
+
+    ``parameters`` is a file the caller already read with ``sources.parameters_source``.
+    Passing it keeps one read per run, so the digest recorded is of the bytes used.
 
     When the lock declares ``sources.world``, those bytes are the simulated
     world. A mismatched vendored copy is not substituted. Locks without
@@ -332,7 +340,9 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
             "Example: prepare_run(robot, 'playground', lock)"
         )
     root = Path(robot.root)
-    document, _source = sources.parameters_document_for(root, lock)
+    if parameters is None:
+        parameters = sources.parameters_source(root, lock)
+    document = parameters.document
     if isinstance(lock.get("sources"), dict) and "world" in lock["sources"]:
         selected = sources.world_source(root, lock)
         world = selected.document
@@ -359,6 +369,7 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
     # The world that was loaded and checked. The manifests name this one (#39).
     prepared.world = world
     prepared.world_source = selected
+    prepared.parameters_source = parameters
     return prepared
 
 
@@ -530,6 +541,7 @@ DECLARED_HASHES = {
         "lock.sha256": "source",
         "lock.content.world.sha256": "source",
         "lock.content.configurations[].sha256": "source",
+        "sources.parameters.sha256": "source",
         "robot.profile_sha256": "source",
         "configuration.sha256": "source",
         "world.sha256": "source",
@@ -677,13 +689,27 @@ def unmet_required(preconditions: list) -> dict | None:
     return None
 
 
-def recording(robot: Robot, lock: dict, name: str) -> tuple[dict, sc.Prepared]:
+def recording(
+    robot: Robot,
+    lock: dict,
+    name: str,
+    parameters: sources.ParametersSource | None = None,
+) -> tuple[dict, sc.Prepared]:
     """(plan, prepared scenario) exactly as every evidence trial is recorded.
 
     ``time_limit`` is the parameter file's expression. The frozen scenario
     records it unrounded; the spec-rounded value is what ``resolve`` returns.
     """
-    return lock_field(lock, "plan", dict), prepare_run(robot, name, lock)
+    return lock_field(lock, "plan", dict), prepare_run(robot, name, lock, parameters)
+
+
+def recorded_sources(parameters: sources.ParametersSource) -> dict:
+    """``manifest.json`` ``sources``: the input files this run loaded, by the bytes read.
+
+    ``parameters`` is the lock's ``sources.parameters`` path and the sha256 of the one
+    read that was checked and parsed, not a later read of the file (#104).
+    """
+    return {"parameters": {"path": parameters.path, "sha256": parameters.sha256}}
 
 
 def executed_plan(plan: dict, count: int) -> dict:
@@ -995,6 +1021,7 @@ def _record_unsupported(
     waiting: list[str],
     adapter_sha: str,
     out: Path,
+    parameter_source: sources.ParametersSource,
 ) -> dict:
     """Evidence for an unmet ``scenario_supported``, with no world and no trials.
 
@@ -1021,6 +1048,7 @@ def _record_unsupported(
         "run_id": run_id,
         "created": created.isoformat(timespec="seconds"),
         "lock": {"path": lock_path.name, "sha256": sha256(lock_path), "content": lock},
+        "sources": recorded_sources(parameter_source),
         "pending_release": waiting,
         "plan": executed_plan(plan, count),
         "start": {"spawn": spawn, "pose": "nominal", "offset": offset},
@@ -1090,7 +1118,9 @@ def evidence(
     # scenario_supported needs only the lock, the parameter file and manifest.json.
     # It is decided before the world fixture or the route, so an undeclared
     # scenario still records UNSUPPORTED when that world is not vendored here.
-    parameter_document, _parameter_source = sources.parameters_document_for(root, lock)
+    # One read: the support check, the run and the manifest all use these bytes (#104).
+    parameter_source = sources.parameters_source(root, lock)
+    parameter_document = parameter_source.document
     support = None
     if sc.scenario_support_required(parameter_document):
         support = sc.scenario_supported_precondition(
@@ -1110,8 +1140,9 @@ def evidence(
                 waiting,
                 adapter_sha,
                 out,
+                parameter_source,
             )
-    plan, prepared = recording(robot, lock, name)
+    plan, prepared = recording(robot, lock, name, parameter_source)
     p = prepared.recorded
     world = prepared.world
     # Before any output: a conflicting or unknown world identity writes nothing.
@@ -1205,6 +1236,7 @@ def evidence(
         "run_id": run_id,
         "created": created.isoformat(timespec="seconds"),
         "lock": {"path": lock_path.name, "sha256": sha256(lock_path), "content": lock},
+        "sources": recorded_sources(prepared.parameters_source),
         "pending_release": waiting,
         "plan": executed_plan(plan, count),
         "start": {"spawn": p["spawn"], "pose": "nominal", "offset": offset},
