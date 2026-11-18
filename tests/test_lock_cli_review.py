@@ -27,8 +27,12 @@ from livingproof_sim_mujoco import compose, hallway
 from livingproof_sim_mujoco.pins import sha256
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE = Path("/tmp/livingproof-world-parity")
 VENDORED = ROOT / "src/livingproof_sim_mujoco/worlds/hallway-open/0.1.0/world.json"
+
+
+@pytest.fixture(scope="module")
+def lock_cli_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("livingproof-world-parity")
 
 
 def _head(dest: Path) -> str:
@@ -41,8 +45,8 @@ def _head(dest: Path) -> str:
     return found.stdout.strip() if found.returncode == 0 else ""
 
 
-def _clone(package: str, tag: str, *, commit: str | None = None) -> Path:
-    dest = CACHE / f"{package}-{tag}"
+def _clone(package: str, tag: str, cache: Path, *, commit: str | None = None) -> Path:
+    dest = cache / f"{package}-{tag}"
     if not (dest / "pins.json").is_file() or (commit is not None and _head(dest) != commit):
         subprocess.run(["rm", "-rf", str(dest)], check=True)
         subprocess.run(
@@ -161,9 +165,9 @@ def _projection(lock: dict) -> dict:
 
 
 @pytest.fixture(scope="module")
-def g1_v2() -> Path:
+def g1_v2(lock_cli_cache: Path) -> Path:
     tag, commit = locked_robot_source("livingproof-unitree-g1")
-    return _clone("livingproof-unitree-g1", tag, commit=commit)
+    return _clone("livingproof-unitree-g1", tag, lock_cli_cache, commit=commit)
 
 
 # --- command line refusals --------------------------------------------------------
@@ -271,8 +275,8 @@ def test_real_caller_lock_drives_a_v2_robot_in_the_vendored_hallway(tmp_path, g1
 # --- v1 robots are refused, not crashed ------------------------------------------
 
 
-def test_v1_robot_is_refused_with_incompatible_and_writes_nothing(tmp_path):
-    checkout = _clone("livingproof-unitree-g1", "v1.0.4")
+def test_v1_robot_is_refused_with_incompatible_and_writes_nothing(tmp_path, lock_cli_cache):
+    checkout = _clone("livingproof-unitree-g1", "v1.0.4", lock_cli_cache)
     ref = _shim(tmp_path, checkout, use_checkout_src=True)
     entry = {
         c["name"]: c for c in json.loads((checkout / "robot.json").read_text())["configurations"]
