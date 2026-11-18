@@ -75,11 +75,10 @@ vendor is UNSUPPORTED. If the world has walls and the composed model is missing 
 them, or the robot base is at the origin when the start place is not, the command exits 1
 with `INCOMPATIBLE` and writes nothing.
 
-The scenario parameter file still comes from the lock when `sources.parameters` names a
-path and a sha256. A mismatch is an ERROR and the pins file is not used. With no lock
-entry, the file is taken from the robot's `pins.json`. If the pins do not list it either,
-the runner uses its copy of robot-capability-specs v2.3.0 `parameters.json`, checked by
-sha256. The velocity command is that file's `command`. Only mode `constant` is accepted;
+The scenario parameter file comes only from `sources.parameters`, which names a
+path and a sha256. A mismatch is an ERROR. A missing `sources.parameters` entry is
+also an ERROR; the robot's `pins.json` and the vendored parameter file are not
+used. The velocity command is that file's `command`. Only mode `constant` is accepted;
 any other mode is an ERROR. On the straight open hallway the command is `[0.5, 0, 0]`.
 A parameter file with no `command` states only the outcome. This runner does not invent
 a velocity for it.
@@ -115,10 +114,9 @@ and writes each trial as `livingproof-route-observation/0.1.0`:
 The trial ends `crossed_exit`, `time_limit`, `non_finite_state`, or `left_world`
 (through a wall, or across the exit line outside the exit segment). No threshold is
 applied; the capability verifier grades. A declared adapter with no `drive` is a
-test-system `ERROR` that writes nothing. When neither the lock nor the robot pins carry
-the parameter file, the walk-corner file vendored from robot-capability-specs v2.3.0
-(`scenarios/catalog.json`) is used. The walk-hallway observation and its bytes are
-unchanged.
+test-system `ERROR` that writes nothing. Walk-corner uses the same
+`sources.parameters` rule: a missing entry is an ERROR, not a vendored default.
+The walk-hallway observation and its bytes are unchanged.
 
 The `world` in `run-manifest.json` names the `world.json` that was loaded: its
 `id` and `version` come from the lock, and its `sha256` is the digest of those bytes. A
