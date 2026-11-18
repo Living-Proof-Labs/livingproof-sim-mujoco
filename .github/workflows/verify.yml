@@ -183,9 +183,25 @@ jobs:
       - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
         id: deployment
         if: steps.fresh.outputs.deploy == 'true'
-  release:
-    needs: [verify, publish-tests]
+  release-boundary:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release-needed: ${{ steps.classify.outputs.release-needed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Classify unreleased robot test-pin changes
+        id: classify
+        run: python3 tools/release_boundary.py
+  release:
+    needs: [verify, publish-tests, release-boundary]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-boundary.outputs.release-needed == 'true'
     permissions:
       contents: write
     uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.6.9
