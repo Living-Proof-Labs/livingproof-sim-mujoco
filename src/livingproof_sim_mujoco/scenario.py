@@ -69,6 +69,8 @@ class Prepared:
         # checked, and its sources.WorldSource. The manifests name that world.
         self.world: dict | None = None
         self.world_source = None
+        # Set by evidence.prepare_run: the sources.ParametersSource that was read once.
+        self.parameters_source = None
 
 
 def millimetres(metres: float) -> int:

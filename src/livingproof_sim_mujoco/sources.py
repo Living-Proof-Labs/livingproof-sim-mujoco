@@ -148,18 +148,41 @@ def world_document(root: Path, lock: dict | None) -> dict | None:
     return world_source(root, lock).document
 
 
-def parameters_document_for(root: Path, lock: dict | None) -> tuple[dict, str]:
-    """``(document, source)`` from ``sources.parameters`` only.
+@dataclass
+class ParametersSource:
+    """The scenario parameter file one run loads, and the sha256 of the bytes that were read.
+
+    ``sha256`` is the digest of the single read that was checked against the lock and
+    parsed. It is what the evidence manifest records (livingproof-sim-mujoco#104).
+    """
+
+    document: dict
+    origin: str
+    sha256: str
+    path: str
+
+
+def parameters_source(root: Path, lock: dict | None) -> ParametersSource:
+    """The ``sources.parameters`` file, read once, with the digest of those bytes.
 
     A missing ``sources.parameters`` entry is a clear ERROR. Pins and the
     vendored parameter file are not used.
     """
     entry = _entry(lock, "parameters")
     if entry is not None:
-        return json.loads(_read_locked(root, entry, "parameters")), "lock"
+        data = _read_locked(root, entry, "parameters")
+        return ParametersSource(
+            json.loads(data), "lock", hashlib.sha256(data).hexdigest(), entry["path"]
+        )
     raise SystemExit(
         "ERROR: lock sources.parameters is missing. "
         "Declare the parameter file as "
         '"sources": {"parameters": {"path": "parameters.json", "sha256": "<64 hex>"}}. '
         "Pins.json and the vendored parameter file are not used."
     )
+
+
+def parameters_document_for(root: Path, lock: dict | None) -> tuple[dict, str]:
+    """``(document, source)`` from ``sources.parameters`` only. See ``parameters_source``."""
+    selected = parameters_source(root, lock)
+    return selected.document, selected.origin
