@@ -206,6 +206,7 @@ def supported(world: dict) -> None:
             raise Unsupported(fid, ver, f"place {p.get('name')!r} type {p.get('type')!r}")
         for key in sorted(set(p) - allowed):
             raise Unsupported(fid, ver, f"place {p.get('name')!r} field {key!r}")
+    _shape(fid, ver, world, world_shapes.require_unique_names)
     if world.get("format") == "livingproof-world/0.3":
         _supported_traversals(fid, ver, world)
     if schema_error is not None:
