@@ -152,3 +152,21 @@ def require_place_item(item: Any, label: str) -> dict:
     elif typ == "polyline":
         points3(obj.get("points"), f"{label} points", minimum=2)
     return obj
+
+
+def require_unique_names(world: dict) -> None:
+    """Refuse a repeated geometry or place name, naming the duplicate."""
+    for field in ("geometry", "places"):
+        items = world.get(field)
+        if not isinstance(items, list):
+            continue
+        seen: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if not isinstance(name, str):
+                continue
+            if name in seen:
+                raise WorldShapeError(f"duplicate {field} name {name!r}")
+            seen.add(name)

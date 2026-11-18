@@ -85,6 +85,9 @@ def test_the_development_image_has_a_headless_egl_driver():
 
 
 # These modules have their own Taskfile tasks, not the main CI ``test`` task.
+# Same collection guard as livingproof-sim-mujoco#88 (423d428), landed here
+# because that PR is still open. A glob rewrite of task test would fight #88's
+# explicit list and the tests that require filenames in the task commands.
 _SEPARATE_TEST_MODULES = frozenset(
     {
         "tests/test_preview.py",
