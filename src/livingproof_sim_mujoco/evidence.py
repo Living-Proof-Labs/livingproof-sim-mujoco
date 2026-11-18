@@ -229,10 +229,11 @@ def _declared_world_shape(value, check):
 def _require_declared_world(world: dict) -> None:
     """Refuse a declared ``sources.world`` the adapter cannot map, before it is used.
 
-    This must run before ``evidence()`` creates the output directory. Schema
-    validation runs first; existing field and mapping checks stay as backstops
-    so an unmappable feature still raises UNSUPPORTED and a schema failure that
-    those checks miss still raises INCOMPATIBLE, with nothing written.
+    This must run before ``evidence()`` creates the output directory. Shape
+    and unique-name checks raise INCOMPATIBLE first. A schema failure is
+    also INCOMPATIBLE (with the field path), either before ``supported()``
+    or by re-raising its schema refusal. An unmappable feature from
+    ``supported()`` still raises UNSUPPORTED, with nothing written.
     """
     schema_error = None
     try:
@@ -297,9 +298,18 @@ def _require_declared_world(world: dict) -> None:
             "INCOMPATIBLE: lock sources.world dimensions must be an object. "
             'Example: "dimensions": {"clear_width": 1.5}.'
         )
+    _declared_world_shape(world, world_shapes.require_unique_names)
     try:
         hallway.supported(world)
     except hallway.Unsupported as exc:
+        # Mapping refusals (type, role, extra fields) stay UNSUPPORTED.
+        # A schema refusal from #89's supported() is the same error we
+        # already stored; raise it as INCOMPATIBLE so declared worlds keep
+        # that class on the combined tree.
+        if schema_error is not None and str(schema_error) in str(exc):
+            raise SystemExit(
+                f"INCOMPATIBLE: lock sources.world {world.get('format')} {schema_error}"
+            ) from schema_error
         raise SystemExit(str(exc)) from exc
     if schema_error is not None:
         raise SystemExit(
