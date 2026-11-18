@@ -120,21 +120,28 @@ the parameter file, the walk-corner file vendored from robot-capability-specs v2
 (`scenarios/catalog.json`) is used. The walk-hallway observation and its bytes are
 unchanged.
 
-The `world` in `run-manifest.json` names the vendored `world.json` that was loaded: its
+The `world` in `run-manifest.json` names the `world.json` that was loaded: its
 `id` and `version` come from the lock, and its `sha256` is the digest of those bytes. A
 lock `world.sha256` that disagrees is an ERROR before anything is written. A `world.tag`
 or `world.commit` that is not a release of that same file is the same ERROR. The
 published verification locks name livingproof-worlds v1.1.0; that release's
 `world.json` is the vendored file byte for byte, so those locks are accepted.
-`sources.world` does not select the simulated world. A sha256 that does not match the
-file it names is an ERROR, and the pins file is not used.
+When the lock declares `sources.world`, those bytes are the simulated world. A sha256
+that does not match the file it names is an ERROR, and a mismatched vendored copy is
+not substituted. The pins file is not used. The declared document is checked before
+use: it must include `geometry`, `places`, and `dimensions`, and be mappable. A world
+that fails that check is `INCOMPATIBLE` (or `UNSUPPORTED` for an unmappable feature)
+and nothing is written. `world.tag` and `world.commit` are not compared with a
+vendored release when `sources.world` is set; `world.sha256` pins the bytes. Locks
+without `sources.world` still load the vendored release named by `lock.world`.
 
 ## Standing check
 
 `python -m livingproof_sim_mujoco.walk stand <module:adapter> --configuration NAME --lock <lock.json> [--out DIR]`
 is the zero-command standing check at the world's start place. `--lock` is required. It
 is the same caller verification lock as `evidence`, and the world and the start place
-come from the vendored release that lock names. With `--out`, the check writes
+come from `prepare_run`: `sources.world` when the lock declares it, otherwise the
+vendored release that lock names. With `--out`, the check writes
 `stand.json` and `stand-zero-command.mp4` in that directory. It does not grade the robot.
 A lock missing `world`, `releases`, `configurations` or `plan` exits 1 and names the
 missing field.
@@ -179,7 +186,7 @@ Every sha256 in `manifest.json` and `run-manifest.json` resolves, and
   trials share it; the reproducibility check compares it.
 - `lock.sha256`, `world.sha256`, `lock.content.world.sha256`,
   `lock.content.configurations[].sha256`, `configuration.sha256` and
-  `robot.profile_sha256` are pinned inputs: the lock file, the vendored `world.json`, the
+  `robot.profile_sha256` are pinned inputs: the lock file, the loaded `world.json`, the
   robot's configuration file and its `robot.json`, at the commits the manifest records.
   They are not files in the evidence artifact.
 - Every sha256 under `robot.profile.` or `configuration.profile.` (in either manifest) and

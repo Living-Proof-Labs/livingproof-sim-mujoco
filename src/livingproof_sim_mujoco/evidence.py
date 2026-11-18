@@ -33,7 +33,7 @@ import mujoco
 
 from livingproof_scenario_parameters import ScenarioParameterError
 
-from livingproof_sim_mujoco import compose, scenario as sc, sources
+from livingproof_sim_mujoco import compose, hallway, scenario as sc, sources, world_shapes
 from livingproof_sim_mujoco.compat import hallway as frozen
 from livingproof_sim_mujoco.cpu import host_cpus, one_torch_thread
 from livingproof_sim_mujoco.pins import fetch, sha256
@@ -215,12 +215,116 @@ def parameters(robot: Robot, name: str, lock: dict) -> dict:
     return prepare_run(robot, name, lock).recorded
 
 
+_DECLARED_WORLD_FIELDS = ("geometry", "places", "dimensions")
+
+
+def _declared_world_shape(value, check):
+    """Run a world_shapes check, mapping WorldShapeError to an INCOMPATIBLE refusal."""
+    try:
+        return check(value)
+    except world_shapes.WorldShapeError as exc:
+        raise SystemExit(f"INCOMPATIBLE: lock sources.world {exc}") from exc
+
+
+def _require_declared_world(world: dict) -> None:
+    """Refuse a declared ``sources.world`` the adapter cannot map, before it is used.
+
+    This must run before ``evidence()`` creates the output directory. Shape
+    and unique-name checks raise INCOMPATIBLE first. A schema failure is
+    also INCOMPATIBLE (with the field path), either before ``supported()``
+    or by re-raising its schema refusal. An unmappable feature from
+    ``supported()`` still raises UNSUPPORTED, with nothing written.
+    """
+    schema_error = None
+    try:
+        world_shapes.validate_schema(world)
+    except world_shapes.WorldShapeError as exc:
+        schema_error = exc
+    missing = [key for key in _DECLARED_WORLD_FIELDS if key not in world]
+    if missing:
+        named = ", ".join(repr(key) for key in missing)
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world has no "
+            f"{named}. The declared world is the one that is simulated, so it "
+            "must include the fields the adapter maps. "
+            'Example: a world.json with "geometry", "places", and "dimensions".'
+        )
+    geometry = world["geometry"]
+    if not isinstance(geometry, list) or not geometry:
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world geometry must be a non-empty list "
+            "of objects. "
+            'Example: "geometry": [{"name": "floor", "type": "box", '
+            '"role": "floor", "centre": [0, 0, 0], "size": [1, 1, 0.1]}].'
+        )
+    for index, item in enumerate(geometry):
+        if not isinstance(item, dict):
+            raise SystemExit(
+                "INCOMPATIBLE: lock sources.world "
+                f"geometry[{index}] must be an object with name, type, role, "
+                "centre and size."
+            )
+        absent = [key for key in sorted(hallway.GEOMETRY_KEYS) if key not in item]
+        if absent:
+            named = ", ".join(repr(key) for key in absent)
+            raise SystemExit(
+                "INCOMPATIBLE: lock sources.world "
+                f"geometry[{index}] has no {named}. Each geometry item needs "
+                "name, type, role, centre and size."
+            )
+        _declared_world_shape(
+            item,
+            lambda value, i=index: world_shapes.require_geometry_item(
+                value, keys=hallway.GEOMETRY_KEYS, label=f"geometry[{i}]"
+            ),
+        )
+    places = world["places"]
+    if not isinstance(places, list) or not places:
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world places must be a non-empty list "
+            "of objects. "
+            'Example: "places": [{"name": "spawn-entrance", "type": "pose", '
+            '"position": [0, 0, 0], "yaw_deg": 0}].'
+        )
+    for index, item in enumerate(places):
+        if not isinstance(item, dict):
+            raise SystemExit(f"INCOMPATIBLE: lock sources.world places[{index}] must be an object.")
+        _declared_world_shape(
+            item,
+            lambda value, i=index: world_shapes.require_place_item(value, f"places[{i}]"),
+        )
+    if not isinstance(world["dimensions"], dict):
+        raise SystemExit(
+            "INCOMPATIBLE: lock sources.world dimensions must be an object. "
+            'Example: "dimensions": {"clear_width": 1.5}.'
+        )
+    _declared_world_shape(world, world_shapes.require_unique_names)
+    try:
+        hallway.supported(world)
+    except hallway.Unsupported as exc:
+        # Mapping refusals (type, role, extra fields) stay UNSUPPORTED.
+        # A schema refusal from #89's supported() is the same error we
+        # already stored; raise it as INCOMPATIBLE so declared worlds keep
+        # that class on the combined tree.
+        if schema_error is not None and str(schema_error) in str(exc):
+            raise SystemExit(
+                f"INCOMPATIBLE: lock sources.world {world.get('format')} {schema_error}"
+            ) from schema_error
+        raise SystemExit(str(exc)) from exc
+    if schema_error is not None:
+        raise SystemExit(
+            f"INCOMPATIBLE: lock sources.world {world.get('format')} {schema_error}"
+        ) from schema_error
+
+
 def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepared:
     """Parameters, command and world for one configuration.
 
-    The world is the vendored release named by ``lock["world"]``. Scenario
-    parameter bytes still follow ``sources``: a lock entry, else the robot
-    pins, else the vendored parameter file.
+    When the lock declares ``sources.world``, those bytes are the simulated
+    world. A mismatched vendored copy is not substituted. Locks without
+    ``sources.world`` still load the vendored release named by ``lock["world"]``.
+    Scenario parameter bytes still follow ``sources``: a lock entry, else the
+    robot pins, else the vendored parameter file.
     """
     if lock is None:
         raise SystemExit(
@@ -229,12 +333,19 @@ def prepare_run(robot: Robot, name: str, lock: dict | None = None) -> sc.Prepare
         )
     root = Path(robot.root)
     document, _source = sources.parameters_document_for(root, lock)
-    world, digest, relative = compose.vendored_world(lock)
-    # sources.world does not select the simulated world. A sha256 that does not
-    # match the file it names is still an error, the same as world.sha256.
     if isinstance(lock.get("sources"), dict) and "world" in lock["sources"]:
-        sources.world_source(root, lock)
-    selected = sources.WorldSource(world, "vendored", digest, relative)
+        selected = sources.world_source(root, lock)
+        world = selected.document
+        if not isinstance(world, dict):
+            raise SystemExit(
+                "ERROR: lock sources.world did not yield a world document. "
+                'Example: "sources": {"world": {"path": "world.json", '
+                '"sha256": "<64 hex>"}}'
+            )
+        _require_declared_world(world)
+    else:
+        world, digest, relative = compose.vendored_world(lock)
+        selected = sources.WorldSource(world, "vendored", digest, relative)
     try:
         prepared = sc.prepare(robot.robot(), robot.configuration(name), world, document)
     except ScenarioParameterError as exc:
@@ -597,11 +708,12 @@ def _require(label: str, value: str, pattern: re.Pattern[str]) -> str:
 
 
 def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dict:
-    """``{"id", "version", "sha256"}`` of the vendored world this run loaded.
+    """``{"id", "version", "sha256"}`` of the world this run loaded.
 
     Lock ``world.id`` and ``world.version`` must agree with that file. The
-    sha256 is the digest of the vendored ``world.json``. A lock ``world.sha256``
-    that disagrees is an ERROR.
+    sha256 is the digest of the loaded ``world.json`` (``sources.world`` when
+    present, otherwise the vendored file). A lock ``world.sha256`` that
+    disagrees is an ERROR.
     """
     legacy = lock.get("world", {})
     if not isinstance(legacy, dict):
@@ -1040,6 +1152,9 @@ def evidence(
             raise SystemExit(str(exc)) from exc
     # A missing wall or an origin start writes nothing. An unmet precondition
     # does not build a model: the robot cannot attempt the scenario.
+    # World refusals (INCOMPATIBLE/UNSUPPORTED, including an exit with no
+    # points) must already have been raised above: nothing after this mkdir
+    # may refuse the declared world.
     if unmet is None:
         compose.place(robot, name, world, p["spawn"], offset)
     out = Path(out)
