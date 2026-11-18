@@ -322,11 +322,13 @@ def prepare_run(
     name: str,
     lock: dict | None = None,
     parameters: sources.ParametersSource | None = None,
+    world: sources.WorldSource | None = None,
 ) -> sc.Prepared:
     """Parameters, command and world for one configuration.
 
-    ``parameters`` is a file the caller already read with ``sources.parameters_source``.
-    Passing it keeps one read per run, so the digest recorded is of the bytes used.
+    ``parameters`` and ``world`` are files the caller already read with
+    ``sources.parameters_source`` and ``sources.world_source``. Passing them
+    keeps one read per run, so the digest recorded is of the bytes used.
 
     When the lock declares ``sources.world``, those bytes are the simulated
     world. A mismatched vendored copy is not substituted. Locks without
@@ -344,30 +346,33 @@ def prepare_run(
         parameters = sources.parameters_source(root, lock)
     document = parameters.document
     if isinstance(lock.get("sources"), dict) and "world" in lock["sources"]:
-        selected = sources.world_source(root, lock)
-        world = selected.document
-        if not isinstance(world, dict):
+        selected = sources.world_source(root, lock) if world is None else world
+        world_doc = selected.document
+        if not isinstance(world_doc, dict):
             raise SystemExit(
                 "ERROR: lock sources.world did not yield a world document. "
                 'Example: "sources": {"world": {"path": "world.json", '
                 '"sha256": "<64 hex>"}}'
             )
-        _require_declared_world(world)
+        _require_declared_world(world_doc)
+    elif world is not None:
+        selected = world
+        world_doc = selected.document
     else:
-        world, digest, relative = compose.vendored_world(lock)
-        selected = sources.WorldSource(world, "vendored", digest, relative)
+        world_doc, digest, relative = compose.vendored_world(lock)
+        selected = sources.WorldSource(world_doc, "vendored", digest, relative)
     try:
-        prepared = sc.prepare(robot.robot(), robot.configuration(name), world, document)
+        prepared = sc.prepare(robot.robot(), robot.configuration(name), world_doc, document)
     except ScenarioParameterError as exc:
         text = str(exc)
         raise SystemExit(text if text.startswith("ERROR") else f"ERROR: {text}") from exc
     # A scenario with a command is written in the frozen observation format, which
     # stays on format 0.1 worlds. An adapter-driven scenario uses the route format.
-    refusal = frozen.unsupported_world(world) if prepared.command is not None else None
+    refusal = frozen.unsupported_world(world_doc) if prepared.command is not None else None
     if refusal:
         raise SystemExit(refusal)
     # The world that was loaded and checked. The manifests name this one (#39).
-    prepared.world = world
+    prepared.world = world_doc
     prepared.world_source = selected
     prepared.parameters_source = parameters
     return prepared
@@ -694,13 +699,14 @@ def recording(
     lock: dict,
     name: str,
     parameters: sources.ParametersSource | None = None,
+    world: sources.WorldSource | None = None,
 ) -> tuple[dict, sc.Prepared]:
     """(plan, prepared scenario) exactly as every evidence trial is recorded.
 
     ``time_limit`` is the parameter file's expression. The frozen scenario
     records it unrounded; the spec-rounded value is what ``resolve`` returns.
     """
-    return lock_field(lock, "plan", dict), prepare_run(robot, name, lock, parameters)
+    return lock_field(lock, "plan", dict), prepare_run(robot, name, lock, parameters, world)
 
 
 def recorded_sources(parameters: sources.ParametersSource) -> dict:

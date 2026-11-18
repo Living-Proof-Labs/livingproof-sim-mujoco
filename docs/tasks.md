@@ -315,7 +315,7 @@ commands:
  - MUJOCO_GL=egl uv run --no-sync pytest tests/test_evidence.py --junitxml=artifacts/evidence.xml
  - uv run --no-sync pytest tests/test_declared_hashes.py tests/test_declared_profile_hashes_review.py tests/test_declared_hashes_real_runs.py --junitxml=artifacts/declared-hashes.xml
  - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
- - uv run --no-sync pytest tests/test_scenario_sources.py tests/test_scenario_supported.py tests/test_declared_world_review.py tests/test_parameters_digest.py --junitxml=artifacts/scenario-sources.xml
+ - uv run --no-sync pytest tests/test_scenario_sources.py tests/test_scenario_supported.py tests/test_declared_world_review.py tests/test_parameters_digest.py tests/test_world_single_read.py --junitxml=artifacts/scenario-sources.xml
  - uv run --no-sync pytest tests/test_compose.py tests/test_locked_source_review.py --junitxml=artifacts/compose.xml
  - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
  - uv run --no-sync pytest tests/test_walk_corner.py --junitxml=artifacts/walk-corner.xml

@@ -112,17 +112,20 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
     release = directory / "release.json"
     if not release.is_file():
         raise FixtureError(f"{key}: missing {release}")
-    actual = sha256(release)
+    release_bytes = release.read_bytes()
+    actual = hashlib.sha256(release_bytes).hexdigest()
     if actual != pin["release_sha256"]:
         raise FixtureError(
             f"{key}: release.json checksum mismatch: expected {pin['release_sha256']} "
             f"(livingproof-worlds {pin['tag']} {pin['commit']}), got {actual}"
         )
-    manifest = json.loads(release.read_text())
+    manifest = json.loads(release_bytes)
     if (manifest.get("id"), manifest.get("content_version")) != (fixture, content_version):
         raise FixtureError(
             f"{key}: release.json names {manifest.get('id')} {manifest.get('content_version')}"
         )
+    world_bytes: bytes | None = None
+    world_digest: str | None = None
     for name, expected in sorted(manifest["files"].items()):
         path = directory / name
         if name in GENERATED_DOCS:
@@ -130,11 +133,15 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
             continue
         if not path.is_file():
             raise FixtureError(f"{key}: missing released file {name}")
-        got = sha256(path)
+        raw = path.read_bytes()
+        got = hashlib.sha256(raw).hexdigest()
         if got != expected:
             raise FixtureError(
                 f"{key}: checksum mismatch for {name}: expected {expected}, got {got}"
             )
+        if name == "world.json":
+            world_bytes = raw
+            world_digest = got
     unknown = sorted(n for n in manifest["files"] if n not in VENDORED and n not in GENERATED_DOCS)
     if unknown:
         raise FixtureError(
@@ -143,9 +150,11 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
     extras = sorted(p.name for p in directory.iterdir() if p.name not in VENDORED)
     if extras:
         raise FixtureError(f"{key}: files not vendored from release.json: {', '.join(extras)}")
-    world = json.loads((directory / "world.json").read_text())
+    if world_bytes is None or world_digest is None:
+        raise FixtureError(f"{key}: missing released file world.json")
+    world = json.loads(world_bytes)
     extension = json.loads((root / pin["extension"]).read_text())
-    return {"world": world, "extension": extension, "pin": pin}
+    return {"world": world, "extension": extension, "pin": pin, "world_sha256": world_digest}
 
 
 def _shape(fid: str, ver: str, value, check):
