@@ -2,13 +2,12 @@
 """World and scenario parameter files for one evidence run.
 
 A verification-lock ``sources`` entry wins. Its sha256 is checked and a
-mismatch is an ERROR; pins are not consulted after that. When the lock has no
-entry, the robot's ``pins.json`` is used.
+mismatch is an ERROR; pins are not consulted after that.
 
-# TODO(#40 step 7): remove the pins.json fallback, and the vendored parameter
-# file used when the pins do not list one, once the verification lock always
-# carries the world and the scenario files.
-# https://github.com/Living-Proof-Labs/robot-capability-specs/issues/40
+Parameter bytes come only from ``sources.parameters``. A lock that omits that
+entry is a clear ERROR, not a pins.json or vendored default
+(livingproof-verification#119). World files still fall back to pins when the
+lock has no ``sources.world`` entry.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import json
 import re
 from pathlib import Path
 
-from livingproof_sim_mujoco.compat.hallway import FROZEN_WORLD_PATH, parameters_document
+from livingproof_sim_mujoco.compat.hallway import FROZEN_WORLD_PATH
 from livingproof_sim_mujoco.pins import load_pins
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -113,15 +112,6 @@ def _world_relative(lock: dict | None) -> str:
     return FROZEN_WORLD_PATH
 
 
-def _parameters_relative(lock: dict | None) -> str | None:
-    scenario = lock.get("scenario") if isinstance(lock, dict) else None
-    if isinstance(scenario, dict):
-        scenario = scenario.get("id")
-    if not isinstance(scenario, str) or "@" not in scenario:
-        return None
-    return f"specs/scenarios/{scenario.split('@', 1)[0]}/parameters.json"
-
-
 @dataclass(frozen=True)
 class WorldSource:
     """The world file one run loads, and the sha256 of the bytes that were read.
@@ -159,50 +149,17 @@ def world_document(root: Path, lock: dict | None) -> dict | None:
 
 
 def parameters_document_for(root: Path, lock: dict | None) -> tuple[dict, str]:
-    """``(document, source)`` with source ``lock``, ``pins``, or ``vendored``.
+    """``(document, source)`` from ``sources.parameters`` only.
 
-    The vendored file is only used when the lock has no entry and the pins do
-    not list the scenario parameter file. That keeps robots whose pins predate
-    the parameter file able to record the frozen scenario.
+    A missing ``sources.parameters`` entry is a clear ERROR. Pins and the
+    vendored parameter file are not used.
     """
     entry = _entry(lock, "parameters")
     if entry is not None:
         return json.loads(_read_locked(root, entry, "parameters")), "lock"
-    # TODO(#40 step 7): remove this pins.json fallback. See the module docstring.
-    relative = _parameters_relative(lock)
-    pinned = _pinned(root, relative) if relative else None
-    if pinned is not None:
-        return json.loads(pinned.read_text()), "pins"
-    vendored = vendored_parameters(lock)
-    if vendored is not None:
-        return vendored, "vendored"
-    # TODO(#40 step 7): remove this vendored copy once the lock always has the file.
-    return parameters_document(), "vendored"
-
-
-SCENARIOS = Path(__file__).parent / "scenarios"
-
-
-def vendored_parameters(lock: dict | None) -> dict | None:
-    """The vendored parameter file for the lock's ``scenario`` (id@revision), or None.
-
-    ``scenarios/catalog.json`` names the specs release each file was copied from and
-    its sha256. A file that does not match is a test-system ERROR, never a substitute.
-    """
-    scenario = lock.get("scenario") if isinstance(lock, dict) else None
-    if isinstance(scenario, dict):
-        scenario = scenario.get("id")
-    if not isinstance(scenario, str):
-        return None
-    entry = json.loads((SCENARIOS / "catalog.json").read_text()).get(scenario)
-    if not isinstance(entry, dict):
-        return None
-    data = (SCENARIOS / entry["file"]).read_bytes()
-    digest = hashlib.sha256(data).hexdigest()
-    if digest != entry["sha256"]:
-        raise SystemExit(
-            f"ERROR: vendored parameter file for {scenario} has sha256 {digest}, but "
-            f"scenarios/catalog.json records {entry['sha256']} "
-            f"({entry['repository']} {entry['tag']}). Restore it from that release."
-        )
-    return json.loads(data)
+    raise SystemExit(
+        "ERROR: lock sources.parameters is missing. "
+        "Declare the parameter file as "
+        '"sources": {"parameters": {"path": "parameters.json", "sha256": "<64 hex>"}}. '
+        "Pins.json and the vendored parameter file are not used."
+    )

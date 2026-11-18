@@ -184,6 +184,12 @@ def _repo(tmp_path, monkeypatch, scenarios=("walk-corner",), cls=Corner) -> Path
             "specs": {"tag": "v2.3.0", "commit": SPECS_V230},
         },
     }
+    parameters = SPECS / "walk-corner-parameters.json"
+    dest = repo / "parameters.json"
+    dest.write_bytes(parameters.read_bytes())
+    lock["sources"] = {
+        "parameters": {"path": "parameters.json", "sha256": pins.sha256(dest)},
+    }
     (repo / "caller.lock.json").write_text(json.dumps(lock))
     git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
@@ -227,8 +233,16 @@ def test_vendored_walk_corner_parameters_are_specs_v2_3_0(tmp_path):
     raw = (PACKAGE / "scenarios" / entry["file"]).read_bytes()
     assert raw == (SPECS / "walk-corner-parameters.json").read_bytes()
     assert hashlib.sha256(raw).hexdigest() == entry["sha256"]
-    document, origin = sources.parameters_document_for(tmp_path, {"scenario": "walk-corner@0.1.0"})
-    assert origin == "vendored" and document["scenario"]["id"] == "walk-corner"
+    dest = tmp_path / "parameters.json"
+    dest.write_bytes(raw)
+    lock = {
+        "scenario": "walk-corner@0.1.0",
+        "sources": {
+            "parameters": {"path": "parameters.json", "sha256": entry["sha256"]},
+        },
+    }
+    document, origin = sources.parameters_document_for(tmp_path, lock)
+    assert origin == "lock" and document["scenario"]["id"] == "walk-corner"
     assert "command" not in document
 
 

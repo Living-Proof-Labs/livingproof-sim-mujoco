@@ -200,6 +200,14 @@ def _repo(tmp_path):
             },
         },
     }
+    parameters = (
+        Path(__file__).resolve().parents[1] / "src/livingproof_sim_mujoco/compat/parameters.json"
+    )
+    dest = tmp_path / "parameters.json"
+    dest.write_bytes(parameters.read_bytes())
+    lock["sources"] = {
+        "parameters": {"path": "parameters.json", "sha256": pins.sha256(dest)},
+    }
     (tmp_path / CALLER_LOCK).write_text(json.dumps(lock))
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(
