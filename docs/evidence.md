@@ -159,6 +159,7 @@ decimal places and `time_limit` unrounded.
 - Exit 1: the lock, plan, manifest, or composed world is unusable (`INCOMPATIBLE` or `UNSUPPORTED` are this exit). An unknown adapter commit is one case: no manifest is written.
 - Exit 2: the command line is unusable (argparse), including a missing `--lock`.
 - Exit 4: `trials.count` is greater than 1 and the trials disagree. The manifest records that as a test-system reproducibility finding (`trials.reproducibility.finding`). It is not a robot grade. The physics command's exits (2, 124, 130, 143) and the hallway fixture tool's exit 1 (a non-PASS world result) are different programs and are not this code.
+- Exit 5: a trial raised an exception. `manifest.json` is still written for the trials that ran, with the failed trial recorded in `trials.results[]` as `{"index", "exception": {"type", "message"}, "wall_clock_s"}` (a single-line message up to 240 characters) and no `outcome`, `path`, `sha256`, or `trajectory_sha256`, and later trials do not run. Because the exit is non-zero and not 4, `scenario.yml` stops before `verify`, and the verifier refuses to grade a manifest whose trial result omits `path` and `sha256`.
 
 `simulator.adapter_commit` in `run-manifest.json` is the 40-character commit of this
 adapter. The field is required by `livingproof-run-manifest/0.1`; the object has no
