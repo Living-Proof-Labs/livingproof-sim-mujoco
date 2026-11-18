@@ -23,7 +23,6 @@ import mujoco
 import numpy as np
 
 from livingproof_sim_mujoco import hallway
-from livingproof_sim_mujoco.pins import sha256
 from livingproof_sim_mujoco.scene import add_world
 
 # A base whose x and y are this close to 0 is at the world origin.
@@ -66,8 +65,7 @@ def vendored_world(lock: dict) -> tuple[dict, str, str]:
         hallway.to_mjcf(world, extension)
     except hallway.Unsupported as exc:
         raise SystemExit(str(exc)) from exc
-    path = hallway.WORLDS / fixture / version / "world.json"
-    digest = sha256(path)
+    digest = loaded["world_sha256"]
     named = declared.get("sha256")
     if named is not None and named != digest:
         raise SystemExit(

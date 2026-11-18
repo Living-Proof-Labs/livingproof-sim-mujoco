@@ -197,6 +197,7 @@ def stand(ref, name: str, out: Path | None = None, *, lock: Path) -> dict:
     ev.require_lock(document)
     entry = ev.locked_configuration(document, name, root)
     prepared = ev.prepare_run(robot, name, document)
+    ev.world_identity(root, document, prepared.world_source)
     p = prepared.recorded
     rs = robot.runner_settings()
     seconds = rs["stand_seconds"]

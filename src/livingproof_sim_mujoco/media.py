@@ -272,6 +272,7 @@ def media(
                 "manifest. Media replays that recorded lock. Pass the same file, or omit --lock."
             )
     plan, prepared = ev.recording(robot, recorded, name)
+    ev.world_identity(Path(robot.root), recorded, prepared.world_source)
     p = prepared.recorded
     world = prepared.world
     geometry = ev.sc.route_geometry(world, prepared.document)
