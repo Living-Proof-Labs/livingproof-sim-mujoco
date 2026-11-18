@@ -101,11 +101,11 @@ def test_mjcf_compiles_with_geometry_verbatim_and_places_as_sites(loaded):
 @pytest.mark.parametrize(
     "edit,feature",
     [
-        # 0.2 (any-layout worlds such as hallway-corner) maps since #40 step 11a; a format
-        # this adapter does not know is still UNSUPPORTED.
+        # 0.2 (any-layout) and 0.3 (traversals) map; a format this adapter
+        # does not know is still UNSUPPORTED.
         (
-            lambda w: w.update(format="livingproof-world/0.3"),
-            "world format 'livingproof-world/0.3'",
+            lambda w: w.update(format="livingproof-world/0.4"),
+            "world format 'livingproof-world/0.4'",
         ),
         (lambda w: w.update(lights=[]), "top-level field 'lights'"),
         (lambda w: w["geometry"][1].update(type="mesh"), "geometry 'wall-left' type 'mesh'"),

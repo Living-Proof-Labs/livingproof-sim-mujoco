@@ -14,14 +14,18 @@ from importlib.metadata import version
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
 
-from livingproof_sim_mujoco import contract
+from livingproof_sim_mujoco import contract, world_shapes
 
 WORLDS = Path(__file__).parent / "worlds"
 RESULT_FORMAT = contract.RESULT_FORMAT
 SUPPORTED_FORMAT = "livingproof-world/0.1"
-# Format 0.2 ("Any layout", world contract 0.3.0) has the same keys; every wall is still an
+# Format 0.2 ("Any layout") has the same keys as 0.1; every wall is still an
 # axis-aligned box, so the same MJCF mapping applies.
-SUPPORTED_FORMATS = (SUPPORTED_FORMAT, "livingproof-world/0.2")
+# Format 0.3 keeps those keys and adds a `traversals` list of
+# {name, from, start, route, finish} naming existing places. Geometry and
+# places still map the same way; compose / add_world / initial_state expose
+# the named start, route and finish places.
+SUPPORTED_FORMATS = (SUPPORTED_FORMAT, "livingproof-world/0.2", "livingproof-world/0.3")
 GEOMETRY_KEYS = {"name", "type", "role", "centre", "size"}
 PLACE_KEYS = {
     "segment": {"name", "type", "points", "reference"},
@@ -29,6 +33,8 @@ PLACE_KEYS = {
     "polyline": {"name", "type", "points"},
     "pose": {"name", "type", "position", "yaw_deg"},
 }
+TRAVERSAL_KEYS = {"name", "from", "start", "route", "finish"}
+TRAVERSAL_PLACE_FIELDS = ("from", "start", "route", "finish")
 WORLD_KEYS = {
     "format",
     "id",
@@ -41,6 +47,7 @@ WORLD_KEYS = {
     "dimensions",
     "geometry",
     "places",
+    "traversals",
     "tolerances",
     "provenance",
     "license",
@@ -141,6 +148,14 @@ def load_fixture(fixture: str, content_version: str, root: Path = WORLDS) -> dic
     return {"world": world, "extension": extension, "pin": pin}
 
 
+def _shape(fid: str, ver: str, value, check):
+    """Run a world_shapes check, mapping WorldShapeError to Unsupported."""
+    try:
+        return check(value)
+    except world_shapes.WorldShapeError as exc:
+        raise Unsupported(fid, ver, str(exc)) from exc
+
+
 def supported(world: dict) -> None:
     """Raise Unsupported for the first declared feature this adapter cannot map."""
     fid, ver = world.get("id", "?"), world.get("content_version", "?")
@@ -150,19 +165,85 @@ def supported(world: dict) -> None:
         raise Unsupported(fid, ver, f"top-level field {key!r}")
     if world.get("units") != "m":
         raise Unsupported(fid, ver, f"units {world.get('units')!r}")
-    for g in world["geometry"]:
+    # Validate against the published schema first; defer the raise so existing
+    # adapter mapping messages (type, role, extra fields) stay unchanged.
+    schema_error = None
+    try:
+        world_shapes.validate_schema(world)
+    except world_shapes.WorldShapeError as exc:
+        schema_error = exc
+    for field in ("geometry", "places"):
+        if not isinstance(world.get(field), list):
+            raise Unsupported(
+                fid,
+                ver,
+                f"missing {field}" if field not in world else f"{field} is not a list",
+            )
+    for index, item in enumerate(world["geometry"]):
+        g = _shape(
+            fid,
+            ver,
+            item,
+            lambda value, i=index: world_shapes.require_geometry_item(
+                value, keys=GEOMETRY_KEYS, label=f"geometry[{i}]"
+            ),
+        )
         if g.get("type") != "box":
             raise Unsupported(fid, ver, f"geometry {g.get('name')!r} type {g.get('type')!r}")
         if g.get("role") not in ("floor", "wall"):
             raise Unsupported(fid, ver, f"geometry {g.get('name')!r} role {g.get('role')!r}")
         for key in sorted(set(g) - GEOMETRY_KEYS):
             raise Unsupported(fid, ver, f"geometry {g.get('name')!r} field {key!r}")
-    for p in world["places"]:
+    for index, item in enumerate(world["places"]):
+        p = _shape(
+            fid,
+            ver,
+            item,
+            lambda value, i=index: world_shapes.require_place_item(value, f"places[{i}]"),
+        )
         allowed = PLACE_KEYS.get(p.get("type"))
         if allowed is None:
             raise Unsupported(fid, ver, f"place {p.get('name')!r} type {p.get('type')!r}")
         for key in sorted(set(p) - allowed):
             raise Unsupported(fid, ver, f"place {p.get('name')!r} field {key!r}")
+    _shape(fid, ver, world, world_shapes.require_unique_names)
+    if world.get("format") == "livingproof-world/0.3":
+        _supported_traversals(fid, ver, world)
+    if schema_error is not None:
+        raise Unsupported(fid, ver, str(schema_error)) from schema_error
+
+
+def _supported_traversals(fid: str, ver: str, world: dict) -> None:
+    """Refuse a 0.3 world whose traversals are missing, malformed, or name unknown places."""
+    traversals = world.get("traversals")
+    if not isinstance(traversals, list) or not traversals:
+        raise Unsupported(fid, ver, "traversals must be a non-empty list")
+    declared = {p.get("name") for p in world["places"] if isinstance(p, dict)}
+    for item in traversals:
+        if not isinstance(item, dict):
+            raise Unsupported(fid, ver, "traversal item is not an object")
+        missing = TRAVERSAL_KEYS - set(item)
+        extra = set(item) - TRAVERSAL_KEYS
+        name = item.get("name", "?")
+        if missing:
+            raise Unsupported(fid, ver, f"traversal {name!r} missing {sorted(missing)[0]}")
+        if extra:
+            raise Unsupported(fid, ver, f"traversal {name!r} has extra field {sorted(extra)[0]}")
+        name = _shape(
+            fid,
+            ver,
+            item.get("name"),
+            lambda value: world_shapes.require_string(value, "traversal name"),
+        )
+        for role in TRAVERSAL_PLACE_FIELDS:
+            place = _shape(
+                fid,
+                ver,
+                item[role],
+                lambda value, r=role: world_shapes.require_string(value, f"traversal {r}"),
+            )
+            if place not in declared:
+                raise Unsupported(fid, ver, f"traversal {name!r} {role} {place!r} is not a place")
 
 
 def _v(values) -> str:

@@ -1,0 +1,475 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Living-Proof-Labs/livingproof-worlds/schema/world-0.3.schema.json",
+  "title": "Living Proof Labs world, format livingproof-world/0.3",
+  "description": "Neutral endpoint traversals implementing world contract 0.4.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "id",
+    "content_version",
+    "title",
+    "description",
+    "specification",
+    "units",
+    "frame",
+    "dimensions",
+    "geometry",
+    "places",
+    "tolerances",
+    "provenance",
+    "license",
+    "traversals"
+  ],
+  "allOf": [
+    {
+      "properties": {
+        "dimensions": {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "length"
+                ]
+              },
+              {
+                "required": [
+                  "exterior_width"
+                ]
+              }
+            ]
+          }
+        },
+        "frame": {
+          "properties": {
+            "axes": {
+              "properties": {
+                "z": {
+                  "const": "up"
+                }
+              }
+            },
+            "pose": {
+              "const": "position (x, y, z) plus yaw in degrees, positive about +z"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "interval": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "positive": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    }
+  },
+  "properties": {
+    "format": {
+      "const": "livingproof-world/0.3"
+    },
+    "id": {
+      "$ref": "#/$defs/name"
+    },
+    "content_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "specification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "path",
+        "tag",
+        "commit",
+        "document_revision",
+        "world_contract_revision"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
+        },
+        "path": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "document_revision": {
+          "const": "0.4.0"
+        },
+        "world_contract_revision": {
+          "const": "0.4.0"
+        }
+      }
+    },
+    "units": {
+      "const": "m"
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handedness",
+        "origin",
+        "axes",
+        "pose"
+      ],
+      "properties": {
+        "handedness": {
+          "const": "right"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "axes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "properties": {
+            "x": {
+              "type": "string"
+            },
+            "y": {
+              "type": "string"
+            },
+            "z": {
+              "type": "string"
+            }
+          }
+        },
+        "pose": {
+          "type": "string"
+        }
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clear_width",
+        "wall_height",
+        "wall_thickness",
+        "floor_thickness"
+      ],
+      "properties": {
+        "clear_width": {
+          "$ref": "#/$defs/positive"
+        },
+        "length": {
+          "$ref": "#/$defs/positive"
+        },
+        "wall_height": {
+          "$ref": "#/$defs/positive"
+        },
+        "wall_thickness": {
+          "$ref": "#/$defs/positive"
+        },
+        "exterior_width": {
+          "$ref": "#/$defs/positive"
+        },
+        "floor_thickness": {
+          "$ref": "#/$defs/positive"
+        }
+      }
+    },
+    "geometry": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "type",
+          "role",
+          "centre",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/name"
+          },
+          "type": {
+            "enum": [
+              "box"
+            ]
+          },
+          "role": {
+            "enum": [
+              "floor",
+              "wall"
+            ]
+          },
+          "centre": {
+            "$ref": "#/$defs/vec3"
+          },
+          "size": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/positive"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        }
+      }
+    },
+    "places": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "segment",
+              "region",
+              "polyline",
+              "pose"
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "required": [
+              "points",
+              "reference"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "type": {
+                "const": "segment"
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/vec3"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "reference": {
+                "$ref": "#/$defs/vec3"
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": [
+              "x",
+              "y"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "type": {
+                "const": "region"
+              },
+              "x": {
+                "$ref": "#/$defs/interval"
+              },
+              "y": {
+                "$ref": "#/$defs/interval"
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": [
+              "points"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "type": {
+                "const": "polyline"
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/vec3"
+                },
+                "minItems": 2
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "required": [
+              "position",
+              "yaw_deg"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "type": {
+                "const": "pose"
+              },
+              "position": {
+                "$ref": "#/$defs/vec3"
+              },
+              "yaw_deg": {
+                "type": "number"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "tolerances": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distance_m",
+        "angle_deg"
+      ],
+      "properties": {
+        "distance_m": {
+          "$ref": "#/$defs/positive"
+        },
+        "angle_deg": {
+          "$ref": "#/$defs/positive"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authors",
+        "method",
+        "assets"
+      ],
+      "properties": {
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "source",
+              "license",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "license": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "traversals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "from",
+          "start",
+          "route",
+          "finish"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/name"
+          },
+          "from": {
+            "$ref": "#/$defs/name"
+          },
+          "start": {
+            "$ref": "#/$defs/name"
+          },
+          "route": {
+            "$ref": "#/$defs/name"
+          },
+          "finish": {
+            "$ref": "#/$defs/name"
+          }
+        }
+      }
+    }
+  }
+}

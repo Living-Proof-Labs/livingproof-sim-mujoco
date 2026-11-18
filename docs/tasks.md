@@ -306,7 +306,7 @@ commands:
  - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
  - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
  - uv run --no-sync pytest tests/test_policy.py --junitxml=artifacts/policy.xml
- - uv run --no-sync pytest tests/test_hallway.py --junitxml=artifacts/hallway.xml
+ - uv run --no-sync pytest -v tests/test_hallway.py tests/test_world_format_0_3.py tests/test_world_format_0_3_review.py --junitxml=artifacts/hallway.xml
  - uv run --no-sync pytest tests/test_observations.py --junitxml=artifacts/observations.xml
  - uv run --no-sync pytest tests/test_contract.py --junitxml=artifacts/contract.xml
  - uv run --no-sync pytest tests/test_installed_adapter_commit.py --junitxml=artifacts/installed-adapter.xml
@@ -315,7 +315,7 @@ commands:
  - MUJOCO_GL=egl uv run --no-sync pytest tests/test_evidence.py --junitxml=artifacts/evidence.xml
  - uv run --no-sync pytest tests/test_declared_hashes.py tests/test_declared_profile_hashes_review.py tests/test_declared_hashes_real_runs.py --junitxml=artifacts/declared-hashes.xml
  - uv run --no-sync pytest tests/test_fit_width.py --junitxml=artifacts/fit-width.xml
- - uv run --no-sync pytest tests/test_scenario_sources.py tests/test_scenario_supported.py --junitxml=artifacts/scenario-sources.xml
+ - uv run --no-sync pytest tests/test_scenario_sources.py tests/test_scenario_supported.py tests/test_declared_world_review.py --junitxml=artifacts/scenario-sources.xml
  - uv run --no-sync pytest tests/test_compose.py tests/test_locked_source_review.py --junitxml=artifacts/compose.xml
  - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
  - uv run --no-sync pytest tests/test_walk_corner.py --junitxml=artifacts/walk-corner.xml
