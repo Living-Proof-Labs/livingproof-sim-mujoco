@@ -204,7 +204,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-boundary.outputs.release-needed == 'true'
     permissions:
       contents: write
-    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.6.11
+    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.6.13
     with:
       draft-release: true
   assemble:
