@@ -216,3 +216,29 @@ def test_declared_world_with_duplicate_names_is_refused_clearly(tmp_path, monkey
     with pytest.raises(SystemExit, match="^(INCOMPATIBLE|UNSUPPORTED)"):
         t._evidence(repo, out, trials=1)
     assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "edit"),
+    [
+        pytest.param(
+            "geometry",
+            lambda w: w["geometry"].append(dict(w["geometry"][1])),
+            id="duplicate-geometry-name",
+        ),
+        pytest.param(
+            "places",
+            lambda w: w["places"].append(dict(_place(w, "spawn-entrance"))),
+            id="duplicate-place-name",
+        ),
+    ],
+)
+def test_declared_world_duplicate_names_are_incompatible(tmp_path, monkeypatch, field, edit):
+    """A declared document with repeated names is invalid input, so INCOMPATIBLE."""
+    world = json.loads(VENDORED.read_text())
+    edit(world)
+    repo = _declare(tmp_path, monkeypatch, world, t.LEGACY_WORLD)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match=f"^INCOMPATIBLE: .*duplicate {field} name"):
+        t._evidence(repo, out, trials=1)
+    assert not out.exists()
