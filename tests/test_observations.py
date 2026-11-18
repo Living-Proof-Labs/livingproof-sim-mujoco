@@ -2,6 +2,8 @@
 """Given a body drifting into a wall, when observed, then contacts, extremes and exit are recorded, not judged."""
 
 import json
+import logging
+import warnings
 
 import mujoco
 import pytest
@@ -240,7 +242,7 @@ def test_collision_class_group_counts_without_contype_or_pair():
     assert reach.record["bodies_without_collision_geoms"] == []
 
 
-def test_bodies_without_collision_geoms_fall_back_to_visual_geoms_and_are_recorded():
+def test_bodies_without_collision_geoms_fall_back_to_visual_geoms_and_are_recorded(caplog):
     xml = """
 <mujoco>
   <worldbody>
@@ -254,8 +256,16 @@ def test_bodies_without_collision_geoms_fall_back_to_visual_geoms_and_are_record
 </mujoco>
 """
     m = mujoco.MjModel.from_xml_string(xml)
-    with pytest.warns(UserWarning, match="visual geoms for bodies with no collision geom: arm"):
-        reach = Reach(m)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with caplog.at_level(logging.INFO, logger="livingproof_sim_mujoco.observations"):
+            reach = Reach(m)
+    assert not [w for w in caught if issubclass(w.category, UserWarning)]
+    info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert info_messages == [
+        "wall intrusion: 1 body has no collision geom and uses its visual geoms "
+        "(see visual_fallback_bodies)"
+    ]
     assert reach.record["bodies_without_collision_geoms"] == ["arm"]
     assert reach.record["visual_fallback_bodies"] == ["arm"]
     d = mujoco.MjData(m)
@@ -328,7 +338,7 @@ G1_SHOULDER = """
 """
 
 
-def test_g1_seed_18_shoulder_with_only_visual_geoms_still_touches_the_wall():
+def test_g1_seed_18_shoulder_with_only_visual_geoms_still_touches_the_wall(caplog):
     """#25 review round 2: G1 stock seed 18's left shoulder links have only visual geoms
     and overlap wall-left by 4.2 mm. They fall back to visual geoms, so the contact counts.
     The visual box on the thigh's body (which has a collision geom) reaches 0.80 m and
@@ -336,16 +346,24 @@ def test_g1_seed_18_shoulder_with_only_visual_geoms_still_touches_the_wall():
     m = mujoco.MjModel.from_xml_string(G1_SHOULDER)
     d = mujoco.MjData(m)
     mujoco.mj_forward(m, d)
-    with pytest.warns(UserWarning, match="left_shoulder_roll_link"):
-        o = observe(
-            m,
-            d,
-            lambda data: mujoco.mj_step(m, data),
-            base_body="pelvis",
-            walls=["wall-left", "wall-right"],
-            exit_x=10.0,
-            seconds=0.1,
-        )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with caplog.at_level(logging.INFO, logger="livingproof_sim_mujoco.observations"):
+            o = observe(
+                m,
+                d,
+                lambda data: mujoco.mj_step(m, data),
+                base_body="pelvis",
+                walls=["wall-left", "wall-right"],
+                exit_x=10.0,
+                seconds=0.1,
+            )
+    assert not [w for w in caught if issubclass(w.category, UserWarning)]
+    info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert info_messages == [
+        "wall intrusion: 2 bodies have no collision geom and use their visual geoms "
+        "(see visual_fallback_bodies)"
+    ]
     geometry = o["wall_intrusion"]["geometry"]
     assert geometry["visual_fallback_bodies"] == ["left_shoulder_roll_link", "pelvis"]
     assert [c["wall"] for c in o["wall_contacts"]] == ["wall-left"]

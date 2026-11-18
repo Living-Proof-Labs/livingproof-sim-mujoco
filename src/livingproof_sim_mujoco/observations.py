@@ -32,13 +32,15 @@ into and through them. Each wall's inner and outer faces come from its box geom.
 
 from __future__ import annotations
 
+import logging
 import math
-import warnings
 from collections.abc import Callable
 
 import mujoco
 import numpy as np
 from livingproof_scenario_parameters import crosses_exit, distance_to_route
+
+logger = logging.getLogger(__name__)
 
 FORMAT = "livingproof-hallway-observation/2.0.0"
 DISTMAX = 0.25
@@ -149,7 +151,29 @@ COLLISION_RULE = (
 )
 
 
-def collision_geoms(model: mujoco.MjModel) -> tuple[list[int], dict]:
+def log_visual_fallback(bodies: list[str], *, in_manifest: bool = False) -> None:
+    """Log one concise INFO note when bodies fall back to visual geoms."""
+    if not bodies:
+        return
+    noun = "body has" if len(bodies) == 1 else "bodies have"
+    verb = "uses" if len(bodies) == 1 else "use"
+    pronoun = "its" if len(bodies) == 1 else "their"
+    where = (
+        "manifest wall_intrusion.visual_fallback_bodies"
+        if in_manifest
+        else "visual_fallback_bodies"
+    )
+    logger.info(
+        "wall intrusion: %d %s no collision geom and %s %s visual geoms (see %s)",
+        len(bodies),
+        noun,
+        verb,
+        pronoun,
+        where,
+    )
+
+
+def collision_geoms(model: mujoco.MjModel, *, log_fallback: bool = True) -> tuple[list[int], dict]:
     """The robot's collision geoms, and a record of how they were chosen.
 
     Robots mark collision geometry in different ways: Booster T1 sets contype/conaffinity
@@ -161,7 +185,7 @@ def collision_geoms(model: mujoco.MjModel) -> tuple[list[int], dict]:
 
     A body whose geoms are all visual (for example the G1's shoulders, torso and pelvis)
     falls back to those visual geoms, so it is still measured: it is listed in
-    ``bodies_without_collision_geoms`` and ``visual_fallback_bodies`` and warned about.
+    ``bodies_without_collision_geoms`` and ``visual_fallback_bodies`` and logged at INFO.
     Visual geoms of a body that has collision geoms stay excluded. A robot with no
     collision geom at all fails closed (ValueError)."""
     robot = [g for g in range(model.ngeom) if model.geom_bodyid[g] != 0]
@@ -182,11 +206,8 @@ def collision_geoms(model: mujoco.MjModel) -> tuple[list[int], dict]:
             set(chosen)
             | {g for g in robot if model.body(int(model.geom_bodyid[g])).name in fallback}
         )
-        warnings.warn(
-            "wall intrusion uses visual geoms for bodies with no collision geom: "
-            + ", ".join(uncovered),
-            stacklevel=2,
-        )
+        if log_fallback:
+            log_visual_fallback(uncovered)
     record = {
         "rule": COLLISION_RULE,
         "collision_groups": groups,
@@ -203,9 +224,9 @@ class Reach:
     Primitives exactly; meshes from their compiled vertices (the convex hull's extent
     equals the mesh's)."""
 
-    def __init__(self, model: mujoco.MjModel):
+    def __init__(self, model: mujoco.MjModel, *, log_fallback: bool = True):
         self.model = model
-        self.robot, self.record = collision_geoms(model)
+        self.robot, self.record = collision_geoms(model, log_fallback=log_fallback)
         self.verts = {}
         for g in self.robot:
             if model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH:
@@ -317,6 +338,7 @@ def observe(
     on_step: Callable[[int, mujoco.MjData], None] | None = None,
     route: list | None = None,
     exit_place: dict | None = None,
+    log_fallback: bool = True,
 ) -> dict:
     """Run one trial from the current state and return its observations.
 
@@ -328,7 +350,7 @@ def observe(
     """
     distance = WallDistance(model, walls)
     faces = wall_faces(model, walls)
-    reach = Reach(model)
+    reach = Reach(model, log_fallback=log_fallback)
     half_width = min((f["inner"] for f in faces.values()), default=float("inf"))
     if route is None or exit_place is None:
         route, exit_place = straight_crossing(exit_x, centreline_y, half_width)
@@ -529,6 +551,7 @@ def observe_route(
     through: list[dict],
     sample_hz: float = 50.0,
     on_step: Callable[[int, mujoco.MjData], None] | None = None,
+    log_fallback: bool = True,
 ) -> dict:
     """Run one adapter-driven trial from the current state and return its observations.
 
@@ -545,7 +568,7 @@ def observe_route(
     exit_doc = {"points": exit_place["points"], "reference": exit_place.get("reference")}
     distance = WallDistance(model, walls)
     faces = route_wall_faces(model, walls, points)
-    reach = RouteReach(model)
+    reach = RouteReach(model, log_fallback=log_fallback)
     base = model.body(base_body).id
     every = max(1, int(round(1 / (sample_hz * model.opt.timestep))))
     samples, contacts, open_contact = [], [], None

@@ -248,12 +248,21 @@ def test_real_caller_lock_drives_a_v2_robot_in_the_vendored_hallway(tmp_path, g1
     out = tmp_path / "out"
     result = _run(tmp_path, ref, "playground", str(out), "--lock", str(path), "--trials", "1")
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "UserWarning" not in result.stderr
+    assert result.stderr.count("wall intrusion: 22 bodies have no collision geom") == 1
+    assert "(22 visual-fallback bodies)" in result.stdout
     run = json.loads((out / "run-manifest.json").read_text())
     assert run["world"] == {"id": "hallway-open", "version": "0.1.0", "sha256": sha256(VENDORED)}
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["lock"]["content"] == lock
     assert manifest["environment"]["walls"] == ["wall-left", "wall-right"]
     trial = json.loads((out / "trials" / "trial-01.json").read_text())
+    fallback_bodies = trial["wall_intrusion"]["geometry"]["visual_fallback_bodies"]
+    assert len(fallback_bodies) == 22
+    assert manifest["wall_intrusion"] == {
+        "visual_fallback_count": 22,
+        "visual_fallback_bodies": fallback_bodies,
+    }
     first = trial["trace"]["samples"][0]
     assert first[1] == pytest.approx(-2.5, abs=1e-6)  # spawn-entrance x, not the origin
     assert first[2] == pytest.approx(0.0, abs=1e-6)

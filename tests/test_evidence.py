@@ -2,8 +2,12 @@
 
 import hashlib
 import json
+import logging
+import os
 import subprocess
+import sys
 from pathlib import Path
+import warnings
 
 import mujoco
 import pytest
@@ -599,3 +603,129 @@ def test_zero_command_stand_reports_an_adapter_that_runs_but_cannot_stand(
     monkeypatch.setattr(Toy, method, broken)
     result = _stand(tmp_path, monkeypatch)
     assert result["standing"] is False and result["end"] == end
+
+
+XML_WITH_VISUAL_FALLBACK = """<mujoco><option timestep="0.002"/><worldbody>
+<geom name="left" type="box" size="2 0.05 0.5" pos="0 0.85 0.5" contype="0" conaffinity="0"/>
+<body name="base" pos="-0.5 0 0.3"><freejoint/><geom type="sphere" size="0.1"/>
+  <body name="arm" pos="0 0.15 0">
+    <geom type="box" size="0.05 0.05 0.05" contype="0" conaffinity="0" group="1"/>
+  </body>
+</body>
+</worldbody></mujoco>"""
+
+
+class FallbackScene:
+    def __init__(self):
+        self.model = mujoco.MjModel.from_xml_string(XML_WITH_VISUAL_FALLBACK)
+        self.walls = ["left"]
+
+
+class FallbackToy(Toy):
+    pass
+
+
+FALLBACK_TOY = FallbackToy()
+
+
+def test_visual_fallback_logs_once_per_run_and_records_manifest_summary(
+    tmp_path, monkeypatch, caplog, capsys
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(FallbackToy, "root", repo)
+    monkeypatch.setattr(FallbackToy, "scene", lambda self, name: FallbackScene())
+    monkeypatch.syspath_prepend(str(Path(__file__).parent))
+
+    out = tmp_path / "out"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with caplog.at_level(logging.INFO, logger="livingproof_sim_mujoco"):
+            m = evidence.evidence(
+                "test_evidence:FALLBACK_TOY", "stock", out, trials=3, lock=_lock(repo)
+            )
+    assert not [w for w in caught if issubclass(w.category, UserWarning)]
+    info_messages = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    assert info_messages == [
+        "wall intrusion: 1 body has no collision geom and uses its visual geoms "
+        "(see manifest wall_intrusion.visual_fallback_bodies)"
+    ]
+    assert m["wall_intrusion"] == {
+        "visual_fallback_count": 1,
+        "visual_fallback_bodies": ["arm"],
+    }
+    assert json.loads((out / "manifest.json").read_text())["wall_intrusion"] == m["wall_intrusion"]
+    for index in (1, 2, 3):
+        trial = json.loads((out / "trials" / f"trial-{index:02d}.json").read_text())
+        assert trial["wall_intrusion"]["geometry"]["visual_fallback_bodies"] == ["arm"]
+    assert evidence.unresolved_hashes(out) == []
+
+    # Direct CLI subprocess exercises _configure_logging() on stderr and summary on stdout.
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "fallback_shim.py").write_text(
+        "from pathlib import Path\n"
+        "from test_evidence import FallbackScene, FallbackToy\n"
+        "ROBOT = FallbackToy()\n"
+        f"ROBOT.root = Path({str(repo)!r})\n"
+        "ROBOT.scene = lambda name: FallbackScene()\n"
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(shim), str(Path(__file__).parent), env.get("PYTHONPATH", "")]
+    )
+    cli_out = tmp_path / "cli"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "livingproof_sim_mujoco.evidence",
+            "fallback_shim:ROBOT",
+            "stock",
+            str(cli_out),
+            "--lock",
+            str(_lock(repo)),
+            "--trials",
+            "3",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "UserWarning" not in proc.stderr
+    assert (
+        proc.stderr.count(
+            "INFO: wall intrusion: 1 body has no collision geom and uses its visual geoms "
+            "(see manifest wall_intrusion.visual_fallback_bodies)"
+        )
+        == 1
+    )
+    assert "(1 visual-fallback body)" in proc.stdout
+
+
+def test_zero_visual_fallback_records_zero_count_and_no_fallback_log(
+    tmp_path, monkeypatch, caplog, capsys
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(Toy, "root", repo)
+    monkeypatch.syspath_prepend(str(Path(__file__).parent))
+
+    out = tmp_path / "out"
+    with caplog.at_level(logging.INFO, logger="livingproof_sim_mujoco"):
+        code = evidence.main(
+            ["test_evidence:TOY", "stock", str(out), "--lock", str(_lock(repo)), "--trials", "2"]
+        )
+    assert code == 0
+    assert not [r for r in caplog.records if "visual" in r.getMessage()]
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["wall_intrusion"] == {
+        "visual_fallback_count": 0,
+        "visual_fallback_bodies": [],
+    }
+    captured = capsys.readouterr()
+    assert "visual-fallback" not in captured.out
