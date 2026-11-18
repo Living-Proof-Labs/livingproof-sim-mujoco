@@ -72,7 +72,7 @@ explicit = true
 torch = { index = "pytorch-cpu" }
 livingproof-unitree-g1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1", tag = "v2.2.8" }
 livingproof-unitree-go1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1", tag = "v2.2.11" }
-livingproof-booster-t1 = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1", tag = "v2.2.10" }
+livingproof-booster-t1 = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1", tag = "v2.3.3" }
 
 # The robot packages' own sources pin this project to v2.0.3. These tests run
 # against this checkout, so that pin is not part of their metadata here.
