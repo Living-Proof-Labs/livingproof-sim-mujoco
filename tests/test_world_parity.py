@@ -16,7 +16,6 @@ import pytest
 from locked_source import locked_robot_source
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE = Path("/tmp/livingproof-world-parity")
 
 # Last v1 release of each robot, and the configuration livingproof-verification grades.
 CASES = [
@@ -25,6 +24,11 @@ CASES = [
     ("livingproof-unitree-go1", "v1.0.3", "lpl_go1.adapter:ROBOT", "playground"),
     ("livingproof-booster-t1", "v1.0.3", "lpl_t1.adapter:ROBOT", "stock"),
 ]
+
+
+@pytest.fixture(scope="module")
+def parity_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("livingproof-world-parity")
 
 
 def _run(cmd, **kwargs):
@@ -36,8 +40,8 @@ def _run(cmd, **kwargs):
     return result
 
 
-def _sim_v211() -> Path:
-    dest = CACHE / "sim-v2.1.1"
+def _sim_v211(cache: Path) -> Path:
+    dest = cache / "sim-v2.1.1"
     if not (dest / ".git").is_dir():
         if dest.exists():
             subprocess.run(["rm", "-rf", str(dest)], check=True)
@@ -66,8 +70,8 @@ def _head(dest: Path) -> str:
     return found.stdout.strip() if found.returncode == 0 else ""
 
 
-def _robot_v1(name: str, tag: str) -> Path:
-    dest = CACHE / f"{name}-{tag}"
+def _robot_v1(name: str, tag: str, cache: Path) -> Path:
+    dest = cache / f"{name}-{tag}"
     if not (dest / "pyproject.toml").is_file():
         if dest.exists():
             subprocess.run(["rm", "-rf", str(dest)], check=True)
@@ -86,10 +90,10 @@ def _robot_v1(name: str, tag: str) -> Path:
     return dest
 
 
-def _pinned_robot(name: str) -> Path:
+def _pinned_robot(name: str, cache: Path) -> Path:
     """Checkout of the tag and commit ``uv.lock`` records for ``name``."""
     tag, expected = locked_robot_source(name)
-    dest = CACHE / f"{name}-{tag}"
+    dest = cache / f"{name}-{tag}"
     if not (dest / "pyproject.toml").is_file() or _head(dest) != expected:
         if dest.exists():
             subprocess.run(["rm", "-rf", str(dest)], check=True)
@@ -114,7 +118,7 @@ def _pinned_robot(name: str) -> Path:
 def _old_trial(sim: Path, robot_dir: Path, adapter: str, configuration: str, out: Path) -> dict:
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join([str(sim / "src"), str(robot_dir / "src")])
-    env["MUJOCO_GL"] = "osmesa"
+    env.setdefault("MUJOCO_GL", "osmesa")
     out.mkdir(parents=True, exist_ok=True)
     _run(
         [
@@ -187,7 +191,9 @@ def _new_lock(robot, configuration: str, directory: Path) -> Path:
 
 def _new_trial(adapter: str, configuration: str, checkout: Path, out: Path) -> dict:
     from livingproof_sim_mujoco import evidence
+    from livingproof_sim_mujoco.pins import fetch
 
+    fetch(checkout)
     robot = evidence.adapter(adapter)
     # The installed wheel does not ship pins or models. The locked source tree does.
     robot.root = checkout
@@ -211,9 +217,15 @@ def _brief(obs: dict) -> dict:
 
 @pytest.mark.parametrize(("repo", "tag", "adapter", "configuration"), CASES)
 def test_hallway_rollout_matches_v211_with_the_last_v1_robot(
-    repo, tag, adapter, configuration, tmp_path
+    repo, tag, adapter, configuration, tmp_path, parity_cache
 ):
-    old = _old_trial(_sim_v211(), _robot_v1(repo, tag), adapter, configuration, tmp_path / "old")
-    new = _new_trial(adapter, configuration, _pinned_robot(repo), tmp_path / "new")
+    old = _old_trial(
+        _sim_v211(parity_cache),
+        _robot_v1(repo, tag, parity_cache),
+        adapter,
+        configuration,
+        tmp_path / "old",
+    )
+    new = _new_trial(adapter, configuration, _pinned_robot(repo, parity_cache), tmp_path / "new")
     if old != new:
         raise AssertionError(json.dumps({"old": _brief(old), "new": _brief(new)}, indent=2))

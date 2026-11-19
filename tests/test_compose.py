@@ -71,7 +71,12 @@ def test_unknown_world_is_unsupported():
         compose.vendored_world({"world": {"id": "not-a-world", "version": "0.1.0"}})
 
 
-def _checkout(package: str) -> Path:
+@pytest.fixture(scope="module")
+def compose_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("livingproof-world-parity")
+
+
+def _checkout(package: str, cache: Path) -> Path:
     """Source tree of the locked robot tag. The installed wheel does not ship pins or models.
 
     The checkout commit has to be the revision ``uv.lock`` records for that tag.
@@ -80,7 +85,7 @@ def _checkout(package: str) -> Path:
     import subprocess
 
     tag, expected = locked_robot_source(package)
-    dest = Path("/tmp/livingproof-world-parity") / f"{package}-{tag}"
+    dest = cache / f"{package}-{tag}"
 
     def head() -> str:
         if not dest.exists():
@@ -142,13 +147,13 @@ def test_locked_robot_revision_follows_the_lock(tag, commit):
         ("lpl_t1.adapter:ROBOT", "livingproof-booster-t1"),
     ],
 )
-def test_v2_robot_starts_at_the_world_place_between_the_walls(adapter, package):
+def test_v2_robot_starts_at_the_world_place_between_the_walls(adapter, package, compose_cache):
     """Each pinned v2 robot: hallway walls are in the model and the base is not at the origin."""
     from livingproof_sim_mujoco.evidence import adapter as load
     from livingproof_sim_mujoco.pins import fetch
 
     robot = load(adapter)
-    robot.root = _checkout(package)
+    robot.root = _checkout(package, compose_cache)
     fetch(robot.root)
     world, _digest, _path = compose.vendored_world(
         {"world": {"id": "hallway-open", "version": "0.1.0"}}
