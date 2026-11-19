@@ -466,6 +466,8 @@ def run_trial(
     exit_place: dict | None = None,
     places: dict | None = None,
     log_fallback: bool = True,
+    route_control: dict | None = None,
+    pose_provider=None,
 ) -> dict:
     """One trial at the nominal pose through ``observations.observe``.
 
@@ -484,8 +486,32 @@ def run_trial(
     if command is None and places is not None:
         # The adapter drives the robot; the runner sends no command (outcome-only).
         from livingproof_sim_mujoco.observations import observe_route
+        from livingproof_sim_mujoco.pose import MujocoPoseProvider
 
-        step = robot.drive(name, model, ctrl, policy, places)
+        control = route_control if route_control is not None else plan.get("route_control")
+        params = inspect.signature(robot.drive).parameters
+        has_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
+        kwargs: dict[str, Any] = {}
+        if control is not None:
+            if "route_control" in params or has_kwargs:
+                kwargs["route_control"] = control
+            else:
+                raise SystemExit(
+                    f"ERROR: {robot.id} drive() does not accept route_control, "
+                    "but route_control was requested."
+                )
+        if "pose_provider" in params or has_kwargs:
+            kwargs["pose_provider"] = (
+                pose_provider
+                if pose_provider is not None
+                else MujocoPoseProvider(model, robot.base_body(name))
+            )
+        elif pose_provider is not None:
+            raise SystemExit(
+                f"ERROR: {robot.id} drive() does not accept pose_provider, "
+                "but pose_provider was supplied."
+            )
+        step = robot.drive(name, model, ctrl, policy, places, **kwargs)
         hook = on_step(model, robot.base_body(name)) if on_step is not None else None
         obs = observe_route(
             model,
