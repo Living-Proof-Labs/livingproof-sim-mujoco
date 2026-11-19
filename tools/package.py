@@ -57,6 +57,14 @@ def main():
     # Hatch VCS derives metadata; no manually asserted release version.
     run("uv", "build", "--out-dir", str(out), env={**os.environ, "SOURCE_DATE_EPOCH": "315532800"})
     wheel = next(out.glob("*.whl"))
+    run(
+        sys.executable,
+        "-m",
+        "pytest",
+        "tests/test_wheel_metadata.py",
+        "--junitxml=artifacts/package-metadata.xml",
+        env={**os.environ, "TEST_WHEEL": str(wheel.resolve())},
+    )
     package_version = wheel.name.split("-")[1]
     run(
         "uv",
