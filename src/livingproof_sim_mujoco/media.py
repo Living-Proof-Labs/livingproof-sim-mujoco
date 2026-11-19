@@ -188,6 +188,18 @@ def _file(path: Path, out: Path) -> dict:
     }
 
 
+def read_mcap_poses(mcap_path: Path) -> list[dict]:
+    """Read ``/base_pose`` JSON messages from a recorded trial MCAP file."""
+    from mcap.reader import make_reader
+
+    poses: list[dict] = []
+    with Path(mcap_path).open("rb") as handle:
+        for _, channel, message in make_reader(handle).iter_messages(topics=["/base_pose"]):
+            if channel.topic == "/base_pose":
+                poses.append(json.loads(message.data))
+    return poses
+
+
 def _record(args):
     (
         ref,
