@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 mkdir -p artifacts
+bash tools/smoke-media.sh
 build=(docker build --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy)
 if [ -n "${BUILD_CA_FILE:-}" ]; then build+=(--secret "id=ca,src=$BUILD_CA_FILE"); fi
 # Python wheel install has no access to the source checkout or network.
