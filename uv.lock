@@ -50,7 +50,7 @@ name = "build"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "os_name == 'nt' and sys_platform != 'darwin'" },
+    { name = "colorama", marker = "os_name == 'nt'" },
     { name = "packaging" },
     { name = "pyproject-hooks" },
 ]
@@ -414,7 +414,7 @@ dev = [
 robots = [
     { name = "livingproof-booster-t1", git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1?tag=v2.3.6" },
     { name = "livingproof-unitree-g1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1?tag=v2.3.13" },
-    { name = "livingproof-unitree-go1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.5" },
+    { name = "livingproof-unitree-go1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.7" },
 ]
 torch = [{ name = "torch", specifier = "==2.15.0", index = "https://download.pytorch.org/whl/cpu" }]
 
@@ -435,7 +435,7 @@ dependencies = [
 [[package]]
 name = "livingproof-unitree-go1"
 version = "0.1.0"
-source = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.5#fe48f8bda30aa0a65bd01b06107fc76874195f35" }
+source = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.7#83593093132cb0b40d214c1afbace3975be5cb4a" }
 dependencies = [
     { name = "imageio", extra = ["ffmpeg"] },
     { name = "jsonschema" },
