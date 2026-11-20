@@ -108,6 +108,8 @@ jobs:
       - run: task setup
       - name: Zero-command stand and evidence tests on arm64 (EGL)
         run: docker compose run --rm tooling sh -c 'MUJOCO_GL=egl uv run --no-sync pytest tests/test_evidence.py --junitxml=artifacts/evidence.xml'
+      - name: Scenario limit, command speed and refusal tests on arm64 (real runner required)
+        run: docker compose run --rm tooling sh -c 'MUJOCO_GL=egl REQUIRE_SCENARIO=1 uv run --no-sync pytest -v tests/test_manifest_limits.py tests/test_manifest_command_speed.py tests/test_command_speed_refusal.py --junitxml=artifacts/limits.xml'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
