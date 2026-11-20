@@ -844,10 +844,29 @@ def world_identity(root: Path, lock: dict, selected: sources.WorldSource) -> dic
     return ident
 
 
+def strip_userinfo(url: str) -> str:
+    """``url`` without the ``user[:password]@`` of a ``scheme://`` URL, which can hold a token.
+
+    An scp-style remote (``git@host:path``), a local path and a URL with no userinfo come back
+    unchanged: an ``@`` that is not in the authority of a ``scheme://`` URL is not userinfo.
+    """
+    scheme, sep, rest = url.partition("://")
+    if (
+        not sep
+        or not scheme
+        or not scheme.replace("+", "").replace("-", "").replace(".", "").isalnum()
+    ):
+        return url
+    end = min((i for i in (rest.find(c) for c in "/?#") if i >= 0), default=len(rest))
+    authority, tail = rest[:end], rest[end:]
+    return f"{scheme}://{authority.rpartition('@')[2]}{tail}"
+
+
 def robot_repo(root: Path, lock: dict) -> str:
+    """The robot repository URL, without any credentials its remote or the lock carries."""
     declared = lock.get("robot", {}).get("repo") if isinstance(lock.get("robot"), dict) else None
     if isinstance(declared, str) and declared:
-        return declared
+        return strip_userinfo(declared)
     remote = subprocess.run(
         ["git", "-C", str(root), "remote", "get-url", "origin"],
         capture_output=True,
@@ -855,7 +874,7 @@ def robot_repo(root: Path, lock: dict) -> str:
     )
     url = remote.stdout.strip()
     if remote.returncode == 0 and url:
-        return url
+        return strip_userinfo(url)
     raise SystemExit(
         "run manifest robot.repo needs the robot repository URL. "
         "Set lock robot.repo or git remote origin. "
