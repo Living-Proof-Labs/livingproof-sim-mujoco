@@ -37,6 +37,8 @@ dev = [
     "onnx==1.23.2",
     "pillow==13.0.0",
     "mcap==1.6.0",
+    # The real scenario runner, so the manifest-limit tests run it (REQUIRE_SCENARIO=1 in CI).
+    "livingproof-evaluator-scenario @ git+https://github.com/Living-Proof-Labs/livingproof-evaluator-scenario@v1.5.0 ; python_full_version >= '3.12'",
     "imageio==2.37.0",
     "imageio-ffmpeg==0.6.0",
     "ruff==0.14.2",
@@ -57,6 +59,9 @@ robots = [
     "livingproof-booster-t1",
 ]
 [tool.uv]
+# The scenario evaluator (dev, for the real-runner tests) pins specs v2.2.0 for its own parameter
+# library; this project and its tests use v2.3.0, and the two must resolve to one.
+override-dependencies = ["livingproof-scenario-parameters @ git+https://github.com/Living-Proof-Labs/robot-capability-specs@v2.3.0#subdirectory=python"]
 default-groups = ["dev", "torch", "robots"]
 
 [tool.pytest.ini_options]

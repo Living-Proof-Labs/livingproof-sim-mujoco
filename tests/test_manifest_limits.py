@@ -10,6 +10,7 @@ importable and with the formulas as stated in the issue otherwise.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -49,6 +50,17 @@ def inputs(manifest: dict) -> dict:
         "fall_base_height": (config.get("locomotion") or {}).get("fall_base_height"),
     }
     return {k: _number(v) for k, v in found.items() if v is not None}
+
+
+def scenario_media():
+    """The real scenario runner. With REQUIRE_SCENARIO=1 (CI) its absence fails, not skips."""
+    try:
+        from livingproof_evaluator_scenario import media
+    except ImportError:
+        if os.environ.get("REQUIRE_SCENARIO") == "1":
+            pytest.fail("REQUIRE_SCENARIO=1 but livingproof-evaluator-scenario is not installed")
+        pytest.skip("livingproof-evaluator-scenario is not installed")
+    return media
 
 
 @pytest.fixture
@@ -128,7 +140,7 @@ def test_the_limits_resolve_from_the_manifest_alone(run):
 
 
 def test_the_real_runner_resolves_every_limit_with_none_missing(run):
-    media = pytest.importorskip("livingproof_evaluator_scenario.media")
+    media = scenario_media()
     thresholds, missing = media.thresholds_from_manifest(run())
     assert missing == {}
     assert set(thresholds) == set(LIMITS)
@@ -136,10 +148,22 @@ def test_the_real_runner_resolves_every_limit_with_none_missing(run):
 
 
 def test_the_real_runner_resolves_them_when_the_lock_plan_has_no_speed(run):
-    media = pytest.importorskip("livingproof_evaluator_scenario.media")
+    media = scenario_media()
 
     def drop(lock):
         del lock["plan"]["command_speed"]
 
     thresholds, missing = media.thresholds_from_manifest(run(drop))
     assert missing == {} and thresholds["time_limit"] == 27.0
+
+
+def test_the_real_runner_is_required_when_the_switch_is_set(monkeypatch):
+    package = pytest.importorskip("livingproof_evaluator_scenario")
+    monkeypatch.delattr(package, "media", raising=False)
+    monkeypatch.setitem(sys.modules, "livingproof_evaluator_scenario.media", None)
+    monkeypatch.setenv("REQUIRE_SCENARIO", "1")
+    with pytest.raises(pytest.fail.Exception, match="REQUIRE_SCENARIO=1"):
+        scenario_media()
+    monkeypatch.delenv("REQUIRE_SCENARIO")
+    with pytest.raises(pytest.skip.Exception):
+        scenario_media()
