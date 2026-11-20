@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 # Before livingproof_sim_mujoco, which imports MuJoCo and locks the GL platform.
@@ -105,7 +106,12 @@ class ToyTouch(Toy):
 def _nominal_conf(monkeypatch, with_nominal):
     conf = copy.deepcopy(CONF)
     if with_nominal:
-        conf["locomotion"]["nominal_base_height"] = {"value": 0.3, "unit": "m"}
+        conf["locomotion"]["nominal_base_height"] = {
+            "value": 0.3,
+            "unit": "m",
+            "source": with_nominal if isinstance(with_nominal, str) else "measured",
+            "ref": "the configuration's own prose reference",
+        }
     monkeypatch.setattr(Toy, "configuration", lambda self, name: conf)
     return conf
 
@@ -207,11 +213,14 @@ def test_each_trial_gets_a_valid_merged_binding_next_to_its_mcap(recorded, monke
         assert merged["bound_observables"] == ["base", "base_height", "body_contact"]
         assert merged["unbound"] == []
         assert merged["observables"]["base"]["body"] == "base"
+        manifest = json.loads((tmp_path / "ev" / "manifest.json").read_text())
+        pinned = f"{manifest['robot']['repo']}@{manifest['robot']['commit']}:stock.json"
+        assert re.fullmatch(r"[0-9a-f]{40}", manifest["robot"]["commit"])
         assert merged["observables"]["base_height"]["nominal"] == {
             "value": 0.3,
             "unit": "meters",
             "source": "measured",
-            "ref": "stock.json",
+            "ref": pinned,
         }
         assert merged["observables"]["body_contact"] == EXPECTED_CONTACT
         # The recording the binding names has the channels the binding names.
@@ -254,23 +263,51 @@ def test_the_merge_follows_the_evaluators_rules():
     assert {"id": "body_contact", "reason": "producer-does-not-carry"} in last["unbound"]
 
 
-def test_the_robot_nominal_is_in_meters_or_not_offered():
-    conf = {"locomotion": {"nominal_base_height": {"value": 0.78, "unit": "m"}}}
-    nominal = binding.nominal_from(conf, "configurations/stock.json")
-    assert nominal == {
-        "value": 0.78,
-        "unit": "meters",
-        "source": "measured",
-        "ref": "configurations/stock.json",
-    }
+def test_the_nominal_ref_is_a_pinned_revision_not_a_moving_branch(recorded, monkeypatch):
+    tmp_path, repo = recorded
+    _nominal_conf(monkeypatch, with_nominal=True)
+    doc = _media(tmp_path, repo)
+    merged = json.loads((tmp_path / "m" / doc["trials"][0]["binding"]["path"]).read_text())
+    ref = merged["observables"]["base_height"]["nominal"]["ref"]
+    assert re.fullmatch(r".+@[0-9a-f]{40}:stock\.json", ref), ref
+    for moving in ("main", "master", "HEAD", "refs/heads"):
+        assert moving not in ref
+
+
+def test_the_nominal_source_is_the_configurations_own_not_a_constant(recorded, monkeypatch):
+    tmp_path, repo = recorded
+    _nominal_conf(monkeypatch, with_nominal="chosen")
+    doc = _media(tmp_path, repo)
+    merged = json.loads((tmp_path / "m" / doc["trials"][0]["binding"]["path"]).read_text())
+    _valid(merged)
+    assert merged["observables"]["base_height"]["nominal"]["source"] == "chosen"
+
+
+def test_the_robot_nominal_is_in_meters_with_its_own_source_or_not_offered():
+    def conf(**nominal):
+        return {"locomotion": {"nominal_base_height": nominal}}
+
+    pinned = "o/r@" + "a" * 40 + ":configurations/stock.json"
+    got = binding.nominal_from(conf(value=0.78, unit="m", source="published"), pinned)
+    assert got == {"value": 0.78, "unit": "meters", "source": "published", "ref": pinned}
     for bad in (
         {},
         {"locomotion": {}},
-        {"locomotion": {"nominal_base_height": {"value": 0.78, "unit": "cm"}}},
-        {"locomotion": {"nominal_base_height": {"value": -1, "unit": "m"}}},
-        {"locomotion": {"nominal_base_height": {"value": "0.78", "unit": "m"}}},
+        conf(value=0.78, unit="m"),  # no source in the configuration: nothing to state
+        conf(value=0.78, unit="m", source=""),
+        conf(value=0.78, unit="m", source=3),
+        conf(value=0.78, unit="cm", source="measured"),
+        conf(value=-1, unit="m", source="measured"),
+        conf(value="0.78", unit="m", source="measured"),
     ):
-        assert binding.nominal_from(bad, "x.json") is None, bad
+        assert binding.nominal_from(bad, pinned) is None, bad
+
+
+def test_media_json_is_2_1_0_and_the_guide_says_what_changed():
+    assert media.FORMAT == "livingproof-hallway-media/2.1.0"
+    text = " ".join((Path(__file__).parents[1] / "docs" / "evidence.md").read_text().split())
+    assert "livingproof-hallway-media/2.1.0" in text
+    assert "additive" in text and "2.0.0" in text
 
 
 def test_the_evidence_guide_describes_the_channel_and_the_binding():
