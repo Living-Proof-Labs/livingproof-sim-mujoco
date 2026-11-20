@@ -770,14 +770,38 @@ def recorded_sources(parameters: sources.ParametersSource) -> dict:
     return {"parameters": {"path": parameters.path, "sha256": parameters.sha256}}
 
 
-def executed_plan(plan: dict, count: int) -> dict:
-    """The plan this run used: ``trials.count``. Seeds and ``required_passes`` are omitted."""
+def _require_lock_speed_is_driven(plan: dict, p: dict) -> None:
+    """Refuse, before any output, a lock whose ``plan.command_speed`` is not the speed driven.
+
+    The run always drives the scenario parameter file's ``command_speed``; the lock's plan never
+    changes it. The manifest records the speed the run used, so a lock that lists another number
+    would make the manifest, and the ``time_limit`` resolved from it, describe a run that did not
+    happen. A matching speed, or none, goes ahead.
+    """
+    listed, driven = plan.get("command_speed"), p.get("command_speed")
+    if listed is None or driven is None or listed == driven:
+        return
+    raise SystemExit(
+        f"ERROR: the lock's plan.command_speed is {listed!r}, but the run drives the scenario "
+        f"parameter file's command_speed {driven!r}; the lock cannot change it. Nothing was "
+        f"recorded. Example: remove plan.command_speed from the lock, or set it to {driven!r}."
+    )
+
+
+def executed_plan(plan: dict, count: int, command_speed: float | None = None) -> dict:
+    """The plan this run used: ``trials.count``. Seeds and ``required_passes`` are omitted.
+
+    ``command_speed`` is the run's speed from the parameter file, added only when the lock's plan lacks one. The scenario's ``time_limit`` is resolved from
+    the manifest alone, so it is recorded even when the lock's plan does not list it.
+    """
     used = {
         k: v
         for k, v in plan.items()
         if k not in {"seeds", "trials", "start_offset", "required_passes"}
     }
     used["trials"] = {"count": count}
+    if command_speed is not None:
+        used.setdefault("command_speed", command_speed)  # a speed the lock lists stays as given
     return used
 
 
@@ -1225,6 +1249,7 @@ def evidence(
     # Before any output: a conflicting or unknown world identity writes nothing.
     world_id = world_identity(root, lock, prepared.world_source)
     count = trial_count(plan, trials)
+    _require_lock_speed_is_driven(plan, p)
     offset = declared_offset(plan)
     profile = robot.robot()
     checked = sc.preconditions(
@@ -1325,7 +1350,7 @@ def evidence(
         "lock": {"path": lock_path.name, "sha256": sha256(lock_path), "content": lock},
         "sources": recorded_sources(prepared.parameters_source),
         "pending_release": waiting,
-        "plan": executed_plan(plan, count),
+        "plan": executed_plan(plan, count, p["command_speed"]),
         "start": {"spawn": p["spawn"], "pose": "nominal", "offset": offset},
         "preconditions": checked,
         "robot": {
