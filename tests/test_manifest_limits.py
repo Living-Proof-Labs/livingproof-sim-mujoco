@@ -54,30 +54,54 @@ def inputs(manifest: dict) -> dict:
     return {k: _number(v) for k, v in found.items() if v is not None}
 
 
-SCENARIO_SPEC = (
-    "livingproof-evaluator-scenario @ "
-    "git+https://github.com/Living-Proof-Labs/livingproof-evaluator-scenario@v1.5.0"
-)
+SCENARIO_REPO = "https://github.com/Living-Proof-Labs/livingproof-evaluator-scenario"
+SCENARIO_TAG, SCENARIO_COMMIT = "v1.5.0", "3fab127372208b92c532bbd880aa10ae275f7565"
 _THRESHOLDS = (
     "import json, sys\n"
     "from livingproof_evaluator_scenario import media\n"
     "print(json.dumps(media.thresholds_from_manifest(json.load(sys.stdin))))\n"
 )
+_SOURCE: list[Path] = []
 
 
-class _ViaUv:
-    """The released scenario runner (v1.5.0) in its own Python 3.12 environment.
+def _scenario_source() -> Path:
+    """The released scenario evaluator's source, fetched once at its tag and checked by commit."""
+    if not _SOURCE:
+        import tempfile
 
-    The runner needs Python 3.12 and this project supports 3.11, so it is not a dependency of the
-    project: ``uv`` runs it isolated, pinned to the release tag.
+        target = Path(tempfile.mkdtemp(prefix="scenario-")) / "src"
+        subprocess.run(
+            ["git", "clone", "-q", "--depth", "1", "--branch", SCENARIO_TAG, SCENARIO_REPO, str(target)],
+            check=True, capture_output=True, timeout=300,
+        )  # fmt: skip
+        head = subprocess.run(
+            ["git", "-C", str(target), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert head == SCENARIO_COMMIT, (
+            f"{SCENARIO_TAG} is {head}, not the pinned {SCENARIO_COMMIT}"
+        )
+        _SOURCE.append(target)
+    return _SOURCE[0]
+
+
+class _FromSource:
+    """The released scenario runner (v1.5.0, pinned by commit), run in a subprocess.
+
+    Its package metadata says Python 3.12 and this project supports 3.11 and keeps its
+    dependencies minimal, so it is not a dependency of the project: its source is fetched at the
+    tag and run with this environment's Python and the packages it already has (mcap, the
+    scenario parameter library).
     """
 
     @staticmethod
     def thresholds_from_manifest(manifest: dict):
+        env = {**os.environ, "PYTHONPATH": str(_scenario_source() / "src")}
         done = subprocess.run(
-            ["uv", "run", "--no-project", "--isolated", "--python", "3.12", "--with",
-             SCENARIO_SPEC, "python", "-c", _THRESHOLDS],
-            input=json.dumps(manifest), capture_output=True, text=True, timeout=900,
+            [sys.executable, "-c", _THRESHOLDS],
+            input=json.dumps(manifest), capture_output=True, text=True, timeout=300, env=env,
         )  # fmt: skip
         assert done.returncode == 0, done.stderr[-2000:]
         thresholds, missing = json.loads(done.stdout.splitlines()[-1])
@@ -85,7 +109,7 @@ class _ViaUv:
 
 
 def scenario_media():
-    """The real scenario runner: imported when installed, else run with uv.
+    """The real scenario runner: imported when installed, else fetched at its release tag.
 
     With REQUIRE_SCENARIO=1 (CI), failing to get it is a failure, not a skip.
     """
@@ -95,8 +119,8 @@ def scenario_media():
         return media
     except ImportError:
         pass
-    if shutil.which("uv") is not None:
-        return _ViaUv
+    if shutil.which("git") is not None:
+        return _FromSource
     if os.environ.get("REQUIRE_SCENARIO") == "1":
         pytest.fail("REQUIRE_SCENARIO=1 but livingproof-evaluator-scenario is not available")
     pytest.skip("livingproof-evaluator-scenario is not available")
