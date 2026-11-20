@@ -46,10 +46,11 @@ default_mujoco_gl()
 import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
+from livingproof_sim_mujoco import binding  # noqa: E402
 from livingproof_sim_mujoco import evidence as ev  # noqa: E402
 from livingproof_sim_mujoco.pins import fetch, sha256  # noqa: E402
 
-FORMAT = "livingproof-hallway-media/2.0.0"
+FORMAT = "livingproof-hallway-media/2.1.0"
 FPS = 25
 SIZE = (360, 640)  # height, width
 MCAP_HZ = 50
@@ -73,6 +74,30 @@ JOINT_SCHEMA = {
         "position": {"type": "array", "items": {"type": "number"}},
         "velocity": {"type": "array", "items": {"type": "number"}},
         "effort": {"type": "array", "items": {"type": "number"}},
+    },
+}
+
+
+CONTACT_SCHEMA = {
+    "type": "object",
+    "title": binding.CONTACT_SCHEMA_NAME,
+    "description": (
+        "One body_contact event with a hallway wall: the wall, the start and end time in "
+        "seconds from the start of the trial, and the depth."
+    ),
+    "properties": {
+        "timestamp": {"type": "object"},
+        "wall": {"type": "string"},
+        "start": {"type": "number"},
+        "end": {"type": "number"},
+        "depth": {
+            "type": "number",
+            "description": (
+                "In meters: the intrusion past the wall's inner face, the largest while the "
+                "contact lasts, measured on the robot's collision geometry. It is an "
+                "intrusion, not a penetration depth."
+            ),
+        },
     },
 }
 
@@ -115,14 +140,19 @@ class Recorder:
             joint = self.writer.register_schema(
                 "livingproof.JointState", "jsonschema", json.dumps(JOINT_SCHEMA).encode()
             )
-            self.pose = self.writer.register_channel("/base_pose", "json", pose)
+            contact = self.writer.register_schema(
+                binding.CONTACT_SCHEMA_NAME, "jsonschema", json.dumps(CONTACT_SCHEMA).encode()
+            )
+            self.pose = self.writer.register_channel(binding.POSE_TOPIC, "json", pose)
             self.joint = self.writer.register_channel("/joint_states", "json", joint)
+            self.contact = self.writer.register_channel(binding.CONTACT_TOPIC, "json", contact)
             free = int(mujoco.mjtJoint.mjJNT_FREE)
             self.joints = [j for j in range(model.njnt) if int(model.jnt_type[j]) != free]
             self.names = [model.joint(j).name for j in self.joints]
             self.qadr = model.jnt_qposadr[self.joints]
             self.vadr = model.jnt_dofadr[self.joints]
             self.seq = 0
+            self.pending = []  # (log_time, channel, sequence, data), written in time order
 
     def __call__(self, i: int, data) -> None:
         if self.renderer is not None and i % self.every_frame == 0:
@@ -157,14 +187,41 @@ class Recorder:
                 ),
             )
             for channel, msg in messages:
-                self.writer.add_message(
-                    channel,
-                    log_time=ns,
-                    publish_time=ns,
-                    sequence=self.seq,
-                    data=json.dumps(msg, separators=(",", ":")).encode(),
+                self.pending.append(
+                    (ns, channel, self.seq, json.dumps(msg, separators=(",", ":")).encode())
                 )
             self.seq += 1
+
+    def finish(self, obs: dict) -> None:
+        """Write the trial's wall contacts, one message per event, after the run.
+
+        The contacts are in the observation, which exists only once the trial ends. They are
+        queued with the rest and written in time order on close, as observed: nothing here changes the observation or its hash."""
+        if self.writer is None:
+            return
+        for event in obs.get("wall_contacts") or []:
+            ns = int(round(float(event["start"]) * 1e9))
+            message = {
+                "timestamp": {"sec": ns // 1_000_000_000, "nsec": ns % 1_000_000_000},
+                "wall": event["wall"],
+                "start": event["start"],
+                "end": event["end"],
+                "depth": event["depth"],
+            }
+            data = json.dumps(message, separators=(",", ":")).encode()
+            self.pending.append((ns, self.contact, self.seq, data))
+            self.seq += 1
+
+    def _flush(self) -> None:
+        """Write every message in log_time order (stable: equal times keep their arrival order).
+
+        The contacts are known only after the run, and a contact's time is its start, so they go
+        into the stream among the poses rather than after them."""
+        for ns, channel, sequence, data in sorted(self.pending, key=lambda m: m[0]):
+            self.writer.add_message(
+                channel, log_time=ns, publish_time=ns, sequence=sequence, data=data
+            )
+        self.pending = []
 
     def close(self) -> None:
         if self.renderer is not None:
@@ -176,6 +233,7 @@ class Recorder:
             )  # fmt: skip
             self.renderer.close()
         if self.writer is not None:
+            self._flush()
             self.writer.finish()
             self.stream.close()
 
@@ -186,6 +244,26 @@ def _file(path: Path, out: Path) -> dict:
         "bytes": path.stat().st_size,
         "sha256": sha256(path),
     }
+
+
+def _write_binding(robot, name, index, mcap: Path, config_ref: str, out: Path) -> dict:
+    """The per-trial merged binding, next to the recording it describes.
+
+    The robot half is what the adapter knows: its id, the configuration, the base body and the
+    configuration's nominal base height (absent, so unbound, when the configuration has none).
+    The recording is named relative to the binding, with its real sha256.
+    """
+    robot_half = binding.robot_binding(
+        robot.id,
+        name,
+        robot.base_body(name),
+        binding.nominal_from(robot.configuration(name), config_ref),
+    )
+    recording = {"uri": mcap.name, "sha256": sha256(mcap)}
+    merged = binding.merge(robot_half, binding.producer_binding(), f"trial-{index:02d}", recording)
+    path = mcap.with_name(f"trial-{index:02d}.binding.json")
+    path.write_text(json.dumps(merged, indent=2) + "\n")
+    return _file(path, out)
 
 
 def _record(args):
@@ -204,6 +282,7 @@ def _record(args):
         exit_place,
         world,
         places,
+        config_ref,
     ) = args
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"trial-{index:02d}.mcap"
@@ -237,6 +316,7 @@ def _record(args):
             f"{expected[:12]}; no recording kept for a different run"
         )
     trial = {"index": index, "observation_sha256": got, "mcap": _file(mcap, out)}
+    trial["binding"] = _write_binding(robot, name, index, mcap, config_ref, out)
     if video is not None:
         trial.update(status=status, video=_file(video, out))
     return trial
@@ -279,6 +359,12 @@ def media(
     route, exit_place = geometry if geometry else (None, None)
     # An outcome-only scenario is driven by the adapter, as in the evidence run.
     places = ev.sc.scenario_places(world, prepared.document) if prepared.command is None else None
+    # The nominal's ref names the configuration file at the robot's pinned commit, never a branch.
+    # (the evidence run's robot checkout head, which the lock pins).
+    commit = manifest["environment"]["source_commit"]
+    config_ref = f"{ev.robot_repo(Path(robot.root), recorded)}@{commit}:" + next(
+        c["path"] for c in recorded["configurations"] if c["name"] == name
+    )
     picked = pick(json.loads(Path(verification).read_text()))
     offset = ev.declared_offset(plan)
     out = Path(out)
@@ -305,6 +391,7 @@ def media(
             exit_place,
             prepared.world,
             places,
+            config_ref,
         )
         for t in manifest["trials"]["results"]
     ]

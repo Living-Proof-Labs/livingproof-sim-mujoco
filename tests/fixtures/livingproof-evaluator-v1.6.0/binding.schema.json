@@ -1,0 +1,520 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Living-Proof-Labs/livingproof-evaluator/schema/binding.schema.json",
+  "title": "Observation binding livingproof-observation-binding/1.0.0",
+  "description": "The mapping from observables to the channels and fields of one MCAP recording. A robot binding holds the robot-owned entries (the base body and the nominal), a producer binding holds the producer-owned entries (the channel and fields that carry an observable), and the merged binding is the per-trial result the runner writes next to the recording. A binding speaks only of terms in the observable vocabulary (docs/observable-vocabulary.md). An observable that is not carried or not fully supplied is unbound, never guessed. See docs/observation-binding.md.",
+  "type": "object",
+  "required": [
+    "format",
+    "kind"
+  ],
+  "properties": {
+    "format": {
+      "const": "livingproof-observation-binding/1.0.0"
+    },
+    "kind": {
+      "enum": [
+        "robot",
+        "producer",
+        "merged"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/robot"
+    },
+    {
+      "$ref": "#/$defs/producer"
+    },
+    {
+      "$ref": "#/$defs/merged"
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "observable": {
+      "type": "string",
+      "enum": [
+        "base",
+        "base_height",
+        "body_contact"
+      ],
+      "description": "A term of the hallway observable vocabulary. A term joins this list when the vocabulary gains it."
+    },
+    "nominal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "unit",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "unit": {
+          "const": "meters",
+          "description": "The unit the vocabulary gives base_height: meters."
+        },
+        "source": {
+          "$ref": "#/$defs/text",
+          "description": "How the nominal was obtained, for example measured."
+        },
+        "ref": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "channel_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topic",
+        "encoding",
+        "schema",
+        "fields",
+        "frame"
+      ],
+      "properties": {
+        "topic": {
+          "$ref": "#/$defs/text",
+          "description": "The one MCAP channel that carries the term. A term has one channel; two is ambiguous and rejected."
+        },
+        "encoding": {
+          "$ref": "#/$defs/text"
+        },
+        "schema": {
+          "$ref": "#/$defs/text",
+          "description": "The channel's message schema name."
+        },
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/text"
+          },
+          "description": "Value name to the dotted path of its field in the message."
+        },
+        "frame": {
+          "$ref": "#/$defs/frame_world"
+        }
+      },
+      "description": "A channel entry for a term with no per-term field rule yet (body_contact, which no recording carries today)."
+    },
+    "robot": {
+      "properties": {
+        "kind": {
+          "const": "robot"
+        },
+        "robot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "defs.schema.json#/$defs/slug"
+            }
+          }
+        },
+        "configuration": {
+          "$ref": "defs.schema.json#/$defs/slug"
+        },
+        "observables": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/observable"
+          },
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/robot_base"
+            },
+            "base_height": {
+              "$ref": "#/$defs/robot_base_height"
+            },
+            "body_contact": false
+          }
+        },
+        "format": {
+          "const": "livingproof-observation-binding/1.0.0"
+        }
+      },
+      "required": [
+        "format",
+        "kind",
+        "robot",
+        "configuration",
+        "observables"
+      ],
+      "additionalProperties": false
+    },
+    "producer": {
+      "properties": {
+        "format": {
+          "const": "livingproof-observation-binding/1.0.0"
+        },
+        "kind": {
+          "const": "producer"
+        },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "defs.schema.json#/$defs/slug"
+            }
+          }
+        },
+        "observables": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/observable"
+          },
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/producer_base"
+            },
+            "base_height": {
+              "$ref": "#/$defs/producer_base_height"
+            },
+            "body_contact": {
+              "$ref": "#/$defs/channel_entry"
+            }
+          }
+        }
+      },
+      "required": [
+        "format",
+        "kind",
+        "producer",
+        "observables"
+      ],
+      "additionalProperties": false
+    },
+    "merged": {
+      "properties": {
+        "format": {
+          "const": "livingproof-observation-binding/1.0.0"
+        },
+        "kind": {
+          "const": "merged"
+        },
+        "trial_id": {
+          "$ref": "#/$defs/text"
+        },
+        "robot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "configuration"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "defs.schema.json#/$defs/slug"
+            },
+            "configuration": {
+              "$ref": "defs.schema.json#/$defs/slug"
+            }
+          }
+        },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "defs.schema.json#/$defs/slug"
+            }
+          }
+        },
+        "recording": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "uri",
+            "sha256"
+          ],
+          "properties": {
+            "uri": {
+              "$ref": "#/$defs/text"
+            },
+            "sha256": {
+              "$ref": "defs.schema.json#/$defs/sha256"
+            }
+          }
+        },
+        "observables": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/observable"
+          },
+          "minProperties": 0,
+          "additionalProperties": false,
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/merged_base"
+            },
+            "base_height": {
+              "$ref": "#/$defs/merged_base_height"
+            },
+            "body_contact": {
+              "$ref": "#/$defs/channel_entry"
+            }
+          }
+        },
+        "bound_observables": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/observable"
+          },
+          "description": "The same list a scenario request carries as binding.bound_observables."
+        },
+        "unbound": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "reason"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/observable"
+              },
+              "reason": {
+                "enum": [
+                  "producer-does-not-carry",
+                  "robot-entry-missing"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "format",
+        "kind",
+        "trial_id",
+        "robot",
+        "producer",
+        "recording",
+        "observables",
+        "bound_observables",
+        "unbound"
+      ],
+      "additionalProperties": false
+    },
+    "frame_world": {
+      "const": "world",
+      "description": "The frame the vocabulary names for the hallway terms: the world frame."
+    },
+    "fields_xy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/text"
+        },
+        "y": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "description": "base: the position in the world frame, x and y."
+    },
+    "fields_z": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "z"
+      ],
+      "properties": {
+        "z": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "description": "base_height: the height above the floor, z."
+    },
+    "producer_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topic",
+        "encoding",
+        "schema",
+        "fields",
+        "frame"
+      ],
+      "properties": {
+        "topic": {
+          "$ref": "#/$defs/text",
+          "description": "The one MCAP channel that carries the term. A term has one channel; two is ambiguous and rejected."
+        },
+        "encoding": {
+          "$ref": "#/$defs/text"
+        },
+        "schema": {
+          "$ref": "#/$defs/text",
+          "description": "The channel's message schema name."
+        },
+        "fields": {
+          "$ref": "#/$defs/fields_xy"
+        },
+        "frame": {
+          "$ref": "#/$defs/frame_world"
+        }
+      }
+    },
+    "producer_base_height": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topic",
+        "encoding",
+        "schema",
+        "fields",
+        "frame"
+      ],
+      "properties": {
+        "topic": {
+          "$ref": "#/$defs/text",
+          "description": "The one MCAP channel that carries the term. A term has one channel; two is ambiguous and rejected."
+        },
+        "encoding": {
+          "$ref": "#/$defs/text"
+        },
+        "schema": {
+          "$ref": "#/$defs/text",
+          "description": "The channel's message schema name."
+        },
+        "fields": {
+          "$ref": "#/$defs/fields_z"
+        },
+        "frame": {
+          "$ref": "#/$defs/frame_world"
+        }
+      }
+    },
+    "merged_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topic",
+        "encoding",
+        "schema",
+        "fields",
+        "frame",
+        "body"
+      ],
+      "properties": {
+        "topic": {
+          "$ref": "#/$defs/text",
+          "description": "The one MCAP channel that carries the term. A term has one channel; two is ambiguous and rejected."
+        },
+        "encoding": {
+          "$ref": "#/$defs/text"
+        },
+        "schema": {
+          "$ref": "#/$defs/text",
+          "description": "The channel's message schema name."
+        },
+        "fields": {
+          "$ref": "#/$defs/fields_xy"
+        },
+        "frame": {
+          "$ref": "#/$defs/frame_world"
+        },
+        "body": {
+          "$ref": "#/$defs/text",
+          "description": "The robot body whose origin is the term, for example the base body."
+        }
+      }
+    },
+    "merged_base_height": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topic",
+        "encoding",
+        "schema",
+        "fields",
+        "frame",
+        "nominal"
+      ],
+      "properties": {
+        "topic": {
+          "$ref": "#/$defs/text",
+          "description": "The one MCAP channel that carries the term. A term has one channel; two is ambiguous and rejected."
+        },
+        "encoding": {
+          "$ref": "#/$defs/text"
+        },
+        "schema": {
+          "$ref": "#/$defs/text",
+          "description": "The channel's message schema name."
+        },
+        "fields": {
+          "$ref": "#/$defs/fields_z"
+        },
+        "frame": {
+          "$ref": "#/$defs/frame_world"
+        },
+        "nominal": {
+          "$ref": "#/$defs/nominal"
+        }
+      }
+    },
+    "robot_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "body"
+      ],
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/text",
+          "description": "The robot body whose origin is the term, for example the base body."
+        }
+      }
+    },
+    "robot_base_height": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nominal"
+      ],
+      "properties": {
+        "nominal": {
+          "$ref": "#/$defs/nominal"
+        }
+      }
+    }
+  }
+}

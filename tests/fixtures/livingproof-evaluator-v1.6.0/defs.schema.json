@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Living-Proof-Labs/livingproof-evaluator/schema/defs.schema.json",
+  "title": "Shared evaluator contract definitions",
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "svg": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^<svg[\\s\\S]*</svg>$",
+      "description": "An SVG document owned by the publisher. This 1.0 check only requires an svg element. The strict subset applies to descriptor.icon, and to evaluator.icon on a 1.1 or later result when descriptor.icon is omitted. Contract examples use a placeholder mark. See docs/evaluator-descriptor.md."
+    },
+    "evaluator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "kind", "execution", "display_name", "publisher", "icon"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/slug",
+          "description": "Stable evaluator id."
+        },
+        "version": {
+          "$ref": "#/$defs/semver",
+          "description": "Version of the evaluator that produced, or is asked to produce, this document."
+        },
+        "kind": {
+          "enum": ["scenario", "integrity"],
+          "description": "Selects the payload. scenario grades one trial's steps and produces robot results. integrity judges whether the run and the test system can be trusted and produces a test-system status and findings."
+        },
+        "execution": {
+          "enum": ["deterministic", "agentic"],
+          "description": "Whether the evaluator follows a fixed procedure or an agentic one. capability-verifier records the same idea on an assessor as type agent. This contract uses the word agentic and does not accept agent in this field."
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The evaluator's name. A 1.1 descriptor title, when present, is this same string. When that title is omitted on a 1.1 or later result, this value must match the descriptor plain-text pattern. Consumers show it as written and do not append the word evaluator."
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who publishes the evaluator. On a 1.1 or later result, when descriptor.title is omitted, this value must match the descriptor plain-text pattern."
+        },
+        "icon": {"$ref": "#/$defs/svg"}
+      }
+    },
+    "input_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "uri", "sha256"],
+      "description": "A reference to an artifact the evaluator reads. The result cites the same bytes the request named.",
+      "properties": {
+        "role": {"$ref": "#/$defs/slug"},
+        "uri": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/input_ref"}
+    }
+  }
+}
