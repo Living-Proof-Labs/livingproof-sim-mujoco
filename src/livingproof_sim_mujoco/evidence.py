@@ -770,14 +770,20 @@ def recorded_sources(parameters: sources.ParametersSource) -> dict:
     return {"parameters": {"path": parameters.path, "sha256": parameters.sha256}}
 
 
-def executed_plan(plan: dict, count: int) -> dict:
-    """The plan this run used: ``trials.count``. Seeds and ``required_passes`` are omitted."""
+def executed_plan(plan: dict, count: int, command_speed: float | None = None) -> dict:
+    """The plan this run used: ``trials.count``. Seeds and ``required_passes`` are omitted.
+
+    ``command_speed`` is the run's speed from the parameter file, added only when the lock's plan lacks one. The scenario's ``time_limit`` is resolved from
+    the manifest alone, so it is recorded even when the lock's plan does not list it.
+    """
     used = {
         k: v
         for k, v in plan.items()
         if k not in {"seeds", "trials", "start_offset", "required_passes"}
     }
     used["trials"] = {"count": count}
+    if command_speed is not None:
+        used.setdefault("command_speed", command_speed)  # a speed the lock lists stays as given
     return used
 
 
@@ -1325,7 +1331,7 @@ def evidence(
         "lock": {"path": lock_path.name, "sha256": sha256(lock_path), "content": lock},
         "sources": recorded_sources(prepared.parameters_source),
         "pending_release": waiting,
-        "plan": executed_plan(plan, count),
+        "plan": executed_plan(plan, count, p["command_speed"]),
         "start": {"spawn": p["spawn"], "pose": "nominal", "offset": offset},
         "preconditions": checked,
         "robot": {

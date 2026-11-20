@@ -207,6 +207,16 @@ resolve (an artifact file that differs, a trajectory that does not recompute, or
 `DECLARED_HASHES` and `DECLARED_SOURCE_PREFIXES` do not document). It is empty for a run
 this module wrote, including real G1, T1 and Go1 runs (`tests/fixtures/real-runs`).
 
+## Inputs of the scenario's limits
+
+`manifest.json` records every input the scenario evaluator resolves its limits from, because it takes
+them from the manifest alone and leaves a step `NOT_EVALUATED` (`missing_threshold`) when one is
+missing: `world.route_length` and `world.clear_width`, `robot.profile.dimensions.width`,
+`configuration.profile.locomotion.fall_base_height`, and `plan.command_speed`. The plan's speed is the
+lock's when the lock lists one, and otherwise the scenario parameter file's, which the run used. The
+limits are `time_limit` = 2 x route_length / command_speed + 5, `lateral_limit` = clear_width / 2 -
+robot_width / 2, `exit_segment` (`half_width`) = clear_width / 2, and `fall_height` = fall_base_height.
+
 ## Evidence media
 
 `python -m livingproof_sim_mujoco.media <module:adapter> <configuration> <evidence dir>
