@@ -202,7 +202,7 @@ class Recorder:
         """Ask the adapter for this step's robot topics and queue them at the step's time.
 
         The adapter gets a read-only snapshot, not ``data``, and does not write the file."""
-        for item in self.publish(robot_topics.snapshot(data)) or ():
+        for item in robot_topics.items(self.publish(robot_topics.snapshot(data))):
             message = robot_topics.check(item)
             known = self.robot_channels.get(message.topic)
             if known is None:

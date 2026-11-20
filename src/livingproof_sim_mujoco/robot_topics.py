@@ -4,8 +4,9 @@
 A robot adapter may define ``publish(name, model, step) -> iterable of Message``. It is no-op by
 default: an adapter without it records exactly the simulator's own topics. The recorder calls it
 at its sample steps (``media.MCAP_HZ``) on every trial path, after the physics step, with a
-read-only :class:`StepView` snapshot, never ``data``. The adapter does not write the MCAP and cannot
-change the trial: the media re-run still hashes to the evidence.
+read-only :class:`StepView` snapshot, never ``data``, and a copy of the model made once per
+trial. The adapter does not write the MCAP and cannot change the trial: what it does to its copy
+of the model is not seen by the simulation, and the media re-run still hashes to the evidence.
 
 Each :class:`Message` names its topic, the schema (name and a JSON Schema document) and a JSON
 payload. The recorder writes it at the step's simulation time, adds ``timestamp`` to the payload when
@@ -14,6 +15,7 @@ it has none, and keeps the file in log_time order.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 import json
 import math
@@ -57,11 +59,35 @@ def snapshot(data) -> StepView:
 
 
 def publisher(robot, name: str, model):
-    """The adapter's hook bound to a configuration, or None when it defines none."""
+    """The adapter's hook bound to a configuration, or None when it defines none.
+
+    Called once per trial: the hook gets one copy of the model for the whole trial, not the model
+    the simulation runs on, so a change the adapter makes to it cannot reach the trial."""
     hook = getattr(robot, "publish", None)
     if not callable(hook):
         return None
-    return lambda step: hook(name, model, step)
+    own = copy.copy(model)
+    return lambda step: hook(name, own, step)
+
+
+def items(returned) -> list:
+    """What a hook returned as a list of items: nothing, or an iterable of Message.
+
+    A single Message (or any other value that is not an iterable) is a ValueError, not a
+    TypeError from iterating it."""
+    if returned is None:
+        return []
+    if isinstance(returned, (Message, str, bytes, dict)):
+        raise ValueError(
+            "publish must return a list (or other iterable) of robot_topics.Message, "
+            f"not a single {type(returned).__name__}; wrap it in a list"
+        )
+    try:
+        return list(returned)
+    except TypeError:
+        raise ValueError(
+            f"publish must return a list (or other iterable) of robot_topics.Message, got {returned!r}"
+        ) from None
 
 
 def _finite(value: Any) -> bool:

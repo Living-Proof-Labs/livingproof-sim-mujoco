@@ -96,21 +96,6 @@ def test_a_hook_that_writes_to_the_snapshot_cannot_change_the_trial(path, tmp_pa
 
 
 @pytest.mark.parametrize("path", PATHS)
-def test_a_hook_that_changes_the_physics_through_the_model_is_not_recorded(
-    path, tmp_path, monkeypatch
-):
-    """The hook is handed the live model. A change to it must not slip into a recording."""
-
-    def hook(name, model, step):
-        model.opt.gravity[2] = -1.0
-        return [_msg()]
-
-    with pytest.raises(RuntimeError, match="differs from the evidence"):
-        _run(path, tmp_path, monkeypatch, hook)
-    assert not list((tmp_path / "m").rglob("*.mcap")) if (tmp_path / "m").exists() else True
-
-
-@pytest.mark.parametrize("path", PATHS)
 @pytest.mark.parametrize(
     ("returned", "error"),
     [
