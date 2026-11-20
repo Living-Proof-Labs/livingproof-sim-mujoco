@@ -258,8 +258,11 @@ exactly the topics above. The recorder calls it at its 50 Hz sample steps, after
 on every trial path (the constant command of walk-hallway and the adapter's `drive()` of
 walk-corner), with a read-only snapshot of the step (`robot_topics.StepView`: `time`, `xpos`,
 `xquat`, `qpos`, `qvel`, copies with `writeable` off), never `data`. It returns
-`robot_topics.Message` items (`topic`, `schema_name`, `schema`, `payload`), or nothing. The adapter does not
-write the file, so it cannot change the trial and the re-run still hashes to the evidence.
+`robot_topics.Message` items (`topic`, `schema_name`, `schema`, `payload`) in a list or other iterable,
+or nothing; a single `Message` that is not in a list raises `ValueError`. The model it receives is a copy
+made once per trial, not the one the simulation runs on, so what the adapter does to it is not seen by
+the trial. The adapter does not write the file, so it cannot change the trial and the re-run still hashes
+to the evidence.
 
 - `topic` starts with `/`. `/base_pose`, `/joint_states` and `/wall_contacts` are reserved for the
   simulator; using one raises `ValueError`.
