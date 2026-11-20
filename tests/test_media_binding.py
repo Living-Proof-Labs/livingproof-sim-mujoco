@@ -323,3 +323,57 @@ def test_the_evidence_guide_describes_the_channel_and_the_binding():
         "unbound",
     ):
         assert needle in " ".join(text.split()), needle
+
+
+def _touch_mcap(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(ToyTouch, "root", repo)
+    monkeypatch.syspath_prepend(str(Path(__file__).parent))
+    path = tmp_path / "t.mcap"
+    world = json.loads(
+        (Path(media.ev.hallway.WORLDS) / "hallway-open" / "0.1.0" / "world.json").read_text()
+    )
+    p = {"spawn": "spawn-entrance", "time_limit": 3.0, "exit_x": 0.5, "command_speed": 0.5}
+    obs = media.ev.run_trial(
+        "test_media_binding:TOUCH",
+        "stock",
+        {},
+        p,
+        world,
+        on_step=lambda m, b: media.Recorder(m, b, mcap_path=path),
+    )
+    assert obs["wall_contacts"], "the toy robot is in the wall"
+    return path, obs
+
+
+def test_each_contact_message_validates_against_the_channels_own_schema(tmp_path, monkeypatch):
+    """Verification (#147): the messages satisfy the jsonschema the channel declares."""
+    from mcap.reader import make_reader
+
+    path, obs = _touch_mcap(tmp_path, monkeypatch)
+    with path.open("rb") as f:
+        reader = make_reader(f)
+        found = list(reader.iter_messages(topics=["/wall_contacts"]))
+    assert len(found) == len(obs["wall_contacts"])
+    for schema, _channel, message in found:
+        assert schema.encoding == "jsonschema"
+        validator = Draft202012Validator(json.loads(schema.data))
+        assert list(validator.iter_errors(json.loads(message.data))) == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Vera (#147): contacts are written after the run, so in file order a contact's "
+    "log_time (its start) is earlier than the last pose message already written; "
+    "`mcap doctor` warns 'log_time ... is less than the latest log time'. Valid MCAP, "
+    "but not time-ordered. Remove this xfail when the channel is written in time order.",
+)
+def test_the_mcap_is_in_log_time_order_in_file_order(tmp_path, monkeypatch):
+    from mcap.reader import make_reader
+
+    path, _ = _touch_mcap(tmp_path, monkeypatch)
+    with path.open("rb") as f:
+        times = [m.log_time for _, _, m in make_reader(f).iter_messages(log_time_order=False)]
+    assert times == sorted(times)
