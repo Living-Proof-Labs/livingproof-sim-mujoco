@@ -64,7 +64,10 @@ def nominal_from(configuration: dict, ref: str) -> dict | None:
     """The configuration's nominal base height as a binding nominal, or None when it has none.
 
     The binding states meters; a configuration in another unit, or with a value that is not a
-    positive number, offers no nominal rather than a converted or guessed one.
+    positive number, offers no nominal rather than a converted or guessed one. The source is the
+    configuration's own account of the value (measured, published, chosen, ...), carried as is:
+    a nominal whose configuration states no source is not offered, because the binding's source
+    is required and nothing here may claim one. `ref` is the caller's pinned revision of the file.
     """
     locomotion = configuration.get("locomotion") if isinstance(configuration, dict) else None
     nominal = locomotion.get("nominal_base_height") if isinstance(locomotion, dict) else None
@@ -73,7 +76,10 @@ def nominal_from(configuration: dict, ref: str) -> dict | None:
     value = nominal.get("value")
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
         return None
-    return {"value": value, "unit": "meters", "source": "measured", "ref": ref}
+    source = nominal.get("source")
+    if not isinstance(source, str) or not source.strip():
+        return None
+    return {"value": value, "unit": "meters", "source": source, "ref": ref}
 
 
 def robot_binding(robot_id: str, configuration: str, base_body: str, nominal: dict | None) -> dict:

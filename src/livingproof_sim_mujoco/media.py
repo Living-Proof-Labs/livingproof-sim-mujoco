@@ -50,7 +50,7 @@ from livingproof_sim_mujoco import binding  # noqa: E402
 from livingproof_sim_mujoco import evidence as ev  # noqa: E402
 from livingproof_sim_mujoco.pins import fetch, sha256  # noqa: E402
 
-FORMAT = "livingproof-hallway-media/2.0.0"
+FORMAT = "livingproof-hallway-media/2.1.0"
 FPS = 25
 SIZE = (360, 640)  # height, width
 MCAP_HZ = 50
@@ -242,7 +242,7 @@ def _file(path: Path, out: Path) -> dict:
     }
 
 
-def _write_binding(robot, name, index, mcap: Path, config_path: str, out: Path) -> dict:
+def _write_binding(robot, name, index, mcap: Path, config_ref: str, out: Path) -> dict:
     """The per-trial merged binding, next to the recording it describes.
 
     The robot half is what the adapter knows: its id, the configuration, the base body and the
@@ -253,7 +253,7 @@ def _write_binding(robot, name, index, mcap: Path, config_path: str, out: Path) 
         robot.id,
         name,
         robot.base_body(name),
-        binding.nominal_from(robot.configuration(name), config_path),
+        binding.nominal_from(robot.configuration(name), config_ref),
     )
     recording = {"uri": mcap.name, "sha256": sha256(mcap)}
     merged = binding.merge(robot_half, binding.producer_binding(), f"trial-{index:02d}", recording)
@@ -278,7 +278,7 @@ def _record(args):
         exit_place,
         world,
         places,
-        config_path,
+        config_ref,
     ) = args
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"trial-{index:02d}.mcap"
@@ -312,7 +312,7 @@ def _record(args):
             f"{expected[:12]}; no recording kept for a different run"
         )
     trial = {"index": index, "observation_sha256": got, "mcap": _file(mcap, out)}
-    trial["binding"] = _write_binding(robot, name, index, mcap, config_path, out)
+    trial["binding"] = _write_binding(robot, name, index, mcap, config_ref, out)
     if video is not None:
         trial.update(status=status, video=_file(video, out))
     return trial
@@ -355,7 +355,12 @@ def media(
     route, exit_place = geometry if geometry else (None, None)
     # An outcome-only scenario is driven by the adapter, as in the evidence run.
     places = ev.sc.scenario_places(world, prepared.document) if prepared.command is None else None
-    config_path = next(c["path"] for c in recorded["configurations"] if c["name"] == name)
+    # The nominal's ref names the configuration file at the robot's pinned commit, never a branch.
+    # (the evidence run's robot checkout head, which the lock pins).
+    commit = manifest["environment"]["source_commit"]
+    config_ref = f"{ev.robot_repo(Path(robot.root), recorded)}@{commit}:" + next(
+        c["path"] for c in recorded["configurations"] if c["name"] == name
+    )
     picked = pick(json.loads(Path(verification).read_text()))
     offset = ev.declared_offset(plan)
     out = Path(out)
@@ -382,7 +387,7 @@ def media(
             exit_place,
             prepared.world,
             places,
-            config_path,
+            config_ref,
         )
         for t in manifest["trials"]["results"]
     ]

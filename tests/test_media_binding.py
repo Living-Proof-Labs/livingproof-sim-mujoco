@@ -214,8 +214,9 @@ def test_each_trial_gets_a_valid_merged_binding_next_to_its_mcap(recorded, monke
         assert merged["unbound"] == []
         assert merged["observables"]["base"]["body"] == "base"
         manifest = json.loads((tmp_path / "ev" / "manifest.json").read_text())
-        pinned = f"{manifest['robot']['repo']}@{manifest['robot']['commit']}:stock.json"
-        assert re.fullmatch(r"[0-9a-f]{40}", manifest["robot"]["commit"])
+        commit = manifest["environment"]["source_commit"]
+        assert re.fullmatch(r"[0-9a-f]{40}", commit)
+        pinned = f"{evidence.robot_repo(repo, manifest['lock']['content'])}@{commit}:stock.json"
         assert merged["observables"]["base_height"]["nominal"] == {
             "value": 0.3,
             "unit": "meters",

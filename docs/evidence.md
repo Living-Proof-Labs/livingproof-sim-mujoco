@@ -222,7 +222,12 @@ intrusion past the wall's inner face, not a penetration depth; JSON, zstd) and a
 screencast of the verifier's first PASS trial and first FAIL trial only. Next to each MCAP it
 writes the per-trial `livingproof-observation-binding/1.0.0` file, `trial-NN.binding.json`: the
 producer binding shared by every robot, merged with the robot's base body and nominal base
-height (a term the robot cannot supply is `unbound`, never guessed). `media.json` lists each
+height (a term the robot cannot supply is `unbound`, never guessed). The nominal's `source` is
+the configuration's own (`measured`, `published`, `chosen`), carried as is, and a nominal with no
+source in the configuration is not offered; its `ref` is the configuration file at the robot's
+pinned commit, `<repo>@<commit>:<path>`, never a branch. `media.json` is
+`livingproof-hallway-media/2.1.0`: 2.0.0 plus an additive `binding` file entry on each trial
+(a minor bump; readers of 2.0.0 fields are unaffected). It lists each
 file's size and sha256. Each re-run observation must hash to that trial's evidence
 sha256, or nothing is kept (recording goes to a staging folder, so a mismatch leaves no
 partial files from any trial), so every recording is of the trial that was graded. It
