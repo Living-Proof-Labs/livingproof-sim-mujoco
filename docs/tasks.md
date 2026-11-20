@@ -304,7 +304,7 @@ env:
 
 commands:
  - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
- - uv run --no-sync pytest tests/test_tasks.py --junitxml=artifacts/tasks.xml
+ - uv run --no-sync pytest tests/test_tasks.py tests/test_mcap_cli_pin.py --junitxml=artifacts/tasks.xml
  - uv run --no-sync pytest tests/test_wheel_metadata.py --junitxml=artifacts/wheel-metadata.xml
  - uv run --no-sync pytest tests/test_policy.py --junitxml=artifacts/policy.xml
  - uv run --no-sync pytest -v tests/test_hallway.py tests/test_world_format_0_3.py tests/test_world_format_0_3_review.py --junitxml=artifacts/hallway.xml
@@ -321,7 +321,7 @@ commands:
  - uv run --no-sync pytest tests/test_compose.py tests/test_locked_source_review.py --junitxml=artifacts/compose.xml
  - uv run --no-sync pytest tests/test_world_parity.py --junitxml=artifacts/parity.xml
  - uv run --no-sync pytest tests/test_walk_corner.py --junitxml=artifacts/walk-corner.xml
- - MUJOCO_GL=osmesa REQUIRE_SCENARIO=1 uv run --no-sync pytest -v tests/test_media.py tests/test_media_binding.py tests/test_repo_url.py tests/test_manifest_limits.py tests/test_manifest_command_speed.py tests/test_command_speed_refusal.py --junitxml=artifacts/media.xml
+ - MUJOCO_GL=osmesa REQUIRE_SCENARIO=1 uv run --no-sync pytest -v tests/test_media.py tests/test_media_binding.py tests/test_robot_topics.py tests/test_robot_topics_verification.py tests/test_robot_topics_model_copy.py tests/test_robot_topics_model_arrays.py tests/test_robot_topics_returns.py tests/test_repo_url.py tests/test_manifest_limits.py tests/test_manifest_command_speed.py tests/test_command_speed_refusal.py --junitxml=artifacts/media.xml
  - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py tests/test_release_boundary.py tests/test_deploy_freshness_auth.py tests/test_test_results.py tests/test_test_results_review.py --junitxml=artifacts/other.xml
  - uv run --no-sync pytest tests/test_lock_cli_review.py tests/test_go1_pin_review.py tests/test_g1_pin_review.py tests/test_t1_pin_review.py --junitxml=artifacts/lock-cli.xml
 ```

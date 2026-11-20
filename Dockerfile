@@ -12,6 +12,19 @@ RUN --mount=type=secret,id=ca,required=false,mode=0444 set -eu; \
     curl --connect-timeout 15 --max-time 120 -fsSLO "https://github.com/go-task/task/releases/download/v${TASK_VERSION}/task_checksums.txt"; \
     sha256sum --ignore-missing -c task_checksums.txt; \
     tar -xzf "task_linux_${arch}.tar.gz" task; install task /usr/local/bin/task; rm -rf /tmp/task
+# The mcap CLI, for the `mcap doctor` test. Pinned by version and by sha256 per architecture
+# (the digests the release publishes); the hash is checked before the binary is installed.
+ARG MCAP_CLI_VERSION=0.4.0
+ARG MCAP_CLI_SHA256_AMD64=3ace13bc8f0273c69742f25695f7f2df84aed57ddd7c36d5f9a59561dc719fb1
+ARG MCAP_CLI_SHA256_ARM64=94fd84e40ed1593205caf9b9ccee863181256a2fe1ad051ee55d31b4d1b4aca7
+RUN --mount=type=secret,id=ca,required=false,mode=0444 set -eu; \
+    if [ -f /run/secrets/ca ]; then export CURL_CA_BUNDLE=/run/secrets/ca; fi; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in amd64) sha="$MCAP_CLI_SHA256_AMD64";; arm64) sha="$MCAP_CLI_SHA256_ARM64";; *) echo "no mcap CLI pin for $arch" >&2; exit 1;; esac; \
+    mkdir /tmp/mcap; cd /tmp/mcap; \
+    curl --connect-timeout 15 --max-time 120 -fsSL -o mcap "https://github.com/foxglove/mcap/releases/download/releases%2Fmcap-cli%2Fv${MCAP_CLI_VERSION}/mcap-linux-${arch}"; \
+    echo "${sha}  mcap" | sha256sum -c -; \
+    install mcap /usr/local/bin/mcap; cd /; rm -rf /tmp/mcap
 ENV LIVINGPROOF_TOOLING=1
 ENV UV_PROJECT_ENVIRONMENT=/opt/mujoco-venv UV_CACHE_DIR=/opt/mujoco-cache UV_PYTHON_DOWNLOADS=never UV_SYSTEM_CERTS=true PIP_CACHE_DIR=/opt/mujoco-cache/pip
 RUN mkdir /opt/mujoco-venv /opt/mujoco-cache && chmod 1777 /opt/mujoco-venv /opt/mujoco-cache
