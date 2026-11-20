@@ -69,3 +69,16 @@ def test_publish_tests_publishes_an_arm64_check_from_this_attempt():
     runs = "\n".join(step.get("run", "") for step in publish["steps"])
     assert 'tools/test_results.py --name "MuJoCo tests (amd64)"' in runs
     assert 'tools/test_results.py --name "MuJoCo tests (arm64)"' in runs
+
+
+def test_publish_tests_publishes_the_arm64_limit_tests_as_their_own_check():
+    """limits.xml is uploaded with evidence.xml; without its own publish it had no per-test check."""
+    publish = _workflow_jobs()["publish-tests"]
+    steps = [s for s in publish["steps"] if "MuJoCo limit tests (arm64)" in s.get("run", "")]
+    assert len(steps) == 1
+    run = steps[0]["run"]
+    assert 'tools/test_results.py --name "MuJoCo limit tests (arm64)"' in run
+    assert "--path 'limits.xml'" in run and "--root reports-arm64" in run
+    assert steps[0].get("if") == "${{ !cancelled() }}"
+    assert "continue-on-error" not in steps[0]
+    assert steps[0]["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha || github.sha }}"

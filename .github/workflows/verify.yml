@@ -155,6 +155,12 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 tools/test_results.py --name "MuJoCo tests (arm64)" --path 'evidence.xml' --root reports-arm64
+      - name: Publish completed arm64 limit test check
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/test_results.py --name "MuJoCo limit tests (arm64)" --path 'limits.xml' --root reports-arm64
   deploy-docs:
     needs: [verify, publish-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
