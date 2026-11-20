@@ -237,3 +237,25 @@ and re-running into an existing folder replaces only its `mcap/`, `video/` and
 optional `camera = (distance, elevation, azimuth)` for the tracking camera of media videos
 and the `walk stand` clip (Go1 uses its own; default `walk.CAMERA`). The verifier's reusable walk-hallway
 workflow uploads these as named Actions artifacts and hands their URLs to the reporter.
+
+### Robot topics in the trial MCAP
+
+An adapter may publish its own topics next to the simulator's by defining the optional
+`publish(name, model, step)`; it is no-op by default, and an adapter without it records
+exactly the topics above. The recorder calls it at its 50 Hz sample steps, after the physics step,
+on every trial path (the constant command of walk-hallway and the adapter's `drive()` of
+walk-corner), with a read-only snapshot of the step (`robot_topics.StepView`: `time`, `xpos`,
+`xquat`, `qpos`, `qvel`, copies with `writeable` off), never `data`. It returns
+`robot_topics.Message` items (`topic`, `schema_name`, `schema`, `payload`), or nothing. The adapter does not
+write the file, so it cannot change the trial and the re-run still hashes to the evidence.
+
+- `topic` starts with `/`. `/base_pose`, `/joint_states` and `/wall_contacts` are reserved for the
+  simulator; using one raises `ValueError`.
+- `schema` is a JSON Schema document (`schema_name` names it) and the message encoding is `json`,
+  like the simulator's own channels. A topic has one schema for the whole trial; changing it
+  raises `ValueError`. A payload must be finite JSON.
+- The message is written at the step's simulation time (`log_time` and `publish_time`, in ns);
+  `timestamp` (`{sec, nsec}`) is added to the payload when it has none. Messages are kept in
+  `log_time` order with the simulator's own, so `mcap doctor` stays clean.
+- The topics are in the same per-trial MCAP file, and are not recorded in the binding: the binding
+  keeps only the vocabulary's terms. Moving robot topics to their own file is a separate change.

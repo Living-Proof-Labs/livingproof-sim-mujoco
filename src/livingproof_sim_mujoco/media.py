@@ -46,7 +46,7 @@ default_mujoco_gl()
 import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
-from livingproof_sim_mujoco import binding  # noqa: E402
+from livingproof_sim_mujoco import binding, robot_topics  # noqa: E402
 from livingproof_sim_mujoco import evidence as ev  # noqa: E402
 from livingproof_sim_mujoco.pins import fetch, sha256  # noqa: E402
 
@@ -116,8 +116,12 @@ def pick(verification: dict) -> dict[int, str]:
 class Recorder:
     """Read-only ``on_step`` hook: base pose and joint state at MCAP_HZ, frames at FPS."""
 
-    def __init__(self, model, base_body, *, mcap_path=None, video_path=None, camera=CAMERA):
+    def __init__(
+        self, model, base_body, *, mcap_path=None, video_path=None, camera=CAMERA, publish=None
+    ):
         self.model, self.mcap_path, self.video_path = model, mcap_path, video_path
+        self.publish = publish  # the adapter's hook (robot_topics.publisher), or None
+        self.robot_channels: dict[str, tuple] = {}  # topic -> (channel id, schema name, schema)
         self.base = model.body(base_body).id
         self.every_frame = max(1, int(round(1 / (FPS * model.opt.timestep))))
         self.every_sample = max(1, int(round(1 / (MCAP_HZ * model.opt.timestep))))
@@ -190,6 +194,35 @@ class Recorder:
                 self.pending.append(
                     (ns, channel, self.seq, json.dumps(msg, separators=(",", ":")).encode())
                 )
+            self.seq += 1
+            if self.publish is not None:
+                self._publish(data, ns, stamp)
+
+    def _publish(self, data, ns: int, stamp: dict) -> None:
+        """Ask the adapter for this step's robot topics and queue them at the step's time.
+
+        The adapter gets a read-only snapshot, not ``data``, and does not write the file."""
+        for item in self.publish(robot_topics.snapshot(data)) or ():
+            message = robot_topics.check(item)
+            known = self.robot_channels.get(message.topic)
+            if known is None:
+                schema = self.writer.register_schema(
+                    message.schema_name, "jsonschema", json.dumps(message.schema).encode()
+                )
+                channel = self.writer.register_channel(message.topic, "json", schema)
+                known = self.robot_channels[message.topic] = (
+                    channel,
+                    message.schema_name,
+                    message.schema,
+                )
+            elif known[1:] != (message.schema_name, message.schema):
+                raise ValueError(
+                    f"topic {message.topic} changed its schema mid-trial; one topic has one schema"
+                )
+            payload = {"timestamp": stamp, **message.payload}
+            self.pending.append(
+                (ns, known[0], self.seq, json.dumps(payload, separators=(",", ":")).encode())
+            )
             self.seq += 1
 
     def finish(self, obs: dict) -> None:
@@ -290,7 +323,14 @@ def _record(args):
     camera = ev.camera(robot, CAMERA)
 
     def hook(model, base_body):
-        return Recorder(model, base_body, mcap_path=mcap, video_path=video, camera=camera)
+        return Recorder(
+            model,
+            base_body,
+            mcap_path=mcap,
+            video_path=video,
+            camera=camera,
+            publish=robot_topics.publisher(robot, name, model),
+        )
 
     obs = ev.run_trial(
         ref,

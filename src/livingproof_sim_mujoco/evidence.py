@@ -81,6 +81,8 @@ class Robot(Protocol):
     def configuration(self, name: str) -> dict: ...  # raises Unsupported(precondition, detail)
     def environment(self, name: str) -> dict: ...  # extra manifest environment fields
 
+    # Optional: ``publish(name, model, step) -> iterable of robot_topics.Message`` publishes the
+    # adapter's own topics into the trial MCAP of media; see ``robot_topics``. No-op if absent.
     # Optional: ``camera = (distance, elevation, azimuth)`` for the tracking camera of the
     # stand clip and media videos; read through ``camera()``. Never affects evidence.
 

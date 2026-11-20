@@ -217,7 +217,7 @@ def test_the_step_the_adapter_receives_is_a_read_only_snapshot(tmp_path, monkeyp
         (dict(topic="/base_pose"), "reserved"),
         (dict(topic="/joint_states"), "reserved"),
         (dict(topic="/wall_contacts"), "reserved"),
-        (dict(topic="estimated_pose"), "start with"),
+        (dict(topic="estimated_pose"), "starts with"),
         (dict(topic="/x", payload={"n": float("nan")}), "JSON"),
     ],
 )
