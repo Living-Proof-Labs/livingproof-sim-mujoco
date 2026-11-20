@@ -225,7 +225,7 @@ producer binding shared by every robot, merged with the robot's base body and no
 height (a term the robot cannot supply is `unbound`, never guessed). The nominal's `source` is
 the configuration's own (`measured`, `published`, `chosen`), carried as is, and a nominal with no
 source in the configuration is not offered; its `ref` is the configuration file at the robot's
-pinned commit, `<repo>@<commit>:<path>`, never a branch. `media.json` is
+pinned commit, `<repo>@<commit>:<path>`, never a branch. The repo part may be a full URL (an `https://` URL, or an scp-style `git@host:path`), so a ref splits at the last `@`; any `user:password@` userinfo in a `scheme://` repo URL is removed first, in the ref and in the run manifest's `robot.repo`, so a credentialed remote never lands in a file. `media.json` is
 `livingproof-hallway-media/2.1.0`: 2.0.0 plus an additive `binding` file entry on each trial
 (a minor bump; readers of 2.0.0 fields are unaffected). It lists each
 file's size and sha256. Each re-run observation must hash to that trial's evidence
