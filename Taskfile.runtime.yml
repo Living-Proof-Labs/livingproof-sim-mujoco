@@ -41,7 +41,7 @@ tasks:
       - uv run --no-sync pytest tests/test_walk_corner.py --junitxml=artifacts/walk-corner.xml
       # Changed by the --lock work but not run in CI before (review of PR #42).
       # OSMesa: the dev image has no display. MuJoCo reads MUJOCO_GL before import.
-      - MUJOCO_GL=osmesa uv run --no-sync pytest tests/test_media.py tests/test_media_binding.py tests/test_robot_topics.py tests/test_repo_url.py --junitxml=artifacts/media.xml
+      - MUJOCO_GL=osmesa REQUIRE_SCENARIO=1 uv run --no-sync pytest -v tests/test_media.py tests/test_media_binding.py tests/test_robot_topics.py tests/test_repo_url.py tests/test_manifest_limits.py tests/test_manifest_command_speed.py --junitxml=artifacts/media.xml
       - uv run --no-sync pytest tests/test_walk_scene_measure.py tests/test_cpu_dispatch.py tests/test_release_workflow.py tests/test_release_boundary.py tests/test_deploy_freshness_auth.py tests/test_test_results.py tests/test_test_results_review.py --junitxml=artifacts/other.xml
       - uv run --no-sync pytest tests/test_lock_cli_review.py tests/test_go1_pin_review.py tests/test_g1_pin_review.py tests/test_t1_pin_review.py --junitxml=artifacts/lock-cli.xml
   docs:reference:
