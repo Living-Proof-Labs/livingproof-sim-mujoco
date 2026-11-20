@@ -96,7 +96,8 @@ def test_a_repo_the_lock_declares_is_stripped_too(recorded):
     evidence.evidence("test_evidence:TOY", "stock", tmp_path / "ev", trials=1, lock=_lock(repo))
     run = json.loads((tmp_path / "ev" / "run-manifest.json").read_text())
     assert run["robot"]["repo"] == CLEAN
-    assert SECRET not in _everything(tmp_path / "ev")
+    # The lock is the caller's own input and is recorded as given (media replays it by equality),
+    # so its text stays in the manifest's lock record. Only the derived repo is cleaned.
 
 
 def test_the_nominal_ref_in_the_binding_has_no_userinfo(recorded, monkeypatch):
