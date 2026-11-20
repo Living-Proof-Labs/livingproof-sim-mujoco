@@ -131,3 +131,44 @@ def test_the_guide_says_the_repo_part_may_be_a_url_and_the_ref_splits_at_the_las
     assert "may be a full URL" in text
     assert "splits at the last `@`" in text
     assert "userinfo" in text
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        # Verification (#150): edge cases around the authority.
+        (f"https://{USER}:{SECRET}@[::1]:8443/r.git", "https://[::1]:8443/r.git"),
+        ("https://[2001:db8::1]/r.git", "https://[2001:db8::1]/r.git"),
+        (f"https://{USER}:p%40ss%3Aw%2Frd@github.com/r.git", "https://github.com/r.git"),
+        (f"https://{USER}:p@ss@github.com/r.git", "https://github.com/r.git"),  # raw @ in secret
+        (f"https://{USER}:{SECRET}@github.com?ref=a@b", "https://github.com?ref=a@b"),
+        (f"https://{USER}:{SECRET}@github.com#frag@x", "https://github.com#frag@x"),
+        (f"git+https://{USER}:{SECRET}@github.com/r.git", "git+https://github.com/r.git"),
+        (f"HTTPS://{USER}:{SECRET}@GitHub.com/r.git", "HTTPS://GitHub.com/r.git"),
+        ("https://github.com/org/a@b/repo", "https://github.com/org/a@b/repo"),
+        ("https://github.com/r.git?x=a@b", "https://github.com/r.git?x=a@b"),
+        ("file:///srv/git/a@b", "file:///srv/git/a@b"),
+        ("Living-Proof-Labs/livingproof-unitree-g1", "Living-Proof-Labs/livingproof-unitree-g1"),
+        ("", ""),
+    ],
+)
+def test_strip_userinfo_authority_edge_cases(url, expected):
+    got = evidence.strip_userinfo(url)
+    assert got == expected
+    assert SECRET not in got
+    assert evidence.strip_userinfo(got) == got  # idempotent
+
+
+def test_a_ref_still_splits_at_the_last_at_after_stripping():
+    ref = f"{evidence.strip_userinfo(CREDENTIALED)}@{'a' * 40}:configurations/stock.json"
+    repo, _, rest = ref.rpartition("@")
+    commit, _, path = rest.partition(":")
+    assert (repo, commit, path) == (CLEAN, "a" * 40, "configurations/stock.json")
+    scp = f"{evidence.strip_userinfo('git@github.com:example/r.git')}@{'b' * 40}:stock.json"
+    repo, _, rest = scp.rpartition("@")
+    assert repo == "git@github.com:example/r.git" and rest.partition(":")[0] == "b" * 40
+
+
+def test_the_guide_says_the_lock_is_recorded_verbatim_so_a_credential_in_it_stays() -> None:
+    text = " ".join((Path(__file__).parents[1] / "docs" / "evidence.md").read_text().split())
+    assert "`lock.content` keeps the lock's `robot.repo` verbatim" in text
