@@ -7,6 +7,7 @@ walk-corner drive())."""
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -155,6 +156,8 @@ def test_two_identical_runs_give_identical_bytes_with_a_hook(path, tmp_path, mon
 def test_the_hooked_recording_passes_the_mcap_cli_doctor(path, tmp_path, monkeypatch):
     cli = shutil.which("mcap")
     if cli is None:
+        # The development image carries the pinned CLI (Dockerfile), so there it must be found.
+        assert not os.environ.get("LIVINGPROOF_TOOLING"), "the mcap CLI is missing from the image"
         pytest.skip("the mcap CLI is not installed")
     doc = _run(path, tmp_path, monkeypatch, lambda n, m, s: [_msg(payload={"t": s.time})])
     mcap = tmp_path / "m" / doc["trials"][0]["mcap"]["path"]
