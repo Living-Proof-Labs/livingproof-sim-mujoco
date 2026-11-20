@@ -1,0 +1,23 @@
+{
+  "repository": "Living-Proof-Labs/livingproof-evaluator",
+  "tag": "v1.6.0",
+  "commit": "ff8c4e77460dae31965335053bd112ad7bde003e",
+  "files": {
+    "binding.schema.json": {
+      "path": "schema/binding.schema.json",
+      "sha256": "40752052520ec3ce298b95a31cec9aeef459aed7af0fa47837f27a3a227d51c0"
+    },
+    "defs.schema.json": {
+      "path": "schema/defs.schema.json",
+      "sha256": "8ad76e45fb5c7390c787537170e4c581e75de0a14ee3287f3f877656892e69b7"
+    },
+    "vocabulary.json": {
+      "path": "examples/vocabulary/hallway/vocabulary.json",
+      "sha256": "91791b7986143c7f33812675e93a7a15484a53c455d72e668ccec7159a073f0c"
+    },
+    "livingproof-sim-mujoco.json": {
+      "path": "examples/binding/producer/livingproof-sim-mujoco.json",
+      "sha256": "19691cb0d9f3c41bd39844f7767576996fcb2f74b280099b3249cac5b5109887"
+    }
+  }
+}

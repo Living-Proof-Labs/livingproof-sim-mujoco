@@ -1,0 +1,21 @@
+{
+  "format": "livingproof-observation-binding/1.0.0",
+  "kind": "producer",
+  "producer": {"id": "livingproof-sim-mujoco"},
+  "observables": {
+    "base": {
+      "topic": "/base_pose",
+      "encoding": "json",
+      "schema": "foxglove.PoseInFrame",
+      "fields": {"x": "pose.position.x", "y": "pose.position.y"},
+      "frame": "world"
+    },
+    "base_height": {
+      "topic": "/base_pose",
+      "encoding": "json",
+      "schema": "foxglove.PoseInFrame",
+      "fields": {"z": "pose.position.z"},
+      "frame": "world"
+    }
+  }
+}

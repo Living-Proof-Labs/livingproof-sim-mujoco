@@ -1,0 +1,60 @@
+{
+  "format": "livingproof-observable-vocabulary/1.0.0",
+  "scope": "hallway",
+  "terms": [
+    {
+      "id": "base",
+      "name": "base",
+      "meaning": "The robot's base origin: the one body point a hallway scenario tracks. Its position is read at each recorded sample.",
+      "frame": "The world frame, in meters: x and y along the floor, z up from the floor. Lateral distance is measured from the route centerline: the line y = 0 in the straight hallway, the route polyline in the corner worlds.",
+      "units": "meters for position, seconds for sample time",
+      "nominal": {
+        "applies": "never",
+        "rule": "The base position has no per-robot nominal. A scenario states places (exit, centerline) and numbers, not a nominal."
+      },
+      "sources": [
+        "examples/scenario/graded/request.json: steps reach-the-exit and stay-near-centerline",
+        "livingproof-evaluator-scenario checks.py: exit crossing and distance from the route, from the base point of each trace sample (x, y)",
+        "robot-capability-specs walk-hallway README: places, not axes (the body point is the base origin)"
+      ]
+    },
+    {
+      "id": "base_height",
+      "name": "base height",
+      "meaning": "How high the base origin is above the floor. The hallway grades its lowest value over the trial.",
+      "frame": "The world frame, measured up from the floor (z = 0).",
+      "units": "meters",
+      "nominal": {
+        "applies": "per-robot-configuration",
+        "rule": "The fall threshold is the absolute fall_height that the walk-hallway spec grades against: the configuration profile's locomotion.fall_base_height, in meters (0.5 m for the G1). The nominal, the per-robot nominal_base_height, is the measured standing base height in meters (0.78 m for the G1 stock configuration). It is reference data only and is not the grading threshold. A threshold stated as a ratio of nominal would be a separate spec change."
+      },
+      "sources": [
+        "examples/scenario/graded/request.json: step stay-upright (the step text names the fall height, the absolute fall_height the spec grades)",
+        "livingproof-evaluator-scenario checks.py: fail_less grades min_base_height against fall_height, which is the manifest's fall_base_height",
+        "livingproof-evaluator-scenario run manifest: configuration.profile.locomotion.nominal_base_height and fall_base_height"
+      ]
+    },
+    {
+      "id": "body_contact",
+      "name": "body contact",
+      "meaning": "Contact between the robot body and a named environment surface. The scenario names the surface, for example a hallway wall. Each contact has its surface, a start time, an end time and a depth: how far the farthest collision part reaches past the surface's inner face, the largest while the contact lasts. That depth is an intrusion, not a penetration depth.",
+      "frame": "The scenario world: the world names each surface (the hallway has wall-left and wall-right) and times run from the start of the trial.",
+      "units": "depth in meters, start and end in seconds",
+      "nominal": {
+        "applies": "never",
+        "rule": "Body contact has no per-robot nominal. The hallway rule is that no contact with a hallway wall is recorded, a limit of zero."
+      },
+      "sources": [
+        "examples/binding/merged/unitree-g1-stock-livingproof-sim-mujoco.json: body_contact is listed as unbound, as the recording has no contact channel yet",
+        "livingproof-evaluator-scenario checks.py: fail_not_empty reads wall_contacts, the hallway metric for this term",
+        "robot-capability-specs walk-hallway README: wall_contacts must be empty"
+      ],
+      "metrics": [
+        {
+          "id": "wall_contacts",
+          "maps": "The hallway evaluator's wall_contacts metric is the list of body_contact events with hallway walls, each {wall, start, end, depth}. The hallway passes when the list is empty."
+        }
+      ]
+    }
+  ]
+}
