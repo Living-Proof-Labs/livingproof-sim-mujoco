@@ -363,13 +363,6 @@ def test_each_contact_message_validates_against_the_channels_own_schema(tmp_path
         assert list(validator.iter_errors(json.loads(message.data))) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Vera (#147): contacts are written after the run, so in file order a contact's "
-    "log_time (its start) is earlier than the last pose message already written; "
-    "`mcap doctor` warns 'log_time ... is less than the latest log time'. Valid MCAP, "
-    "but not time-ordered. Remove this xfail when the channel is written in time order.",
-)
 def test_the_mcap_is_in_log_time_order_in_file_order(tmp_path, monkeypatch):
     from mcap.reader import make_reader
 

@@ -218,7 +218,7 @@ not replaced. Other platforms, and a Linux session with `DISPLAY` set, keep MuJo
 own choice. It writes an MCAP file per trial (`/base_pose` as
 `foxglove.PoseInFrame`, `/joint_states` at 50 Hz, and `/wall_contacts` with one message per
 `body_contact` event with a hallway wall, `{wall, start, end, depth}`, where `depth` is the
-intrusion past the wall's inner face, not a penetration depth; JSON, zstd) and an mp4
+intrusion past the wall's inner face, not a penetration depth; JSON, zstd) with every message in `log_time` order (`mcap doctor` is clean) and an mp4
 screencast of the verifier's first PASS trial and first FAIL trial only. Next to each MCAP it
 writes the per-trial `livingproof-observation-binding/1.0.0` file, `trial-NN.binding.json`: the
 producer binding shared by every robot, merged with the robot's base body and nominal base

@@ -152,6 +152,7 @@ class Recorder:
             self.qadr = model.jnt_qposadr[self.joints]
             self.vadr = model.jnt_dofadr[self.joints]
             self.seq = 0
+            self.pending = []  # (log_time, channel, sequence, data), written in time order
 
     def __call__(self, i: int, data) -> None:
         if self.renderer is not None and i % self.every_frame == 0:
@@ -186,12 +187,8 @@ class Recorder:
                 ),
             )
             for channel, msg in messages:
-                self.writer.add_message(
-                    channel,
-                    log_time=ns,
-                    publish_time=ns,
-                    sequence=self.seq,
-                    data=json.dumps(msg, separators=(",", ":")).encode(),
+                self.pending.append(
+                    (ns, channel, self.seq, json.dumps(msg, separators=(",", ":")).encode())
                 )
             self.seq += 1
 
@@ -199,7 +196,7 @@ class Recorder:
         """Write the trial's wall contacts, one message per event, after the run.
 
         The contacts are in the observation, which exists only once the trial ends. They are
-        written as observed: nothing here changes the observation or its hash."""
+        queued with the rest and written in time order on close, as observed: nothing here changes the observation or its hash."""
         if self.writer is None:
             return
         for event in obs.get("wall_contacts") or []:
@@ -211,14 +208,20 @@ class Recorder:
                 "end": event["end"],
                 "depth": event["depth"],
             }
-            self.writer.add_message(
-                self.contact,
-                log_time=ns,
-                publish_time=ns,
-                sequence=self.seq,
-                data=json.dumps(message, separators=(",", ":")).encode(),
-            )
+            data = json.dumps(message, separators=(",", ":")).encode()
+            self.pending.append((ns, self.contact, self.seq, data))
             self.seq += 1
+
+    def _flush(self) -> None:
+        """Write every message in log_time order (stable: equal times keep their arrival order).
+
+        The contacts are known only after the run, and a contact's time is its start, so they go
+        into the stream among the poses rather than after them."""
+        for ns, channel, sequence, data in sorted(self.pending, key=lambda m: m[0]):
+            self.writer.add_message(
+                channel, log_time=ns, publish_time=ns, sequence=sequence, data=data
+            )
+        self.pending = []
 
     def close(self) -> None:
         if self.renderer is not None:
@@ -230,6 +233,7 @@ class Recorder:
             )  # fmt: skip
             self.renderer.close()
         if self.writer is not None:
+            self._flush()
             self.writer.finish()
             self.stream.close()
 
