@@ -92,11 +92,32 @@ def test_the_command_speed_is_recorded_even_when_the_lock_plan_does_not_list_it(
     assert manifest["plan"]["command_speed"] == 0.5  # the speed the run used (parameter file)
 
 
-def test_the_recorded_command_speed_is_the_one_the_run_used(run):
+def test_a_lock_speed_equal_to_the_parameter_files_passes(run):
+    def same(lock):
+        lock["plan"]["command_speed"] = 0.5
+
+    assert run(same)["plan"]["command_speed"] == 0.5
+
+
+def test_a_lock_speed_that_differs_from_the_parameter_files_is_refused_before_the_run(run):
     def faster(lock):
         lock["plan"]["command_speed"] = 0.25
 
-    assert run(faster)["plan"]["command_speed"] == 0.25
+    with pytest.raises(SystemExit, match="command_speed"):
+        run(faster)
+
+
+def test_a_missing_lock_speed_records_the_parameter_file_speed(run):
+    def drop(lock):
+        del lock["plan"]["command_speed"]
+
+    assert run(drop)["plan"]["command_speed"] == 0.5
+
+
+def test_time_limit_follows_the_speed_the_run_used(run):
+    manifest = run()
+    speed = manifest["plan"]["command_speed"]
+    assert 2 * manifest["world"]["route_length"] / speed + 5 == 27.0
 
 
 def test_the_limits_resolve_from_the_manifest_alone(run):

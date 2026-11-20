@@ -7,8 +7,8 @@ and compare it with the manifest, with and without a speed in the lock's plan. T
 0.5 m/s, so the parameter file's speed cannot be varied and a recorded constant 0.5 is not told
 apart from the parameter file's here.
 
-One case is a strict xfail: the simulator takes its speed from the parameter file only, never from
-the lock's plan, so a lock that lists a different speed is recorded as given but not driven.
+The simulator takes its speed from the parameter file only, never from the lock's plan, so a lock
+that lists a different speed is refused before the run starts (Rivet's decision).
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ def drive(tmp_path, monkeypatch):
         evidence.evidence("test_evidence:TOY", "stock", out, trials=1, lock=_lock(repo))
         return json.loads((out / "manifest.json").read_text()), set(commanded)
 
+    go.commanded, go.out = commanded, tmp_path / "ev"
     return go
 
 
@@ -65,11 +66,10 @@ def test_a_lock_speed_equal_to_the_parameter_files_is_recorded_unchanged(drive) 
     assert manifest["plan"]["command_speed"] == 0.5
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the simulator ignores plan.command_speed in the lock; the manifest records it as given",
-)
-def test_a_lock_speed_that_is_not_the_parameter_files_is_not_recorded_as_driven(drive) -> None:
-    manifest, commanded = drive(lock_speed=0.25)
-    assert commanded == {0.5}  # what the policy was given
-    assert manifest["plan"]["command_speed"] == 0.5  # recorded 0.25 today
+def test_a_lock_speed_that_is_not_the_parameter_files_is_refused_before_the_run(drive) -> None:
+    with pytest.raises(SystemExit) as refused:
+        drive(lock_speed=0.25)
+    message = str(refused.value)
+    assert "command_speed" in message and "0.25" in message and "0.5" in message
+    assert drive.commanded == []  # refused before any step, not after a run at the wrong speed
+    assert not (drive.out / "manifest.json").exists()
