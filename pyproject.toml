@@ -33,7 +33,7 @@ path = "hatch_build.py"
 [dependency-groups]
 dev = [
     "jsonschema==4.26.0",
-    "pytest==8.4.2",
+    "pytest==9.0.3",
     "onnx==1.23.2",
     "pillow==13.0.0",
     "mcap==1.6.0",
