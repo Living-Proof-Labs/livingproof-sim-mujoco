@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,15 +54,52 @@ def inputs(manifest: dict) -> dict:
     return {k: _number(v) for k, v in found.items() if v is not None}
 
 
+SCENARIO_SPEC = (
+    "livingproof-evaluator-scenario @ "
+    "git+https://github.com/Living-Proof-Labs/livingproof-evaluator-scenario@v1.5.0"
+)
+_THRESHOLDS = (
+    "import json, sys\n"
+    "from livingproof_evaluator_scenario import media\n"
+    "print(json.dumps(media.thresholds_from_manifest(json.load(sys.stdin))))\n"
+)
+
+
+class _ViaUv:
+    """The released scenario runner (v1.5.0) in its own Python 3.12 environment.
+
+    The runner needs Python 3.12 and this project supports 3.11, so it is not a dependency of the
+    project: ``uv`` runs it isolated, pinned to the release tag.
+    """
+
+    @staticmethod
+    def thresholds_from_manifest(manifest: dict):
+        done = subprocess.run(
+            ["uv", "run", "--no-project", "--isolated", "--python", "3.12", "--with",
+             SCENARIO_SPEC, "python", "-c", _THRESHOLDS],
+            input=json.dumps(manifest), capture_output=True, text=True, timeout=900,
+        )  # fmt: skip
+        assert done.returncode == 0, done.stderr[-2000:]
+        thresholds, missing = json.loads(done.stdout.splitlines()[-1])
+        return thresholds, missing
+
+
 def scenario_media():
-    """The real scenario runner. With REQUIRE_SCENARIO=1 (CI) its absence fails, not skips."""
+    """The real scenario runner: imported when installed, else run with uv.
+
+    With REQUIRE_SCENARIO=1 (CI), failing to get it is a failure, not a skip.
+    """
     try:
         from livingproof_evaluator_scenario import media
+
+        return media
     except ImportError:
-        if os.environ.get("REQUIRE_SCENARIO") == "1":
-            pytest.fail("REQUIRE_SCENARIO=1 but livingproof-evaluator-scenario is not installed")
-        pytest.skip("livingproof-evaluator-scenario is not installed")
-    return media
+        pass
+    if shutil.which("uv") is not None:
+        return _ViaUv
+    if os.environ.get("REQUIRE_SCENARIO") == "1":
+        pytest.fail("REQUIRE_SCENARIO=1 but livingproof-evaluator-scenario is not available")
+    pytest.skip("livingproof-evaluator-scenario is not available")
 
 
 @pytest.fixture
@@ -158,9 +197,9 @@ def test_the_real_runner_resolves_them_when_the_lock_plan_has_no_speed(run):
 
 
 def test_the_real_runner_is_required_when_the_switch_is_set(monkeypatch):
-    package = pytest.importorskip("livingproof_evaluator_scenario")
-    monkeypatch.delattr(package, "media", raising=False)
     monkeypatch.setitem(sys.modules, "livingproof_evaluator_scenario.media", None)
+    monkeypatch.delitem(sys.modules, "livingproof_evaluator_scenario", raising=False)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     monkeypatch.setenv("REQUIRE_SCENARIO", "1")
     with pytest.raises(pytest.fail.Exception, match="REQUIRE_SCENARIO=1"):
         scenario_media()
