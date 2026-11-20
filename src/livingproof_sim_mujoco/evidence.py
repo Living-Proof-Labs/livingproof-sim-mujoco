@@ -770,6 +770,24 @@ def recorded_sources(parameters: sources.ParametersSource) -> dict:
     return {"parameters": {"path": parameters.path, "sha256": parameters.sha256}}
 
 
+def _require_lock_speed_is_driven(plan: dict, p: dict) -> None:
+    """Refuse, before any output, a lock whose ``plan.command_speed`` is not the speed driven.
+
+    The run always drives the scenario parameter file's ``command_speed``; the lock's plan never
+    changes it. The manifest records the speed the run used, so a lock that lists another number
+    would make the manifest, and the ``time_limit`` resolved from it, describe a run that did not
+    happen. A matching speed, or none, goes ahead.
+    """
+    listed, driven = plan.get("command_speed"), p.get("command_speed")
+    if listed is None or driven is None or listed == driven:
+        return
+    raise SystemExit(
+        f"ERROR: the lock's plan.command_speed is {listed!r}, but the run drives the scenario "
+        f"parameter file's command_speed {driven!r}; the lock cannot change it. Nothing was "
+        f"recorded. Example: remove plan.command_speed from the lock, or set it to {driven!r}."
+    )
+
+
 def executed_plan(plan: dict, count: int, command_speed: float | None = None) -> dict:
     """The plan this run used: ``trials.count``. Seeds and ``required_passes`` are omitted.
 
@@ -1231,6 +1249,7 @@ def evidence(
     # Before any output: a conflicting or unknown world identity writes nothing.
     world_id = world_identity(root, lock, prepared.world_source)
     count = trial_count(plan, trials)
+    _require_lock_speed_is_driven(plan, p)
     offset = declared_offset(plan)
     profile = robot.robot()
     checked = sc.preconditions(
