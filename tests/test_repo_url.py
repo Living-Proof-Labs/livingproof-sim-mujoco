@@ -167,3 +167,8 @@ def test_a_ref_still_splits_at_the_last_at_after_stripping():
     scp = f"{evidence.strip_userinfo('git@github.com:example/r.git')}@{'b' * 40}:stock.json"
     repo, _, rest = scp.rpartition("@")
     assert repo == "git@github.com:example/r.git" and rest.partition(":")[0] == "b" * 40
+
+
+def test_the_guide_says_the_lock_is_recorded_verbatim_so_a_credential_in_it_stays() -> None:
+    text = " ".join((Path(__file__).parents[1] / "docs" / "evidence.md").read_text().split())
+    assert "`lock.content` keeps the lock's `robot.repo` verbatim" in text
