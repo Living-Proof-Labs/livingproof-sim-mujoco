@@ -502,6 +502,7 @@ def run_trial(
             log_fallback=log_fallback,
         )
         if hook is not None:
+            _finish(hook, obs)
             hook.close()
         return obs
     if command is None:
@@ -522,8 +523,16 @@ def run_trial(
         log_fallback=log_fallback,
     )
     if hook is not None:
+        _finish(hook, obs)
         hook.close()
     return obs
+
+
+def _finish(hook, obs: dict) -> None:
+    """Give a recording hook the finished observation (for what exists only after the run)."""
+    finish = getattr(hook, "finish", None)
+    if finish is not None:
+        finish(obs)
 
 
 def observation_bytes(obs: dict) -> bytes:

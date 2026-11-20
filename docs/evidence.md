@@ -216,8 +216,13 @@ run, in sequence, with a read-only recorder. On Linux, importing this module set
 set, so a headless host uses the OSMesa software renderer. An existing `MUJOCO_GL` is
 not replaced. Other platforms, and a Linux session with `DISPLAY` set, keep MuJoCo's
 own choice. It writes an MCAP file per trial (`/base_pose` as
-`foxglove.PoseInFrame` and `/joint_states`, JSON, 50 Hz, zstd) and an mp4 screencast of
-the verifier's first PASS trial and first FAIL trial only, plus `media.json` with each
+`foxglove.PoseInFrame`, `/joint_states` at 50 Hz, and `/wall_contacts` with one message per
+`body_contact` event with a hallway wall, `{wall, start, end, depth}`, where `depth` is the
+intrusion past the wall's inner face, not a penetration depth; JSON, zstd) and an mp4
+screencast of the verifier's first PASS trial and first FAIL trial only. Next to each MCAP it
+writes the per-trial `livingproof-observation-binding/1.0.0` file, `trial-NN.binding.json`: the
+producer binding shared by every robot, merged with the robot's base body and nominal base
+height (a term the robot cannot supply is `unbound`, never guessed). `media.json` lists each
 file's size and sha256. Each re-run observation must hash to that trial's evidence
 sha256, or nothing is kept (recording goes to a staging folder, so a mismatch leaves no
 partial files from any trial), so every recording is of the trial that was graded. It

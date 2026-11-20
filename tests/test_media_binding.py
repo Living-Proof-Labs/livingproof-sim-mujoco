@@ -271,3 +271,17 @@ def test_the_robot_nominal_is_in_meters_or_not_offered():
         {"locomotion": {"nominal_base_height": {"value": "0.78", "unit": "m"}}},
     ):
         assert binding.nominal_from(bad, "x.json") is None, bad
+
+
+def test_the_evidence_guide_describes_the_channel_and_the_binding():
+    text = (Path(__file__).parents[1] / "docs" / "evidence.md").read_text()
+    for needle in (
+        "/wall_contacts",
+        "{wall, start, end, depth}",
+        "intrusion past the wall's inner face",
+        "not a penetration depth",
+        "livingproof-observation-binding/1.0.0",
+        "trial-NN.binding.json",
+        "unbound",
+    ):
+        assert needle in " ".join(text.split()), needle

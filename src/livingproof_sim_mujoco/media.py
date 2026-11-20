@@ -46,6 +46,7 @@ default_mujoco_gl()
 import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
+from livingproof_sim_mujoco import binding  # noqa: E402
 from livingproof_sim_mujoco import evidence as ev  # noqa: E402
 from livingproof_sim_mujoco.pins import fetch, sha256  # noqa: E402
 
@@ -73,6 +74,30 @@ JOINT_SCHEMA = {
         "position": {"type": "array", "items": {"type": "number"}},
         "velocity": {"type": "array", "items": {"type": "number"}},
         "effort": {"type": "array", "items": {"type": "number"}},
+    },
+}
+
+
+CONTACT_SCHEMA = {
+    "type": "object",
+    "title": binding.CONTACT_SCHEMA_NAME,
+    "description": (
+        "One body_contact event with a hallway wall: the wall, the start and end time in "
+        "seconds from the start of the trial, and the depth."
+    ),
+    "properties": {
+        "timestamp": {"type": "object"},
+        "wall": {"type": "string"},
+        "start": {"type": "number"},
+        "end": {"type": "number"},
+        "depth": {
+            "type": "number",
+            "description": (
+                "In meters: the intrusion past the wall's inner face, the largest while the "
+                "contact lasts, measured on the robot's collision geometry. It is an "
+                "intrusion, not a penetration depth."
+            ),
+        },
     },
 }
 
@@ -115,8 +140,12 @@ class Recorder:
             joint = self.writer.register_schema(
                 "livingproof.JointState", "jsonschema", json.dumps(JOINT_SCHEMA).encode()
             )
-            self.pose = self.writer.register_channel("/base_pose", "json", pose)
+            contact = self.writer.register_schema(
+                binding.CONTACT_SCHEMA_NAME, "jsonschema", json.dumps(CONTACT_SCHEMA).encode()
+            )
+            self.pose = self.writer.register_channel(binding.POSE_TOPIC, "json", pose)
             self.joint = self.writer.register_channel("/joint_states", "json", joint)
+            self.contact = self.writer.register_channel(binding.CONTACT_TOPIC, "json", contact)
             free = int(mujoco.mjtJoint.mjJNT_FREE)
             self.joints = [j for j in range(model.njnt) if int(model.jnt_type[j]) != free]
             self.names = [model.joint(j).name for j in self.joints]
@@ -166,6 +195,31 @@ class Recorder:
                 )
             self.seq += 1
 
+    def finish(self, obs: dict) -> None:
+        """Write the trial's wall contacts, one message per event, after the run.
+
+        The contacts are in the observation, which exists only once the trial ends. They are
+        written as observed: nothing here changes the observation or its hash."""
+        if self.writer is None:
+            return
+        for event in obs.get("wall_contacts") or []:
+            ns = int(round(float(event["start"]) * 1e9))
+            message = {
+                "timestamp": {"sec": ns // 1_000_000_000, "nsec": ns % 1_000_000_000},
+                "wall": event["wall"],
+                "start": event["start"],
+                "end": event["end"],
+                "depth": event["depth"],
+            }
+            self.writer.add_message(
+                self.contact,
+                log_time=ns,
+                publish_time=ns,
+                sequence=self.seq,
+                data=json.dumps(message, separators=(",", ":")).encode(),
+            )
+            self.seq += 1
+
     def close(self) -> None:
         if self.renderer is not None:
             import imageio.v2 as imageio
@@ -188,6 +242,26 @@ def _file(path: Path, out: Path) -> dict:
     }
 
 
+def _write_binding(robot, name, index, mcap: Path, config_path: str, out: Path) -> dict:
+    """The per-trial merged binding, next to the recording it describes.
+
+    The robot half is what the adapter knows: its id, the configuration, the base body and the
+    configuration's nominal base height (absent, so unbound, when the configuration has none).
+    The recording is named relative to the binding, with its real sha256.
+    """
+    robot_half = binding.robot_binding(
+        robot.id,
+        name,
+        robot.base_body(name),
+        binding.nominal_from(robot.configuration(name), config_path),
+    )
+    recording = {"uri": mcap.name, "sha256": sha256(mcap)}
+    merged = binding.merge(robot_half, binding.producer_binding(), f"trial-{index:02d}", recording)
+    path = mcap.with_name(f"trial-{index:02d}.binding.json")
+    path.write_text(json.dumps(merged, indent=2) + "\n")
+    return _file(path, out)
+
+
 def _record(args):
     (
         ref,
@@ -204,6 +278,7 @@ def _record(args):
         exit_place,
         world,
         places,
+        config_path,
     ) = args
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"trial-{index:02d}.mcap"
@@ -237,6 +312,7 @@ def _record(args):
             f"{expected[:12]}; no recording kept for a different run"
         )
     trial = {"index": index, "observation_sha256": got, "mcap": _file(mcap, out)}
+    trial["binding"] = _write_binding(robot, name, index, mcap, config_path, out)
     if video is not None:
         trial.update(status=status, video=_file(video, out))
     return trial
@@ -279,6 +355,7 @@ def media(
     route, exit_place = geometry if geometry else (None, None)
     # An outcome-only scenario is driven by the adapter, as in the evidence run.
     places = ev.sc.scenario_places(world, prepared.document) if prepared.command is None else None
+    config_path = next(c["path"] for c in recorded["configurations"] if c["name"] == name)
     picked = pick(json.loads(Path(verification).read_text()))
     offset = ev.declared_offset(plan)
     out = Path(out)
@@ -305,6 +382,7 @@ def media(
             exit_place,
             prepared.world,
             places,
+            config_path,
         )
         for t in manifest["trials"]["results"]
     ]
