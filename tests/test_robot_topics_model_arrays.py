@@ -49,7 +49,9 @@ def test_the_hooks_copy_shares_no_array_memory_with_the_live_model(field):
 
 def _outcome(doc, root):
     trial = doc["trials"][0]
-    return trial["observation_sha256"], (root / "m" / trial["mcap"]["path"]).read_bytes()
+    return trial["observation_sha256"], (root / "m" / trial["mcap"]["path"]).read_bytes() + (
+        root / "m" / trial["robot_mcap"]["path"]
+    ).read_bytes()
 
 
 @pytest.mark.parametrize("path", PATHS)
