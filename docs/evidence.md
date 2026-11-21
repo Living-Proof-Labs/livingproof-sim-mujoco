@@ -242,7 +242,7 @@ with no messages when the adapter publishes nothing. `media.json` is
 `livingproof-hallway-media/2.2.0`: 2.1.0 plus an additive `robot_mcap` file entry on each trial,
 and 2.1.0 added `binding` to 2.0.0 (minor bumps; readers of earlier fields are unaffected).
 `mcap` stays the compatibility field and is the simulator's file: a reader of 2.1.0 still parses
-it, but it no longer carries robot topics, which are only in `robot_mcap`. It lists each
+it, but it no longer carries robot topics. Robot topics now live only in `robot_mcap`, and `mcap` is the simulator recording. It lists each
 file's size and sha256. Each re-run observation must hash to that trial's evidence
 sha256, or nothing is kept (recording goes to a staging folder, so a mismatch leaves no
 partial files from any trial), so every recording is of the trial that was graded. It
