@@ -19,7 +19,9 @@ from test_robot_topics_verification import PATHS, _msg, _run
 
 def _outcome(doc, root):
     trial = doc["trials"][0]
-    return trial["observation_sha256"], (root / "m" / trial["mcap"]["path"]).read_bytes()
+    return trial["observation_sha256"], (root / "m" / trial["mcap"]["path"]).read_bytes() + (
+        root / "m" / trial["robot_mcap"]["path"]
+    ).read_bytes()
 
 
 @pytest.mark.parametrize("path", PATHS)

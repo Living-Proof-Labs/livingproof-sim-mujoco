@@ -304,10 +304,11 @@ def test_the_robot_nominal_is_in_meters_with_its_own_source_or_not_offered():
         assert binding.nominal_from(bad, pinned) is None, bad
 
 
-def test_media_json_is_2_1_0_and_the_guide_says_what_changed():
-    assert media.FORMAT == "livingproof-hallway-media/2.1.0"
+def test_media_json_is_2_2_0_and_the_guide_says_what_changed():
+    assert media.FORMAT == "livingproof-hallway-media/2.2.0"
     text = " ".join((Path(__file__).parents[1] / "docs" / "evidence.md").read_text().split())
-    assert "livingproof-hallway-media/2.1.0" in text
+    assert "livingproof-hallway-media/2.2.0" in text
+    assert "robot_mcap" in text and "mcap/trial-NN.robot.mcap" in text
     assert "additive" in text and "2.0.0" in text
 
 

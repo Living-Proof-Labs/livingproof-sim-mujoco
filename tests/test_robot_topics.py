@@ -123,15 +123,18 @@ def published(request, tmp_path, monkeypatch):
 
 def test_the_published_topic_is_recorded_on_every_trial_path(published):
     _, tmp_path, doc = published
-    topics = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"]))
-    assert "/estimated_pose" in topics and SIM <= set(topics) | {"/wall_contacts"}
-    assert len(topics["/estimated_pose"]) == len(topics["/base_pose"]) > 10  # the recorder's 50 Hz
+    robot = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["robot_mcap"]["path"]))
+    sim = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"]))
+    assert set(robot) == {"/estimated_pose"} and not set(sim) & set(robot)
+    assert len(robot["/estimated_pose"]) == len(sim["/base_pose"]) > 10  # the recorder's 50 Hz
 
 
 def test_each_message_is_stamped_with_simulation_time_in_the_world_frame(published):
     _, tmp_path, doc = published
-    topics = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"]))
-    base, estimated = topics["/base_pose"], topics["/estimated_pose"]
+    base = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"]))["/base_pose"]
+    estimated = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["robot_mcap"]["path"]))[
+        "/estimated_pose"
+    ]
     assert [m.log_time for _, m in estimated] == [m.log_time for _, m in base]
     for (_, message), (_, truth) in zip(estimated, base, strict=True):
         body, reference = json.loads(message.data), json.loads(truth.data)
@@ -144,7 +147,7 @@ def test_each_message_is_stamped_with_simulation_time_in_the_world_frame(publish
 
 def test_the_channel_declares_the_schema_the_adapter_gave_and_messages_satisfy_it(published):
     _, tmp_path, doc = published
-    topics = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"]))
+    topics = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["robot_mcap"]["path"]))
     schema, _ = topics["/estimated_pose"][0]
     assert (schema.name, schema.encoding) == ("foxglove.PoseInFrame", "jsonschema")
     assert json.loads(schema.data) == POSE
@@ -179,11 +182,13 @@ def test_an_adapter_with_no_hook_records_only_todays_topics(tmp_path, monkeypatc
     topics = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"]))
     assert set(topics) <= SIM and {"/base_pose", "/joint_states"} <= set(topics)
     assert not hasattr(test_evidence.TOY, "publish")
+    assert _read(tmp_path / "m" / doc["trials"][0]["robot_mcap"]["path"]) == []
 
 
-def test_the_mcap_is_in_log_time_order_and_mcap_doctor_is_clean(published):
+@pytest.mark.parametrize("key", ["mcap", "robot_mcap"])
+def test_each_mcap_is_in_log_time_order_and_mcap_doctor_is_clean(key, published):
     _, tmp_path, doc = published
-    path = tmp_path / "m" / doc["trials"][0]["mcap"]["path"]
+    path = tmp_path / "m" / doc["trials"][0][key]["path"]
     times = [m.log_time for _, _, m in _read(path)]
     assert times == sorted(times)
     cli = shutil.which("mcap")
