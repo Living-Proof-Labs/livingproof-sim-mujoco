@@ -5,7 +5,6 @@ import json
 import os
 import shutil
 import subprocess
-from pathlib import Path
 
 # Before livingproof_sim_mujoco, which imports MuJoCo and locks the GL platform.
 os.environ.setdefault("MUJOCO_GL", "osmesa")
