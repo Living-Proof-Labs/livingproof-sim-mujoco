@@ -162,8 +162,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 tools/test_results.py --name "MuJoCo limit tests (arm64)" --path 'limits.xml' --root reports-arm64
   deploy-docs:
-    needs: [verify, publish-tests]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [release, assemble]
+    if: needs.release.outputs.draft-created == 'true' && needs.assemble.result == 'success'
     runs-on: ubuntu-24.04
     concurrency:
       group: mujoco-pages
@@ -175,7 +175,19 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.git-tag }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.release.outputs.git-tag }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Require release tag to match the exact verified commit
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$GITHUB_SHA"
       - name: Check current main inside deployment lock
         id: fresh
         env:
