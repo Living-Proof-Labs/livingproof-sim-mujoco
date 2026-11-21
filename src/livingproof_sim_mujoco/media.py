@@ -10,7 +10,8 @@ evidence sha256 or nothing is kept: each recording is provably of the graded tri
     python -m livingproof_sim_mujoco.media <module:adapter> <configuration> \\
         <evidence dir> <verification.json> <out>
 
-Writes ``<out>/mcap/trial-NN.mcap`` (every trial), ``<out>/video/trial-NN-{pass,fail}.mp4``
+Writes ``<out>/mcap/trial-NN.mcap`` (the simulator's ground truth, every trial),
+``<out>/mcap/trial-NN.robot.mcap`` (what the robot adapter reported, same trials), ``<out>/video/trial-NN-{pass,fail}.mp4``
 (at most two) and ``<out>/media.json``. Needs the ``media`` extra (mcap, imageio-ffmpeg).
 """
 
@@ -50,7 +51,7 @@ from livingproof_sim_mujoco import binding, robot_topics  # noqa: E402
 from livingproof_sim_mujoco import evidence as ev  # noqa: E402
 from livingproof_sim_mujoco.pins import fetch, sha256  # noqa: E402
 
-FORMAT = "livingproof-hallway-media/2.1.0"
+FORMAT = "livingproof-hallway-media/2.2.0"
 FPS = 25
 SIZE = (360, 640)  # height, width
 MCAP_HZ = 50
@@ -117,9 +118,25 @@ class Recorder:
     """Read-only ``on_step`` hook: base pose and joint state at MCAP_HZ, frames at FPS."""
 
     def __init__(
-        self, model, base_body, *, mcap_path=None, video_path=None, camera=CAMERA, publish=None
+        self,
+        model,
+        base_body,
+        *,
+        mcap_path=None,
+        video_path=None,
+        camera=CAMERA,
+        publish=None,
+        robot_mcap_path=None,
     ):
+        """``mcap_path`` holds the simulator's own topics; ``robot_mcap_path`` the adapter's.
+
+        The two never share a file, so a hook needs ``robot_mcap_path``."""
+        if publish is not None and mcap_path is not None and robot_mcap_path is None:
+            raise ValueError(
+                "an adapter hook needs robot_mcap_path: robot topics get their own file"
+            )
         self.model, self.mcap_path, self.video_path = model, mcap_path, video_path
+        self.robot_writer = None
         self.publish = publish  # the adapter's hook (robot_topics.publisher), or None
         self.robot_channels: dict[str, tuple] = {}  # topic -> (channel id, schema name, schema)
         self.base = model.body(base_body).id
@@ -157,6 +174,12 @@ class Recorder:
             self.vadr = model.jnt_dofadr[self.joints]
             self.seq = 0
             self.pending = []  # (log_time, channel, sequence, data), written in time order
+            self.robot_pending = []  # the same, for the robot file
+            if robot_mcap_path is not None:
+                # Always written, empty when the adapter publishes nothing: a reader can rely on it.
+                self.robot_stream = Path(robot_mcap_path).open("wb")
+                self.robot_writer = Writer(self.robot_stream, compression=CompressionType.ZSTD)
+                self.robot_writer.start(profile="", library="livingproof_sim_mujoco.media")
 
     def __call__(self, i: int, data) -> None:
         if self.renderer is not None and i % self.every_frame == 0:
@@ -195,7 +218,7 @@ class Recorder:
                     (ns, channel, self.seq, json.dumps(msg, separators=(",", ":")).encode())
                 )
             self.seq += 1
-            if self.publish is not None:
+            if self.publish is not None and self.robot_writer is not None:
                 self._publish(data, ns, stamp)
 
     def _publish(self, data, ns: int, stamp: dict) -> None:
@@ -206,10 +229,10 @@ class Recorder:
             message = robot_topics.check(item)
             known = self.robot_channels.get(message.topic)
             if known is None:
-                schema = self.writer.register_schema(
+                schema = self.robot_writer.register_schema(
                     message.schema_name, "jsonschema", json.dumps(message.schema).encode()
                 )
-                channel = self.writer.register_channel(message.topic, "json", schema)
+                channel = self.robot_writer.register_channel(message.topic, "json", schema)
                 known = self.robot_channels[message.topic] = (
                     channel,
                     message.schema_name,
@@ -220,7 +243,7 @@ class Recorder:
                     f"topic {message.topic} changed its schema mid-trial; one topic has one schema"
                 )
             payload = {"timestamp": stamp, **message.payload}
-            self.pending.append(
+            self.robot_pending.append(
                 (ns, known[0], self.seq, json.dumps(payload, separators=(",", ":")).encode())
             )
             self.seq += 1
@@ -250,11 +273,17 @@ class Recorder:
 
         The contacts are known only after the run, and a contact's time is its start, so they go
         into the stream among the poses rather than after them."""
-        for ns, channel, sequence, data in sorted(self.pending, key=lambda m: m[0]):
-            self.writer.add_message(
-                channel, log_time=ns, publish_time=ns, sequence=sequence, data=data
-            )
-        self.pending = []
+        for writer, pending in (
+            (self.writer, self.pending),
+            (self.robot_writer, self.robot_pending),
+        ):
+            if writer is None:
+                continue
+            for ns, channel, sequence, data in sorted(pending, key=lambda m: m[0]):
+                writer.add_message(
+                    channel, log_time=ns, publish_time=ns, sequence=sequence, data=data
+                )
+        self.pending, self.robot_pending = [], []
 
     def close(self) -> None:
         if self.renderer is not None:
@@ -269,6 +298,9 @@ class Recorder:
             self._flush()
             self.writer.finish()
             self.stream.close()
+            if self.robot_writer is not None:
+                self.robot_writer.finish()
+                self.robot_stream.close()
 
 
 def _file(path: Path, out: Path) -> dict:
@@ -319,6 +351,7 @@ def _record(args):
     ) = args
     robot = ev.adapter(ref)
     mcap = out / "mcap" / f"trial-{index:02d}.mcap"
+    robot_mcap = out / "mcap" / f"trial-{index:02d}.robot.mcap"
     video = out / "video" / f"trial-{index:02d}-{status.lower()}.mp4" if status else None
     camera = ev.camera(robot, CAMERA)
 
@@ -327,6 +360,7 @@ def _record(args):
             model,
             base_body,
             mcap_path=mcap,
+            robot_mcap_path=robot_mcap,
             video_path=video,
             camera=camera,
             publish=robot_topics.publisher(robot, name, model),
@@ -348,14 +382,19 @@ def _record(args):
     )
     got = hashlib.sha256(ev.observation_bytes(obs)).hexdigest()
     if got != expected:
-        for path in (mcap, video):
+        for path in (mcap, robot_mcap, video):
             if path is not None:
                 path.unlink(missing_ok=True)
         raise RuntimeError(
             f"trial {index}: re-run observation {got[:12]} differs from the evidence "
             f"{expected[:12]}; no recording kept for a different run"
         )
-    trial = {"index": index, "observation_sha256": got, "mcap": _file(mcap, out)}
+    trial = {
+        "index": index,
+        "observation_sha256": got,
+        "mcap": _file(mcap, out),  # the simulator's ground truth (the 2.0.0/2.1.0 field)
+        "robot_mcap": _file(robot_mcap, out),  # what the robot adapter reported
+    }
     trial["binding"] = _write_binding(robot, name, index, mcap, config_ref, out)
     if video is not None:
         trial.update(status=status, video=_file(video, out))
@@ -469,8 +508,8 @@ def main(argv=None) -> int:
     )
     a = ap.parse_args(argv)
     doc = media(a.adapter, a.configuration, a.evidence, a.verification, a.out, lock=a.lock)
-    mcap = sum(t["mcap"]["bytes"] for t in doc["trials"])
-    print(f"{len(doc['trials'])} MCAP recordings ({mcap} B), all matching their evidence")
+    size = sum(t["mcap"]["bytes"] + t["robot_mcap"]["bytes"] for t in doc["trials"])
+    print(f"{2 * len(doc['trials'])} MCAP recordings ({size} B), all matching their evidence")
     for t in doc["trials"]:
         if "video" in t:
             print(
