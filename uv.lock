@@ -416,7 +416,7 @@ dev = [
 robots = [
     { name = "livingproof-booster-t1", git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1?tag=v2.3.17" },
     { name = "livingproof-unitree-g1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1?tag=v2.3.20" },
-    { name = "livingproof-unitree-go1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.16" },
+    { name = "livingproof-unitree-go1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.17" },
 ]
 torch = [{ name = "torch", specifier = "==2.15.0", index = "https://download.pytorch.org/whl/cpu" }]
 
@@ -437,7 +437,7 @@ dependencies = [
 [[package]]
 name = "livingproof-unitree-go1"
 version = "0.1.0"
-source = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.16#6468ad1854341fe26263fd17917338779583b5c8" }
+source = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.17#e73a411ca857a9d38f902d0b6d2bc26bebddea00" }
 dependencies = [
     { name = "imageio", extra = ["ffmpeg"] },
     { name = "jsonschema" },
