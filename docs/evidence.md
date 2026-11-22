@@ -227,7 +227,7 @@ run, in sequence, with a read-only recorder. On Linux, importing this module set
 `MUJOCO_GL` to `osmesa` when `DISPLAY` is unset or empty and `MUJOCO_GL` is not already
 set, so a headless host uses the OSMesa software renderer. An existing `MUJOCO_GL` is
 not replaced. Other platforms, and a Linux session with `DISPLAY` set, keep MuJoCo's
-own choice. It writes an MCAP file per trial (`/base_pose` as
+own choice. It writes two MCAP files per trial. `mcap/trial-NN.mcap` holds the simulator's ground truth (`/base_pose` as
 `foxglove.PoseInFrame`, `/joint_states` at 50 Hz, and `/wall_contacts` with one message per
 `body_contact` event with a hallway wall, `{wall, start, end, depth}`, where `depth` is the
 intrusion past the wall's inner face, not a penetration depth; JSON, zstd) with every message in `log_time` order (`mcap doctor` is clean) and an mp4
@@ -237,9 +237,12 @@ producer binding shared by every robot, merged with the robot's base body and no
 height (a term the robot cannot supply is `unbound`, never guessed). The nominal's `source` is
 the configuration's own (`measured`, `published`, `chosen`), carried as is, and a nominal with no
 source in the configuration is not offered; its `ref` is the configuration file at the robot's
-pinned commit, `<repo>@<commit>:<path>`, never a branch. The repo part may be a full URL (an `https://` URL, or an scp-style `git@host:path`), so a ref splits at the last `@`; any `user:password@` userinfo in a `scheme://` repo URL is removed first, in the ref and in the run manifest's `robot.repo`, so a credentialed remote never lands in a file. The one exception is the lock itself: `lock.content` keeps the lock's `robot.repo` verbatim, because the lock is recorded exactly as given, so a credential written in the lock stays in the manifest. Do not put one there. `media.json` is
-`livingproof-hallway-media/2.1.0`: 2.0.0 plus an additive `binding` file entry on each trial
-(a minor bump; readers of 2.0.0 fields are unaffected). It lists each
+pinned commit, `<repo>@<commit>:<path>`, never a branch. The repo part may be a full URL (an `https://` URL, or an scp-style `git@host:path`), so a ref splits at the last `@`; any `user:password@` userinfo in a `scheme://` repo URL is removed first, in the ref and in the run manifest's `robot.repo`, so a credentialed remote never lands in a file. The one exception is the lock itself: `lock.content` keeps the lock's `robot.repo` verbatim, because the lock is recorded exactly as given, so a credential written in the lock stays in the manifest. Do not put one there. `mcap/trial-NN.robot.mcap` holds what the robot adapter reported (see below), and exists on every trial,
+with no messages when the adapter publishes nothing. `media.json` is
+`livingproof-hallway-media/2.2.0`: 2.1.0 plus an additive `robot_mcap` file entry on each trial,
+and 2.1.0 added `binding` to 2.0.0 (minor bumps; readers of earlier fields are unaffected).
+`mcap` stays the compatibility field and is the simulator's file: a reader of 2.1.0 still parses
+it, but it no longer carries robot topics. Robot topics now live only in `robot_mcap`, and `mcap` is the simulator recording. It lists each
 file's size and sha256. Each re-run observation must hash to that trial's evidence
 sha256, or nothing is kept (recording goes to a staging folder, so a mismatch leaves no
 partial files from any trial), so every recording is of the trial that was graded. It
@@ -272,5 +275,7 @@ to the evidence.
 - The message is written at the step's simulation time (`log_time` and `publish_time`, in ns);
   `timestamp` (`{sec, nsec}`) is added to the payload when it has none. Messages are kept in
   `log_time` order with the simulator's own, so `mcap doctor` stays clean.
-- The topics are in the same per-trial MCAP file, and are not recorded in the binding: the binding
-  keeps only the vocabulary's terms. Moving robot topics to their own file is a separate change.
+- The topics are written to the trial's own robot file, `mcap/trial-NN.robot.mcap` (`robot_mcap` in
+  `media.json`), never to the simulator's `mcap/trial-NN.mcap`, so each file has one source and neither
+  has the other's topics. Each file is in `log_time` order on its own. They are not recorded in the
+  binding: the binding describes the simulator's recording and keeps only the vocabulary's terms.

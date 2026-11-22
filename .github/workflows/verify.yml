@@ -80,11 +80,6 @@ jobs:
           path: artifacts/manual/
           retention-days: 14
           if-no-files-found: error
-      - name: Upload verified Pages site
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
-        with:
-          path: artifacts/manual/html
   test-arm64:
     name: verify (arm64)
     # #38: the zero-command stand must also run on arm64. Same development image,
@@ -177,6 +172,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       RELEASE_TAG: ${{ needs.release.outputs.git-tag }}
+      VERSION: ${{ needs.release.outputs.version }}
+      DOCS_VERSION: ${{ needs.release.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -184,10 +181,107 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
-      - name: Require release tag to match the exact verified commit
+      - name: Require the published immutable release for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$GITHUB_SHA"
+          mkdir -p artifacts
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > artifacts/release.json
+          python3 tools/released_manual.py
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e
+        with:
+          version: '3.54.0'
+      - name: Match checkout ownership
+        run: |
+          echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
+      - run: task setup
+      - name: Reuse exact-release CLI evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-evidence
+          path: artifacts/
+      - run: task docs
+      - run: task test:docs
+      - name: Verify the rendered release identity before upload
+        run: python3 tools/released_manual.py --site
+      - name: Package the verified Pages HTML
+        id: pages-package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts/manual/html
+          test -f index.html
+          test -z "$(find . ! -type f ! -type d -print -quit)"
+          tar --dereference --hard-dereference -cf "$RUNNER_TEMP/artifact.tar" .
+          digest=$(sha256sum "$RUNNER_TEMP/artifact.tar")
+          echo "tar-sha256=${digest%% *}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        id: pages-artifact
+        with:
+          name: github-pages-${{ needs.release.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
+      # Use the same-run Actions artifact client (like deploy-pages), not the REST index.
+      # An exact ID and name must both resolve to the sealed Pages tar before deploying.
+      - name: Require a valid Pages artifact ID
+        shell: bash
+        env:
+          UPLOADED_ID: ${{ steps.pages-artifact.outputs.artifact-id }}
+        run: |
+          [[ "$UPLOADED_ID" =~ ^[1-9][0-9]*$ ]]
+      - name: Read exact Pages artifact by ID
+        id: pages-id-first
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ steps.pages-artifact.outputs.artifact-id }}
+          path: ${{ runner.temp }}/mujoco-pages-id-first
+      - name: Allow the ID lookup to settle
+        if: steps.pages-id-first.outcome == 'failure'
+        run: sleep 4
+      - name: Retry read by ID once
+        id: pages-id-retry
+        if: steps.pages-id-first.outcome == 'failure'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ steps.pages-artifact.outputs.artifact-id }}
+          path: ${{ runner.temp }}/mujoco-pages-id-retry
+      - name: Read exact Pages artifact by name
+        id: pages-name-first
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: github-pages-${{ needs.release.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mujoco-pages-name-first
+      - name: Allow the name lookup to settle
+        if: steps.pages-name-first.outcome == 'failure'
+        run: sleep 4
+      - name: Retry read by name once
+        id: pages-name-retry
+        if: steps.pages-name-first.outcome == 'failure'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: github-pages-${{ needs.release.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mujoco-pages-name-retry
+      - name: Require matching ID and name readback of the exact tar
+        shell: bash
+        env:
+          EXPECTED_TAR: ${{ steps.pages-package.outputs.tar-sha256 }}
+          EXPECTED_NAME: github-pages-${{ needs.release.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}
+          ID_READBACK: ${{ steps.pages-id-first.outcome == 'success' && steps.pages-id-first.outputs.download-path || steps.pages-id-retry.outputs.download-path }}
+          NAME_READBACK: ${{ steps.pages-name-first.outcome == 'success' && steps.pages-name-first.outputs.download-path || steps.pages-name-retry.outputs.download-path }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_TAR" =~ ^[0-9a-f]{64}$ ]]
+          test -n "$ID_READBACK"
+          test -n "$NAME_READBACK"
+          for path in "$ID_READBACK/$EXPECTED_NAME" "$NAME_READBACK"; do
+            test -f "$path/artifact.tar"
+            digest=$(sha256sum "$path/artifact.tar")
+            test "${digest%% *}" = "$EXPECTED_TAR"
+          done
       - name: Check current main inside deployment lock
         id: fresh
         env:
@@ -203,6 +297,8 @@ jobs:
       - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
         id: deployment
         if: steps.fresh.outputs.deploy == 'true'
+        with:
+          artifact_name: github-pages-${{ needs.release.outputs.version }}-${{ github.sha }}-${{ github.run_attempt }}
   release-boundary:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -224,7 +320,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-boundary.outputs.release-needed == 'true'
     permissions:
       contents: write
-    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.7.9
+    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.9.2
     with:
       draft-release: true
   assemble:

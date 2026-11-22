@@ -261,7 +261,7 @@ def _workflow_texts():
 
 def _guard(document):
     job = document["jobs"]["deploy-docs"]
-    return job, job["steps"][0]
+    return job, next(step for step in job["steps"] if step.get("id") == "fresh")
 
 
 def test_repository_workflows_authenticate_every_main_freshness_read():
@@ -286,7 +286,7 @@ def test_repository_workflows_authenticate_every_main_freshness_read():
     assert guard["env"]["GH_TOKEN"] == "${{ github.token }}"
     assert 'gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main"' in guard["run"]
     assert SKIP_MESSAGE in guard["run"]
-    deploy = job["steps"][1]
+    deploy = next(step for step in job["steps"] if step.get("id") == "deployment")
     assert deploy["uses"].startswith("actions/deploy-pages@")
     assert deploy["if"] == "steps.fresh.outputs.deploy == 'true'"
 

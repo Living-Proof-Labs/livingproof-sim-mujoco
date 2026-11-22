@@ -24,6 +24,7 @@ from test_robot_topics import PubCorner, PubToy, _by_topic, _read
 from livingproof_sim_mujoco import media, robot_topics
 
 PATHS = ["hallway", "corner"]
+KEYS = ("mcap", "robot_mcap")
 
 
 def _run(path, tmp_path, monkeypatch, hook):
@@ -50,10 +51,11 @@ def _msg(topic="/x", name="s.S", schema=None, payload=None):
 @pytest.mark.parametrize("path", PATHS)
 def test_samples_are_exactly_50_hz_in_sim_time_and_sorted(path, tmp_path, monkeypatch):
     doc = _run(path, tmp_path, monkeypatch, lambda n, m, s: [_msg(payload={"t": s.time})])
-    messages = _read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"])
+    messages = _read(tmp_path / "m" / doc["trials"][0]["robot_mcap"]["path"])
+    sim = _by_topic(_read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"]))
     topics = _by_topic(messages)
     stamps = [m.log_time for _, m in topics["/x"]]
-    assert stamps == [m.log_time for _, m in topics["/base_pose"]]
+    assert stamps == [m.log_time for _, m in sim["/base_pose"]]
     assert set(np.diff(stamps)) == {20_000_000}  # 50 Hz, no gaps or duplicates
     for _, m in topics["/x"]:
         body = json.loads(m.data)
@@ -72,7 +74,7 @@ def test_several_messages_in_one_step_keep_the_order_the_hook_gave(path, tmp_pat
         lambda n, m, s: [_msg("/a", payload={"k": 1}), _msg("/b", payload={"k": 2}),
                          _msg("/a", payload={"k": 3})],
     )  # fmt: skip
-    messages = _read(tmp_path / "m" / doc["trials"][0]["mcap"]["path"])
+    messages = _read(tmp_path / "m" / doc["trials"][0]["robot_mcap"]["path"])
     seq = [(c.topic, json.loads(m.data).get("k")) for _, c, m in messages if c.topic in "/a/b"]
     assert seq[:3] == [("/a", 1), ("/b", 2), ("/a", 3)]
 
@@ -148,25 +150,29 @@ def test_two_identical_runs_give_identical_bytes_with_a_hook(path, tmp_path, mon
     for run in ("a", "b"):
         (tmp_path / run).mkdir()
         doc = _run(path, tmp_path / run, monkeypatch, lambda n, m, s: [_msg(payload={"t": s.time})])
-        out.append((tmp_path / run / "m" / doc["trials"][0]["mcap"]["path"]).read_bytes())
+        trial = doc["trials"][0]
+        out.append(tuple((tmp_path / run / "m" / trial[k]["path"]).read_bytes() for k in KEYS))
     assert out[0] == out[1]
 
 
+@pytest.mark.parametrize("key", KEYS)
 @pytest.mark.parametrize("path", PATHS)
-def test_the_hooked_recording_passes_the_mcap_cli_doctor(path, tmp_path, monkeypatch):
+def test_the_hooked_recordings_pass_the_mcap_cli_doctor(key, path, tmp_path, monkeypatch):
     cli = shutil.which("mcap")
     if cli is None:
         # The development image carries the pinned CLI (Dockerfile), so there it must be found.
         assert not os.environ.get("LIVINGPROOF_TOOLING"), "the mcap CLI is missing from the image"
         pytest.skip("the mcap CLI is not installed")
     doc = _run(path, tmp_path, monkeypatch, lambda n, m, s: [_msg(payload={"t": s.time})])
-    mcap = tmp_path / "m" / doc["trials"][0]["mcap"]["path"]
+    mcap = tmp_path / "m" / doc["trials"][0][key]["path"]
     done = subprocess.run([cli, "doctor", str(mcap)], capture_output=True, text=True)
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def test_robot_topics_and_wall_contacts_interleave_in_log_time_order(tmp_path, monkeypatch):
-    """Contacts are queued after the run; the hook's messages must still sort among them."""
+def test_each_file_is_in_log_time_order_with_wall_contacts_only_in_the_sim_file(
+    tmp_path, monkeypatch
+):
+    """Contacts are queued after the run; they must still sort among the sim poses."""
     import test_media_binding as touch
     from mcap.reader import make_reader
 
@@ -180,7 +186,7 @@ def test_robot_topics_and_wall_contacts_interleave_in_log_time_order(tmp_path, m
     monkeypatch.setattr(Touch, "root", repo)
     monkeypatch.setattr(touch, "TOUCH", Touch())
     monkeypatch.syspath_prepend(str(Path(__file__).parent))
-    hooked = tmp_path / "hooked.mcap"
+    hooked, robot_file = tmp_path / "hooked.mcap", tmp_path / "robot.mcap"
     world = json.loads(
         (Path(media.ev.hallway.WORLDS) / "hallway-open" / "0.1.0" / "world.json").read_text()
     )
@@ -192,12 +198,20 @@ def test_robot_topics_and_wall_contacts_interleave_in_log_time_order(tmp_path, m
         p,
         world,
         on_step=lambda m, b: media.Recorder(
-            m, b, mcap_path=hooked, publish=robot_topics.publisher(touch.TOUCH, "stock", m)
+            m,
+            b,
+            mcap_path=hooked,
+            robot_mcap_path=robot_file,
+            publish=robot_topics.publisher(touch.TOUCH, "stock", m),
         ),
     )
     assert obs["wall_contacts"]
-    with hooked.open("rb") as f:
-        found = list(make_reader(f).iter_messages(log_time_order=False))
-    times = [m.log_time for _, _, m in found]
-    assert {"/x", "/wall_contacts"} <= {c.topic for _, c, _ in found}
-    assert times == sorted(times)
+    found = {}
+    for key, path in (("sim", hooked), ("robot", robot_file)):
+        with path.open("rb") as f:
+            found[key] = list(make_reader(f).iter_messages(log_time_order=False))
+        times = [m.log_time for _, _, m in found[key]]
+        assert times == sorted(times)
+    assert {c.topic for _, c, _ in found["robot"]} == {"/x"}
+    assert "/wall_contacts" in {c.topic for _, c, _ in found["sim"]}
+    assert "/x" not in {c.topic for _, c, _ in found["sim"]}
