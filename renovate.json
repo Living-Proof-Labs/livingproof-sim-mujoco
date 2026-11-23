@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Use the released organization preset while retaining Python project and development-container coverage.",
-  "extends": ["github>Living-Proof-Labs/collaboration-guidelines:renovate-preset#v9.9.9"],
+  "extends": ["github>Living-Proof-Labs/collaboration-guidelines:renovate-preset#v9.9.10"],
   "enabledManagers": ["github-actions", "dockerfile", "docker-compose", "npm", "pip-compile", "custom.regex", "renovate-config", "pep621", "devcontainer"],
   "packageRules": [
     {
