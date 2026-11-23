@@ -5,6 +5,7 @@ import ast
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -71,7 +72,15 @@ def main():
         if ci_run
         else "local; hosted publication unverified"
     )
+    version = os.environ.get("DOCS_VERSION", "")
+    if version and (not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) or dirty):
+        raise SystemExit("Stable documentation requires a plain version and clean checkout")
+    if version and identity.get("package_version") != version:
+        raise SystemExit("Installed wheel version does not match the confirmed release")
+    label = version or "development"
     provenance = dict(
+        version=version or None,
+        channel="stable" if version else "development",
         revision=revision,
         dirty=dirty,
         identity=identity,
@@ -83,15 +92,23 @@ def main():
     )
     (OUT / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     (source / "context.md").write_text(
-        "# Build context\n\nDevelopment revision `"
+        "# Build context\n\n"
+        + ("Release " + version if version else "Development")
+        + " revision `"
         + revision
         + "`; dirty checkout: `"
         + str(dirty).lower()
         + "`.\n\n"
-        "[Docs: development · " + revision[:12] + "]"
-        "(https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tree/" + revision + ").\n\n"
-        "This immutable documentation revision is separate from the installed test candidate below. "
-        "See [distribution](release.md) for the published package release and historical-source policy.\n\n"
+        "[Docs: " + label + " · " + revision[:12] + "]"
+        "(https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tree/"
+        + revision
+        + ").\n\n"
+        + (
+            "This manual was built after publication from the confirmed release source. "
+            if version
+            else "This immutable documentation revision is separate from the installed test candidate below. "
+        )
+        + "See [distribution](release.md) for the published package release and historical-source policy.\n\n"
         "CI run: " + (f"[Verification run]({run_url})" if ci_run else run_url) + "\n\n"
         "Installed wheel SHA256: `"
         + provenance["wheel_sha256"]
@@ -153,7 +170,7 @@ def main():
     config["site_dir"] = "html"
     shutil.copytree(ROOT / "tools/theme", OUT / "theme", dirs_exist_ok=True)
     config["theme"]["custom_dir"] = "theme"
-    config["extra"] = {"docs_revision": revision}
+    config["extra"] = {"docs_revision": revision, "docs_version": label}
     config_path = OUT / "config.yml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     subprocess.run(["zensical", "build", "--clean", "-f", str(config_path)], cwd=ROOT, check=True)

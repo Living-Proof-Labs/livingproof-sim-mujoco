@@ -185,7 +185,7 @@ def test_shared_navigation_and_identity_on_every_page():
             "https://github.com/Living-Proof-Labs/livingproof-sim-mujoco/tree/" + record["revision"]
         ) in Links(path).links
         assert "Help / report an issue" in html
-        assert "Docs: development" in html
+        assert "Docs: " + (record.get("version") or "development") in html
     assert "Package release v1.0.0" in (SITE / "release.html").read_text()
 
 
