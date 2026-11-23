@@ -16,7 +16,7 @@ dependencies = ["mujoco==3.17.0", "onnxruntime==1.31.1", "numpy==2.4.6", "jsonsc
 torch = ["torch==2.15.0"]
 # MCAP recordings and mp4 screencasts of walk-hallway trials (livingproof_sim_mujoco.media)
 # Keep unlocked wheel installs above the reviewed Pillow security floor (#124).
-media = ["mcap==1.6.0", "imageio==2.37.0", "imageio-ffmpeg==0.6.0", "pillow==13.0.0"]
+media = ["mcap==1.6.0", "imageio==2.37.0", "imageio-ffmpeg==0.6.0", "pillow>=13.0.0"]
 
 [project.scripts]
 livingproof-sim-mujoco = "livingproof_sim_mujoco.cli:main"
