@@ -16,7 +16,7 @@ dependencies = ["mujoco==3.17.0", "onnxruntime==1.31.1", "numpy==2.4.6", "jsonsc
 torch = ["torch==2.15.0"]
 # MCAP recordings and mp4 screencasts of walk-hallway trials (livingproof_sim_mujoco.media)
 # Keep unlocked wheel installs above the reviewed Pillow security floor (#124).
-media = ["mcap==1.6.0", "imageio==2.37.0", "imageio-ffmpeg==0.6.0", "pillow==13.0.0"]
+media = ["mcap==1.6.0", "imageio==2.37.0", "imageio-ffmpeg==0.6.0", "pillow>=13.0.0"]
 
 [project.scripts]
 livingproof-sim-mujoco = "livingproof_sim_mujoco.cli:main"
@@ -71,9 +71,9 @@ explicit = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
-livingproof-unitree-g1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1", tag = "v2.3.27" }
-livingproof-unitree-go1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1", tag = "v2.3.24" }
-livingproof-booster-t1 = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1", tag = "v2.3.24" }
+livingproof-unitree-g1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1", tag = "v2.3.31" }
+livingproof-unitree-go1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1", tag = "v2.3.28" }
+livingproof-booster-t1 = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1", tag = "v2.3.27" }
 
 # The robot packages' own sources pin this project to v2.0.3. These tests run
 # against this checkout, so that pin is not part of their metadata here.
