@@ -2,5 +2,14 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Use the released organization preset while retaining Python project and development-container coverage.",
   "extends": ["github>Living-Proof-Labs/collaboration-guidelines:renovate-preset#v9.9.7"],
-  "enabledManagers": ["github-actions", "dockerfile", "docker-compose", "npm", "pip-compile", "custom.regex", "renovate-config", "pep621", "devcontainer"]
+  "enabledManagers": ["github-actions", "dockerfile", "docker-compose", "npm", "pip-compile", "custom.regex", "renovate-config", "pep621", "devcontainer"],
+  "packageRules": [
+    {
+      "description": "Keep the media extra's reviewed Pillow security floor (#124) a range in the built wheel. The preset's rangeStrategy pin rewrote >=13.0.0 to ==13.0.0 (#197, #201). widen leaves a satisfied >= floor alone; the floor is raised only by reviewed changes, and tests/test_wheel_metadata.py guards it.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.optional-dependencies"],
+      "matchPackageNames": ["pillow"],
+      "rangeStrategy": "widen"
+    }
+  ]
 }
