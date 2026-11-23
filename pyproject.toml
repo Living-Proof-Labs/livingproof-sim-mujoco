@@ -71,7 +71,7 @@ explicit = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
-livingproof-unitree-g1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1", tag = "v2.3.29" }
+livingproof-unitree-g1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1", tag = "v2.3.31" }
 livingproof-unitree-go1 = { git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1", tag = "v2.3.24" }
 livingproof-booster-t1 = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1", tag = "v2.3.27" }
 
