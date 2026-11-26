@@ -306,7 +306,7 @@ wheels = [
 [[package]]
 name = "livingproof-booster-t1"
 version = "0.1.0"
-source = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1?tag=v2.3.31#5d5bd4a34218037ac8207fd5ab092d76e1bda09c" }
+source = { git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1?tag=v2.3.32#f86a7812f8865bd7c0d0e7a46b2bbd0f3a8f5796" }
 dependencies = [
     { name = "imageio", extra = ["ffmpeg"] },
     { name = "jsonschema" },
@@ -411,7 +411,7 @@ dev = [
     { name = "zensical", specifier = "==0.0.73" },
 ]
 robots = [
-    { name = "livingproof-booster-t1", git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1?tag=v2.3.31" },
+    { name = "livingproof-booster-t1", git = "https://github.com/Living-Proof-Labs/livingproof-booster-t1?tag=v2.3.32" },
     { name = "livingproof-unitree-g1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-g1?tag=v2.3.36" },
     { name = "livingproof-unitree-go1", git = "https://github.com/Living-Proof-Labs/livingproof-unitree-go1?tag=v2.3.32" },
 ]
