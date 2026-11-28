@@ -78,3 +78,15 @@ def test_renovate_widens_numpy_instead_of_rewriting_the_range_to_a_pin():
 def test_no_extra_adds_another_numpy_pin(extra):
     extras = _project()["project"]["optional-dependencies"][extra]
     assert [item for item in extras if Requirement(item).name == "numpy"] == []
+
+
+def test_the_range_tests_run_in_the_ci_test_task():
+    """CI lists its pytest files one by one, so a new file must be named there."""
+    import yaml
+
+    tasks = yaml.safe_load((ROOT / "Taskfile.runtime.yml").read_text(encoding="utf-8"))["tasks"]
+    commands = [c for c in tasks["test"]["cmds"] if isinstance(c, str)]
+    assert any(
+        "pytest" in command and "tests/test_numpy_range.py" in command.split()
+        for command in commands
+    )
