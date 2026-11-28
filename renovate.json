@@ -5,18 +5,18 @@
   "enabledManagers": ["github-actions", "dockerfile", "docker-compose", "npm", "pip-compile", "custom.regex", "renovate-config", "pep621", "devcontainer"],
   "packageRules": [
     {
-      "description": "Keep the media extra's reviewed Pillow security floor (#124) a range in the built wheel. The preset's rangeStrategy pin rewrote >=13.0.0 to ==13.0.0 (#197, #201). widen leaves a satisfied >= floor alone; the floor is raised only by reviewed changes, and tests/test_wheel_metadata.py guards it.",
+      "description": "Keep the media extra's reviewed Pillow security floor (#124) a range in the built wheel. The preset's rangeStrategy pin rewrote >=13.0.0 to ==13.0.0 (#197, #201). update-lockfile leaves the range alone and refreshes the lock inside it (#238); the floor is raised only by reviewed changes, and tests/test_wheel_metadata.py guards it.",
       "matchManagers": ["pep621"],
       "matchDepTypes": ["project.optional-dependencies"],
       "matchPackageNames": ["pillow"],
-      "rangeStrategy": "widen"
+      "rangeStrategy": "update-lockfile"
     },
     {
-      "description": "Keep numpy a range in the built wheel (#236). An exact pin here makes every robot repository that pins its own numpy unresolvable whenever the two differ. widen leaves a satisfied range alone; the floor is raised only by a reviewed change, and tests/test_numpy_range.py guards the range and the lock.",
+      "description": "Keep numpy a range in the built wheel (#236). An exact pin here makes every robot repository that pins its own numpy unresolvable whenever the two differ. update-lockfile leaves the range alone and refreshes the lock inside it (#238); the floor is raised only by a reviewed change, and tests/test_numpy_range.py guards the range and the lock.",
       "matchManagers": ["pep621"],
       "matchDepTypes": ["project.dependencies"],
       "matchPackageNames": ["numpy"],
-      "rangeStrategy": "widen"
+      "rangeStrategy": "update-lockfile"
     }
   ]
 }
