@@ -50,3 +50,14 @@ def test_media_stays_optional_and_python_support_is_unchanged(metadata):
             assert requirement.marker is not None
             assert requirement.marker.evaluate({"extra": "media"})
             assert not requirement.marker.evaluate({"extra": ""})
+
+
+def test_built_wheel_requires_a_numpy_range_robot_repos_can_resolve(metadata):
+    requirements = [Requirement(r) for r in metadata.get_all("Requires-Dist")]
+    numpy = [r for r in requirements if r.name.lower() == "numpy" and r.marker is None]
+    assert len(numpy) == 1
+    specifier = numpy[0].specifier
+    assert not any(item.operator in ("==", "===") for item in specifier), str(specifier)
+    for version in ("2.4.6", "2.5.4", "2.5.5"):
+        assert specifier.contains(version), version
+    assert not specifier.contains("3.0.0")
