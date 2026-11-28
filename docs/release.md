@@ -19,7 +19,7 @@ Install offline with `pip install --no-index --no-deps wheelhouse/*.whl` in a
 Python 3.11 Linux amd64 environment. Install Debian with
 `sudo apt install ./livingproof-sim-mujoco_*_amd64.deb`. Do not use sudo for Task.
 
-The workflow reuses collaboration-guidelines v4.3.0 semantic-release to create
+The workflow reuses collaboration-guidelines v9.10.5 semantic-release to create
 a draft after main verification. It assembles and tests products from that tag,
 attaches all assets to the draft, and then publishes the release automatically
 (`gh release edit --draft=false`), the same way capability-verifier and

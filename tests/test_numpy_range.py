@@ -60,8 +60,11 @@ def test_the_lock_records_the_same_requirement_and_one_version_inside_it():
     assert Version(locked[0]["version"]) in requirement.specifier
 
 
-def test_renovate_widens_numpy_instead_of_rewriting_the_range_to_a_pin():
-    """The preset's rangeStrategy pin rewrote the Pillow floor (#197, #201); not numpy too."""
+def test_renovate_updates_the_numpy_lock_instead_of_rewriting_the_range_to_a_pin():
+    """The preset's rangeStrategy pin rewrote the Pillow floor (#197, #201); not numpy too.
+
+    widen would leave a satisfied range alone and also skip lock refreshes (#238).
+    """
     rules = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))["packageRules"]
     matching = [
         rule
@@ -71,7 +74,32 @@ def test_renovate_widens_numpy_instead_of_rewriting_the_range_to_a_pin():
         and "project.dependencies" in rule.get("matchDepTypes", [])
     ]
     assert len(matching) == 1
-    assert matching[0]["rangeStrategy"] == "widen"
+    assert matching[0]["rangeStrategy"] == "update-lockfile"
+
+
+def test_renovate_updates_the_pillow_lock_instead_of_rewriting_the_range_to_a_pin():
+    """The same update-lockfile choice as numpy (#238): keep the floor, refresh the lock."""
+    rules = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))["packageRules"]
+    matching = [
+        rule
+        for rule in rules
+        if "pillow" in rule.get("matchPackageNames", [])
+        and "pep621" in rule.get("matchManagers", [])
+        and "project.optional-dependencies" in rule.get("matchDepTypes", [])
+    ]
+    assert len(matching) == 1
+    assert matching[0]["rangeStrategy"] == "update-lockfile"
+
+
+@pytest.mark.parametrize("package", ["numpy", "pillow"])
+def test_no_later_renovate_rule_overrides_the_range_strategy(package):
+    """Renovate applies packageRules in order; a later rule could set pin again."""
+    rules = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))["packageRules"]
+    index = next(i for i, rule in enumerate(rules) if package in rule.get("matchPackageNames", []))
+    for rule in rules[index + 1 :]:
+        names = rule.get("matchPackageNames")
+        touches = names is None or package in names
+        assert not (touches and "rangeStrategy" in rule), rule.get("description")
 
 
 @pytest.mark.parametrize("extra", ["torch", "media"])
@@ -90,3 +118,23 @@ def test_the_range_tests_run_in_the_ci_test_task():
         "pytest" in command and "tests/test_numpy_range.py" in command.split()
         for command in commands
     )
+
+
+def test_the_locked_numpy_is_hash_locked_to_one_version():
+    """The README says runtime dependencies are hash-locked; widening the range must not change that."""
+    (package,) = [p for p in _lock()["package"] if p["name"] == "numpy"]
+    entries = [package["sdist"], *package["wheels"]]
+    assert package["wheels"]
+    for entry in entries:
+        assert entry["hash"].startswith("sha256:") and len(entry["hash"]) == len("sha256:") + 64
+        assert f"numpy-{package['version']}" in entry["url"], entry["url"]
+
+
+def test_no_later_renovate_rule_overrides_the_numpy_range_strategy():
+    """Renovate applies packageRules in order; a later numpy rule could set pin again."""
+    rules = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))["packageRules"]
+    index = next(i for i, rule in enumerate(rules) if "numpy" in rule.get("matchPackageNames", []))
+    for rule in rules[index + 1 :]:
+        names = rule.get("matchPackageNames")
+        touches_numpy = names is None or "numpy" in names
+        assert not (touches_numpy and "rangeStrategy" in rule), rule.get("description")
