@@ -118,3 +118,23 @@ def test_the_range_tests_run_in_the_ci_test_task():
         "pytest" in command and "tests/test_numpy_range.py" in command.split()
         for command in commands
     )
+
+
+def test_the_locked_numpy_is_hash_locked_to_one_version():
+    """The README says runtime dependencies are hash-locked; widening the range must not change that."""
+    (package,) = [p for p in _lock()["package"] if p["name"] == "numpy"]
+    entries = [package["sdist"], *package["wheels"]]
+    assert package["wheels"]
+    for entry in entries:
+        assert entry["hash"].startswith("sha256:") and len(entry["hash"]) == len("sha256:") + 64
+        assert f"numpy-{package['version']}" in entry["url"], entry["url"]
+
+
+def test_no_later_renovate_rule_overrides_the_numpy_range_strategy():
+    """Renovate applies packageRules in order; a later numpy rule could set pin again."""
+    rules = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))["packageRules"]
+    index = next(i for i, rule in enumerate(rules) if "numpy" in rule.get("matchPackageNames", []))
+    for rule in rules[index + 1 :]:
+        names = rule.get("matchPackageNames")
+        touches_numpy = names is None or "numpy" in names
+        assert not (touches_numpy and "rangeStrategy" in rule), rule.get("description")
