@@ -135,7 +135,7 @@ See [development and verification](docs/verification.md) for tested scope and
 for private browser access. No hosted Codespace or its authentication flow has
 been exercised by these local container tests.
 
-Runtime dependencies are hash-locked in uv.lock; MuJoCo 3.17.0 is exact-pinned.
+Runtime dependencies are hash-locked in uv.lock; MuJoCo 3.17.0 is exact-pinned. numpy is a range (`>=2.4.6,<3`) so robot repositories that pin their own numpy can resolve against any simulator release; the lock holds one tested version.
 The engine wheel bundles the native engine. Shared identity uses the released
 [livingproof-common v1.0.0 wheel](https://github.com/Living-Proof-Labs/livingproof-common/releases/tag/v1.0.0),
 verified as the latest release on 2026-10-26. No copied version algorithm.
