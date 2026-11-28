@@ -305,7 +305,7 @@ env:
 commands:
  - uv run --no-sync pytest tests/test_cli.py --junitxml=artifacts/tests.xml
  - uv run --no-sync pytest tests/test_tasks.py tests/test_mcap_cli_pin.py --junitxml=artifacts/tasks.xml
- - uv run --no-sync pytest tests/test_wheel_metadata.py --junitxml=artifacts/wheel-metadata.xml
+ - uv run --no-sync pytest tests/test_wheel_metadata.py tests/test_numpy_range.py --junitxml=artifacts/wheel-metadata.xml
  - uv run --no-sync pytest tests/test_policy.py --junitxml=artifacts/policy.xml
  - uv run --no-sync pytest -v tests/test_hallway.py tests/test_world_format_0_3.py tests/test_world_format_0_3_review.py --junitxml=artifacts/hallway.xml
  - uv run --no-sync pytest tests/test_observations.py --junitxml=artifacts/observations.xml

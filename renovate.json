@@ -10,6 +10,13 @@
       "matchDepTypes": ["project.optional-dependencies"],
       "matchPackageNames": ["pillow"],
       "rangeStrategy": "widen"
+    },
+    {
+      "description": "Keep numpy a range in the built wheel (#236). An exact pin here makes every robot repository that pins its own numpy unresolvable whenever the two differ. widen leaves a satisfied range alone; the floor is raised only by a reviewed change, and tests/test_numpy_range.py guards the range and the lock.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies"],
+      "matchPackageNames": ["numpy"],
+      "rangeStrategy": "widen"
     }
   ]
 }
