@@ -158,44 +158,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 tools/test_results.py --name "MuJoCo limit tests (arm64)" --path 'limits.xml' --root reports-arm64
-  verification-gate:
-    name: Repository verification gate
-    # Always runs, so a failed or cancelled job still reports this required check.
-    # Only the skips listed per event in ALLOWED_SKIPS pass; every other job must succeed.
-    # Adding a verification job to this workflow requires adding it to `needs` here.
-    if: always()
-    needs: [verify, test-arm64, publish-tests]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions: {}
-    env:
-      NEEDS_JSON: ${{ toJSON(needs) }}
-      ALLOWED_SKIPS: '{}'
-    steps:
-      - name: Require complete successful verification evidence
-        run: |
-          python3 - <<'PYTHON'
-          import json
-          import os
-          import sys
-
-          needs = json.loads(os.environ["NEEDS_JSON"])
-          event = os.environ["GITHUB_EVENT_NAME"]
-          if event not in {"pull_request", "merge_group", "push", "workflow_dispatch", "schedule"}:
-              sys.exit("Unsupported verification event: " + event)
-          allowed = set(json.loads(os.environ["ALLOWED_SKIPS"]).get(event, []))
-          problems = []
-          for job, data in sorted(needs.items()):
-              result = data.get("result")
-              if result == "success" or (result == "skipped" and job in allowed):
-                  continue
-              problems.append(job + ": " + str(result))
-          if not needs:
-              problems.append("no verification jobs")
-          if problems:
-              sys.exit("Incomplete verification: " + ", ".join(problems))
-          print("All verification jobs passed: " + ", ".join(sorted(needs)))
-          PYTHON
   deploy-docs:
     needs: [release, assemble]
     if: needs.release.outputs.draft-created == 'true' && needs.assemble.result == 'success'
@@ -411,3 +373,41 @@ jobs:
           path: artifacts/
           retention-days: 14
           if-no-files-found: error
+  verification-gate:
+    name: Repository verification gate
+    # Always runs, so a failed or cancelled job still reports this required check.
+    # Only the skips listed per event in ALLOWED_SKIPS pass; every other job must succeed.
+    # Adding a verification job to this workflow requires adding it to `needs` here.
+    if: always()
+    needs: [verify, test-arm64, publish-tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: {}
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+      ALLOWED_SKIPS: '{}'
+    steps:
+      - name: Require complete successful verification evidence
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          event = os.environ["GITHUB_EVENT_NAME"]
+          if event not in {"pull_request", "merge_group", "push", "workflow_dispatch", "schedule"}:
+              sys.exit("Unsupported verification event: " + event)
+          allowed = set(json.loads(os.environ["ALLOWED_SKIPS"]).get(event, []))
+          problems = []
+          for job, data in sorted(needs.items()):
+              result = data.get("result")
+              if result == "success" or (result == "skipped" and job in allowed):
+                  continue
+              problems.append(job + ": " + str(result))
+          if not needs:
+              problems.append("no verification jobs")
+          if problems:
+              sys.exit("Incomplete verification: " + ", ".join(problems))
+          print("All verification jobs passed: " + ", ".join(sorted(needs)))
+          PYTHON
